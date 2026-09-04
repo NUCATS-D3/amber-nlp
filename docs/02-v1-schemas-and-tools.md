@@ -2,7 +2,16 @@
 
 Status: spec, 2026-09-04. This is the contract the implementation is built against. Code blocks are specification, not implementation — field names, types, and invariants are binding; method bodies are illustrative. Read `00-goals-and-architecture.md` first.
 
-Scope of v1: note-level; extractor + reviewer agents; OMOP `NOTE_NLP` export; provider-zone policy gate; annotation app data model (the app UI itself is a separate milestone but shares these models).
+Scope of v1: note-level extraction with verified evidence, explicit outcomes, a provider/destination
+policy gate, durable tables, and a minimal correction workflow. Establish a fixed pipeline before
+comparing optional extractor/reviewer agents. OMOP `NOTE_NLP` remains the interoperability target;
+the first experiment can use the native table export. See the revised M1–M3 delivery in the roadmap.
+
+All domain models use Pydantic v2 with `ConfigDict(extra="forbid")`; identity/provenance-bearing
+value objects are frozen. Cross-object validation uses the exact source and evidence store at
+construction, commit, and load boundaries. The blocks below abbreviate that validation machinery.
+This revision adds `CaseOutcome` and explicit final-claim IDs; domain models are not implemented
+yet, so this is a contract change rather than a completed runtime migration.
 
 ## 1. Identifiers and provenance
 
@@ -102,7 +111,47 @@ class Claim(BaseModel):
     provenance: Provenance
 ```
 
-`effective_datetime` and `patient_id` are the two fields that make v2 patient-level aggregation a query rather than a migration.
+`effective_datetime` and `patient_id` preserve inputs needed for later patient-level aggregation;
+temporal reconciliation still requires its own design and evaluation.
+
+### Case outcomes and abstention
+
+`Claim.value` remains a validated dictionary. Explicit clinical absence is a task-defined value
+with evidence, such as an explicitly negated finding. Unanswered tasks and execution failures are
+recorded separately; `no_claim` never constructs a Claim with `value=None`.
+
+```python
+class CaseOutcome(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    status: Literal[
+        "answered", "not_mentioned", "conflicting_evidence", "insufficient_evidence", "failed"
+    ]
+    reason: str | None = None
+    failure_kind: Literal[
+        "policy", "provider", "parse", "grounding", "validation", "budget", "internal"
+    ] | None = None
+    reviewed_source_ids: list[str] = []
+    evidence_ids: list[str] = []
+    provenance: Provenance
+```
+
+| status | Meaning and requirement |
+|---|---|
+| `answered` | At least one final, non-rejected claim satisfies the task schema and evidence policy. Explicit negative answers belong here. |
+| `not_mentioned` | No relevant mention found after complete review of the declared task scope in every case source. This is a statement about the reviewed record, not clinical absence. |
+| `conflicting_evidence` | Applicable source evidence disagrees and the task rules do not resolve it. Cite the conflicting evidence. |
+| `insufficient_evidence` | Available evidence or review coverage cannot support a complete answer. Do not turn partial review into a not-mentioned outcome. |
+| `failed` | Policy refusal, provider/parse/grounding/validation failure, or exhausted execution budget prevented completion. The runtime records the cause; this is not a clinical answer. |
+
+Non-answered outcomes require a nonempty reason and no final claims. `reviewed_source_ids` lists
+only case sources whose entire task-defined scope was reviewed; record partial coverage in the
+execution audit. For `not_mentioned`, this list must cover every case source. Outcome evidence IDs
+must be known, within scope, and source-backed; conflicting-evidence outcomes require them.
+Execution failures cannot become gold outcomes in an Example. The first task uses complete
+task-level answers or explicit outcomes; partial field completion is not silently scored as success.
+`failure_kind` is required exactly for failed outcomes, providing stable failure-rate categories
+without parsing the free-text reason. The runtime sets failures; `no_claim` cannot declare one.
 
 ## 5. Evidence
 
@@ -126,8 +175,8 @@ class StructuredEvidence(BaseModel):
 class InferenceEvidence(BaseModel):
     kind: Literal["inference"] = "inference"
     evidence_id: str              # ULID
-    rationale: str
-    inputs: list[str]             # evidence_ids and/or claim_ids consumed by this step
+    rationale: str = Field(min_length=1)
+    inputs: list[str] = Field(min_length=1)  # known evidence_ids and/or non-rejected claim_ids
     trace_id: str | None; span_id: str | None   # MLflow trace/span of the step
     provenance: Provenance
 
@@ -141,7 +190,26 @@ class EvidenceEdge(BaseModel):
     weight: float | None = None
 ```
 
-Invariants: a Claim in status other than `rejected` has ≥1 EvidenceEdge. `Inclusion` is only minted by the `quote` tool or by a human in the app. `InferenceEvidence.inputs` may reference claim_ids, which is how chains form; the edge graph must be acyclic (checked on commit).
+Invariants, checked on commit and when loading a graph:
+
+- Every non-rejected Claim has at least one EvidenceEdge; required answer fields have their own
+  evidence roles. A whole-claim edge cannot satisfy a missing field-specific requirement.
+- `Inclusion` is minted only by `quote`/grounding or the explicit human annotation path. Bounds and
+  quote equality refer to the exact immutable Source text. StructuredEvidence must match the
+  referenced Source record's field/value under a declared structured-source mapping.
+- All references are known and remain within the case's declared source/patient scope. Referenced
+  claims must be non-rejected and individually valid; raw Mention IDs are not evidence IDs.
+- Traverse both claim-to-evidence edges and inference inputs when checking acyclicity. Inference
+  inputs are nonempty; every support branch must end in an Inclusion or StructuredEvidence verified
+  against a Source. Empty rationales or source-free inference leaves cannot establish a fact.
+- Retain the complete support closure needed to inspect and revalidate final claims independently
+  of an external tracing server. These checks enforce structure and source traceability; semantic
+  support still requires task-specific evaluation, including negation, time, and experiencer.
+
+Fuzzy alignment is optional behind a named policy. An alignment score measures matching behavior,
+not clinical confidence; ambiguous or unsafe matches return GroundingFailure. Synthetic tests
+must attempt structurally valid but semantically wrong citations as scorer cases, alongside kernel
+tests for invalid bounds, repeated text, unknown IDs, cycles, and source-free inference chains.
 
 ## 6. Tasks and examples
 
@@ -159,15 +227,28 @@ class Example(BaseModel):
     example_id: str
     task: str
     source_ids: list[str]
-    claims: list[Claim]           # status == "gold"
+    claims: list[Claim]           # status == "gold"; includes required supporting claims
+    final_claim_ids: list[str]    # gold task answers, not intermediate support claims
+    outcome: CaseOutcome
     evidence: list[Evidence]
     edges: list[EvidenceEdge]
     split: Literal["train", "dev", "test"] | None
     annotators: list[str]
-    derived_from_events: list[str]   # annotation_event ids (see §9)
+    derived_from_events: list[str]   # annotation_event ids (see §10)
 ```
 
 Exports from `Example`: demonstrations (prompt-ready), TRL prompt/completion JSONL and mlx-lm chat JSONL (identical content), `mlflow.genai` evaluation records (`inputs`/`outputs`/`expectations`).
+
+`answered` Examples have nonempty `final_claim_ids` referencing their gold claims. Adjudicated
+not-mentioned/conflict/insufficient-evidence Examples have no final claims, retain any relevant
+evidence/supporting gold claims, and satisfy the outcome rules above. Failed runs are diagnostics,
+not annotated Examples. Final IDs distinguish answers from intermediate claims for scoring and
+export; validate the distinction on load. Exporters preserve outcome labels and never translate
+abstention to a negative clinical answer.
+
+Split at the patient/document level before deriving Examples. Demonstrations, optimization, and
+training use only their assigned partitions. Corpus adapters must separately declare annotation
+coverage and mapping policies; template flags do not define the gold-scoring scope.
 
 ## 7. Provider zones and sensitivity
 
@@ -188,11 +269,23 @@ class Policy(BaseModel):
 def check(policy, provider, dataset_sensitivity) -> None: raises PolicyViolation
 ```
 
-The gate runs before any provider call and stamps `zone`/`sensitivity` into `Provenance`. Datasets carry `sensitivity` in their manifest; it is never inferred.
+The gate runs before any model or EDW call and stamps `zone`/`sensitivity` into `Provenance`.
+Datasets carry `sensitivity` in their manifest; it is never inferred. Start with one permitted
+provider and validate capabilities at its boundary, including structured output and tool use
+where required.
+
+Tracking/tracing servers, judges, artifact stores, and annotation services also declare their
+destination zone and allowed payloads in deployment configuration. Check each source-bearing
+transfer before sending; keep sink policy separate from model-specific Provider fields. Preserve
+dataset license/access restrictions for quotes, offsets, and derived outputs even when the zone
+matrix permits the destination. A model-provider approval does not authorize unrelated telemetry.
 
 ## 8. Tools (agent-callable)
 
-All tools are plain Python functions with pydantic-typed arguments and returns, registered with the agent runtime; the same functions are used by the deterministic cascade. Each returns provenance-stamped nodes.
+All tools are plain Python functions with Pydantic-typed arguments and returns, shared by the
+fixed pipeline, task rules, and optional agents. Register them with the agent runtime only at that
+boundary. Each returns provenance-stamped nodes or explicit outcomes. The initial tool subset is
+quote, commit, and outcome recording; additional NLP tools are conditional on task evidence.
 
 ```python
 def sections(source_id) -> list[Section]                      # medspaCy sectionizer (+ MedSlice-style model later)
@@ -200,19 +293,25 @@ def dedupe(source_id) -> list[Section]                        # marks template/c
 def find_mentions(source_id, types: list[str]) -> list[Mention]   # GLiNER-BioMed | OpenMed | medspaCy rules; backend configurable
 def context(mention_id) -> Mention                            # ConText/negspacy attributes filled in
 def normalize(mention_id, systems: list[str]) -> list[Concept]   # SapBERT candidates
-def quote(source_id, text: str, hint_start: int | None = None) -> Inclusion | GroundingFailure   # exact, then fuzzy (rapidfuzz partial ratio ≥ threshold); the ONLY minter of Inclusion
+def quote(source_id, text: str, hint_start: int | None = None) -> Inclusion | GroundingFailure   # exact first; optional validated fuzzy policy; human annotation uses the same grounding checks
 def search(patient_id, query: str, kinds: list[SourceKind]) -> list[Hit]   # v1: sections/chunks of the current note; v2: patient's sources; Hits are candidates, not evidence
 def structured(patient_id, table: str, filters: dict) -> list[StructuredEvidence]   # provider-gated like models
 def dates(text: str, anchor: datetime | None) -> list[DateSpan]
 def calc(expr: str) -> float | str
 def commit_claim(task: str, value: dict, evidence_ids: list[str], rationale: str, field_roles: dict[str, list[str]] | None = None) -> Claim
     # validates value against the task's AnswerModel; requires ≥1 evidence id (per field if evidence_policy == "field");
-    # rejects unknown evidence ids; records an InferenceEvidence(rationale, inputs=evidence_ids, trace ids) and the edges; checks acyclicity
+    # rejects unknown/out-of-scope evidence; records a nonempty InferenceEvidence and edges;
+    # validates the full support DAG, source leaves, and field roles before committing
+def no_claim(reason: Literal["not_mentioned", "conflicting_evidence", "insufficient_evidence"], rationale: str, reviewed_source_ids: list[str], evidence_ids: list[str]) -> CaseOutcome
+    # validates scope, review coverage, and cited evidence; never creates a null-valued Claim
 ```
 
-## 9. Agents
+## 9. Execution strategies and results
 
-Runtime: PydanticAI (`mlflow.pydantic_ai.autolog()` for tracing). Each agent is a function `run(case) -> CaseResult` with a system prompt registered in the MLflow prompt registry and loaded by version.
+All strategies expose `run(case) -> CaseResult`. Establish a fixed structured-extraction baseline
+before comparing bounded agents. PydanticAI is the planned agent runtime; use registered,
+version-loaded prompts and centralize tracing in `amber.mlflow_ext`. Capability checks, policy,
+grounding, and commit validation apply to every strategy.
 
 ```python
 class Case(BaseModel):
@@ -221,14 +320,35 @@ class Case(BaseModel):
 class CaseResult(BaseModel):
     case_id: str
     claims: list[Claim]; evidence: list[Evidence]; edges: list[EvidenceEdge]
+    final_claim_ids: list[str]
+    outcome: CaseOutcome
     mentions: list[Mention]
     grounding_failures: int; tool_calls: int; escalated: bool
     trace_id: str | None
 ```
 
-- Note extractor: one source, one task. Tools: sections, dedupe, find_mentions, context, normalize, quote, dates, calc, commit_claim. Terminates on commit or on an explicit `no_claim(reason)` (which is itself recorded as a Claim with `value=None` and an InferenceEvidence, so "nothing found" is auditable).
-- Reviewer (v1, note-scoped): plans over sections/chunks, calls the extractor per unit, reconciles conflicts (same task, different values) using section priority and temporality, commits the note-level claims with InferenceEvidence whose `inputs` are the per-unit claim ids. v2 swaps units for sources of a patient and adds temporal aggregation.
-- Cascade: `run_deterministic(case)` (sections → dedupe → find_mentions → context → task-specific rules) produces claims with `confidence`; escalate to the reviewer when: no claim, confidence < threshold, conflicting claims, or note length > limit. `escalated` is logged per case.
+`final_claim_ids` is a subset of the non-rejected claims in the result. It is nonempty exactly when
+the outcome is answered; every final answer must satisfy the task contract. Supporting/intermediate
+claims may be retained on any outcome but cannot be silently exported or scored as final answers.
+The result contains the evidence/claim closure needed to validate those retained claims. The
+runtime records failed outcomes and their causes rather than turning execution errors into
+not-mentioned results. Claimed complete review is auditable from the execution record; its
+semantic completeness is tested on gold answerable cases.
+
+- Fixed baseline: one source/task, versioned prompt, structured candidate values and quotes,
+  shared quote/commit validation, bounded retries, and explicit outcomes. No planning loop.
+- Extractor experiment: same task/model/split and evidence rules, with bounded adaptive tool use.
+  Terminates with final committed claims or a validated `no_claim` outcome; exhausted budgets and
+  execution errors become failed outcomes. Use only the tools needed by the comparison.
+- Reviewer experiment: plans over sections/chunks of the same immutable note, preserves absolute
+  source offsets, and reconciles source-backed claims. Unresolved conflicts produce an outcome
+  citing the conflicting evidence. Patient-wide reconciliation remains deferred.
+- Cascade experiment: add task rules or targeted NLP when measured quality/cost justifies them.
+  Calibrate escalation on development error/coverage curves and audit non-escalated omissions;
+  confidence alone is not a reliable routing threshold.
+
+Declare call/token/retry budgets and record actual usage per strategy. Freeze selection before
+held-out comparison and report quality, support, omissions, expert time, and cost together.
 
 ## 10. Tables (durable output)
 
@@ -239,21 +359,46 @@ class CaseResult(BaseModel):
 | `claims` | claim_id | source_id, patient_id, task, schema_ref, value (JSON), effective_datetime, confidence, status, provenance_* |
 | `evidence` | evidence_id | kind, source_id, start, end, quote, mention_id, field, value, rationale, inputs (JSON), trace_id, span_id, provenance_* |
 | `evidence_edges` | (claim_id, evidence_id, role) | weight |
-| `annotation_events` | event_id | case_id, claim_id, actor, action, before (JSON), after (JSON), at |
-| `cases` | case_id | task, patient_id, source_ids (JSON), sensitivity, status, escalated, trace_id, run_id |
+| `annotation_events` | event_id | case_id, claim_id (nullable for case-outcome edits), actor, action, before (JSON), after (JSON), at |
+| `cases` | case_id | task, patient_id, source_ids (JSON), sensitivity, status, final_claim_ids (JSON), outcome (CaseOutcome JSON), escalated, trace_id, run_id |
 
-Storage: Parquet/DuckDB for pipeline output; the app uses SQLite (single annotator) or Postgres (shared) with the same columns. `provenance_*` is the flattened Provenance.
+Storage: start with one local DuckDB store and a Parquet table-bundle export. The initial correction
+workflow uses this store and append-only annotation events; SQLite/Postgres are optional later
+adapters with migration/replay tests. `provenance_*` is flattened Provenance. Case `status` records
+workflow state separately from the clinical/execution `outcome`. Retain immutable source text or
+records in permitted storage keyed by source_id; source hashes alone cannot revalidate offsets.
+Exports include the required support closure and a manifest linking the exact source versions.
 
 OMOP `NOTE_NLP` view over `mentions`: `note_nlp_id ← mention_id`, `note_id ← source.external_id`, `section_concept_id ← map(section_category)`, `snippet ← quote (± context window)`, `offset ← start`, `lexical_variant ← quote`, `note_nlp_concept_id ← concept (standard)`, `note_nlp_source_concept_id ← concept (source)`, `nlp_system ← provenance.producer`, `nlp_date/datetime ← provenance.created_at`, `term_exists ← polarity != negated`, `term_temporal ← temporality`, `term_modifiers ← "experiencer=…;certainty=…;value=…;unit=…"`.
 
 ## 11. Evaluation
 
 Scorers (MLflow `@scorer`, all OSS):
+
 - `label_correct[task, field]`, `claim_all_correct[task]` — exact match against gold claims; dataset-level P/R/F1 with bootstrap CIs logged as run metrics.
-- `evidence_faithful[task]` — does each cited evidence support the claim? LLM-judge scorer with a human-calibration set; human judgments recorded as annotation events.
+- `evidence_faithful[task]` — does the cited evidence support the claim? Begin with expert judgment recorded as annotation events; add an optional LLM judge calibrated against separate human judgments.
 - `evidence_localized[task]` — span overlap between cited spans and gold spans (exact / partial / token F1).
 - `grounding_failure_rate`, `parse_failure_rate`, `escalation_rate`, `conflict_rate` — process metrics from `CaseResult`.
-- Trace-aware: `spans_minted_via_quote` (every Inclusion has a `quote` tool span in the trace), `commit_cited_known_ids`.
+- Structural/source checks: quote equality, permitted minting path (tool or human annotation),
+  known/in-scope IDs, field roles, nonempty inference inputs, source-leaf reachability, and DAG
+  validity. Trace-aware checks are supplemental; human gold does not require an agent tool span.
+
+Score final claims only as task answers; inspect their entire support closure for validity and
+semantic support. Measure not-mentioned/conflict/insufficient-evidence outcomes against adjudicated
+gold separately from execution failures. Count omissions on gold-answerable cases even when the
+system abstains or fails. Report every rate's denominator and both full-set quality and quality
+among automatically completed cases; automation coverage is their share of all eligible cases.
+
+The first task protocol defines numeric acceptance thresholds before selection/evaluation. Record
+setup, prompt work, annotation, correction, and adjudication time, plus model/optimizer/teacher cost
+and latency. Compare expert minutes per accepted case with manual authoring at matched quality,
+including failed-case review and setup amortization at the intended workload. Human semantic
+assessment begins with the baseline; calibrate any LLM judge on separate human judgments.
+
+Clinical reports identify dataset/version/hash, patient/document split, task/schema, adapter and
+coverage policies, prompt/model/backend versions, budgets, thresholds, and sample counts. Bootstrap
+at the patient/document level; keep CORAL pseudo-labels separate from its 40-note expert gold set.
+Do not tune on held-out cases or use their corrected Examples in the evaluated training workflow.
 
 ## 12. MLflow mapping
 
@@ -270,4 +415,7 @@ Scorers (MLflow `@scorer`, all OSS):
 
 ## 13. Non-goals for v1
 
-Patient-level aggregation and PatientFact; FHIR export; the verifier and annotation-assistant agents (data model supports them; they follow the app); multi-language; PHI de-identification as a product feature (a `deidentify` tool may exist for workflow use).
+Patient-level aggregation and PatientFact; FHIR; multi-language; and PHI de-identification as a
+product feature remain outside v1. Multi-backend training, adapter conversion, the expanded app,
+and verifier/annotation-assistant agents are conditional later work. A broad NLP tool belt or an
+agent loop is not a prerequisite for the first clinical experiment.

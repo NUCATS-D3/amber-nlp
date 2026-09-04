@@ -6,11 +6,20 @@ Read, in order, before writing code: `docs/00-goals-and-architecture.md` (why), 
 
 1. Grounding by construction. `Inclusion` is minted only by the `quote` tool or by a human in the app. No other code path may construct one. A claim in any status other than `rejected` has at least one evidence edge; `commit_claim` refuses otherwise.
 2. Offsets are into the immutable `Source.text`. Never normalize whitespace after a `source_id` is minted. `Mention.quote == text[start:end]` is validated on construction.
-3. The evidence graph is a DAG. `commit_claim` checks acyclicity.
-4. Provider zone × data sensitivity is checked before every model or EDW call and stamped into `Provenance`. Datasets carry sensitivity explicitly; it is never inferred.
+3. The evidence graph is a DAG. Commit and load validation checks all claim/evidence references, case scope, nonempty inference inputs, and field roles. Every support branch reaches a verified Inclusion or StructuredEvidence; a rationale alone cannot ground a fact. Semantic support is evaluated separately from graph validity.
+4. Provider zone × data sensitivity is checked before every model or EDW call and stamped into `Provenance`. Check source-bearing transfers to telemetry, judges, artifact stores, and annotation services against their own destination policy and dataset restrictions. Datasets carry sensitivity explicitly; it is never inferred.
 5. MLflow: OSS API surface only (tracking, prompt registry, tracing, `mlflow.genai.evaluate` + `@scorer`, `optimize_prompts`, pyfunc models, run-context provider). No `databricks-*` imports; Databricks is a tracking URI and a registry naming convention behind one config key.
 6. Model-agnostic. Nothing in `src/amber` may assume a model family, a chat template, or a device. Backends declare capabilities; callers check them.
 7. `Example` is the single annotated-data format. Demonstrations, optimizer data, fine-tuning JSONL, and evaluation records are exports from it, never separate sources of truth.
+8. Clinical absence is an evidence-backed answer. Not mentioned, conflicting evidence, insufficient evidence, and execution failure are distinct `CaseOutcome` states; `no_claim` never creates a null-valued Claim. Explicit final-claim IDs separate task answers from supporting claims. Failed runs are not gold Examples.
+
+## Delivery order
+
+Follow the revised roadmap: M1 defines a task protocol and the evidence kernel; M2 establishes one
+permitted provider and a fixed clinical baseline; M3 adds minimal correction and measures expert
+effort against manual authoring. M4/M5 agent and reviewer adoption requires comparative evidence.
+Broad NLP, additional backends/training, and the expanded app follow measured needs. Define
+acceptance targets and patient/document splits before selection; never tune on held-out cases.
 
 ## Conventions
 

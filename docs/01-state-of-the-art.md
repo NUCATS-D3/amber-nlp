@@ -1,10 +1,21 @@
 # Clinical Information Extraction: State of the Art (living doc)
 
-Last updated: 2026-09-02. Ongoing — update as new results land. Later sessions: read this before re-researching, and append rather than rewrite.
+Last updated: 2026-09-04 (planning qualifications; primary studies were not reverified in this
+revision). Ongoing — update as new results land. Later sessions: read this before re-researching,
+and append rather than rewrite.
 
 ## Summary
 
-The field has split into two regimes. For classic span-level NER on established corpora, encoder-style models (GLiNER family, fine-tuned BERT/GatorTron) still lead, by 15–30 F1 over decoder LLMs. For document-level, schema-driven extraction (registry curation, trial eligibility, pathology/radiology report structuring, SDOH), generative models now lead, but the winning recipe is fine-tuned or distilled small open models and decomposed pipelines, not single-prompt frontier models.
+The cited work motivates different baselines for span-level NER and document-level schema
+extraction. Encoder models are strong candidates for exact spans; generative extraction, task
+fine-tuning, distillation, and decomposed pipelines are candidates for note-level answers. Results
+depend on the task, annotation coverage, supervision, metric, and compute budget. These studies do
+not establish that Amber needs an agent loop or a broad NLP stack before testing a fixed baseline.
+
+Use the numerical summaries below as research leads. Before adopting a recipe, verify its primary
+study's dataset/split, comparator ordering, supervision, uncertainty, and cost assumptions. Report
+zero-shot, few-shot, prompt optimization, and fine-tuning separately. No result here establishes
+Amber's expected clinical accuracy, annotation budget, or reduction in expert effort.
 
 ## Regime 1: span-level NER — encoders still win
 
@@ -15,9 +26,9 @@ The field has split into two regimes. For classic span-level NER on established 
 
 ## Regime 2: document-level schema extraction — generative, but fine-tuned/distilled
 
-1. Small fine-tuned open models reach human level. Sci Rep 2025 (Berkeley/UCSF): LoRA-tuned Llama-3.1-8B on ≤100 reports per task (breast/kidney/bone-marrow pathology, prostate MRI) → 87–92% exact match, non-inferior to a second human annotator, ahead of GPT-4 (86%). Zero-shot open models 17–57%; "medical" pretrained models (PMC-LLaMA, UltraMedical) were worst. Domain pretraining bought nothing; task fine-tuning bought everything.
-2. Distillation beats the teacher. npj Digit Med 2025: Llama-3.1-70B generates QA pairs with source spans, difficulty, explanations → QLoRA students 1B/3B/8B. 8B student beat 70B teacher on trial-criteria extraction (balanced acc 0.93 vs 0.89; i2b2 2018 micro-F1 0.89 vs 0.93) at ~¼ cost ($929 vs $4,066 for 10k patients × 23 criteria).
-3. Reasoning models close the gap zero-shot with engineering. SDOH on n2c2/UW SHAC (arXiv 2604.13502): o4-mini micro-F1 0.866 (top-tier for the shared task, precision 0.902) using official guidelines in prompt + 50-shot + self-consistency voting across 3 runs (+0.063 alone) + post-hoc validation. Gemini 2.5 Flash 0.825; Llama-3.1-8B zero-shot 0.591.
+1. Task-specific fine-tuning is a candidate. Sci Rep 2025 (Berkeley/UCSF): the prior survey records LoRA-tuned Llama-3.1-8B on ≤100 reports per task (breast/kidney/bone-marrow pathology, prostate MRI) at 87–92% exact match, non-inferior to a second annotator under the study's comparison, ahead of GPT-4 (86%). Zero-shot open models were 17–57%; the tested medical-pretrained models performed poorly. These findings concern those tasks and comparisons, not a general sample-size guarantee or evidence against all domain pretraining.
+2. Distillation results vary by metric. npj Digit Med 2025: Llama-3.1-70B generates QA pairs with source spans, difficulty, and explanations for QLoRA students. The prior survey lists 8B student versus 70B teacher balanced accuracy of 0.93 vs 0.89, but i2b2 2018 micro-F1 of 0.89 vs 0.93, and estimated costs of $929 vs $4,066 for 10k patients × 23 criteria. The listed accuracy and F1 comparisons favor different models; verify the primary study's task/comparator mapping before reuse. Do not summarize this as the student winning every metric.
+3. Few-shot reasoning with additional inference budget. SDOH on n2c2/UW SHAC (arXiv 2604.13502): the prior survey records o4-mini micro-F1 0.866 and precision 0.902 with task guidelines, 50 demonstrations, voting across three runs, and post-hoc validation. This is a few-shot, multi-call configuration. The listed Gemini 2.5 Flash result (0.825) and Llama-3.1-8B zero-shot result (0.591) require their own supervision/budget context before comparison.
 
 ## Pipelines over single prompts
 
@@ -50,12 +61,17 @@ Status: section boundaries reasonably mature for clean notes; header semantics h
 - medRxiv Jan 2026 benchmark of extraction tools on 1,000 synthetic molecular test reports (7 layouts, clean vs fax-distorted): GPT-4.1-mini best at 55.6 F1 clean / 37.3 distorted; Gemma-3-27B best open at 41.3 (image input); NuExtract 2.0 4B promising for constrained settings. Nothing cleared 65 F1. Prompting strategy (zero- vs one-shot) had minimal effect.
 - Open problems: layout-heavy and OCR-degraded documents; token-level boundary fidelity from decoders; long tail of rare entities; gold-standard quality (annotation gaps masquerading as hallucinations).
 
-## Practical recipe (for I.AIM-style work)
+## Experimental candidates for Amber
 
-- Annotate ~100 docs per schema and LoRA-tune an 8B open model, or distill from a larger one with span-grounded synthetic QA.
-- Use GLiNER-BioMed / OpenMed encoders for span NER and PHI de-id.
-- Reserve reasoning-model zero-shot (with guidelines-in-prompt, few-shot, self-consistency) for low-volume or rapidly changing schemas.
-- Treat span grounding + normalization (SapBERT → UMLS/SNOMED/OMOP) as non-negotiable; that's the common thread across leading systems.
+- Establish one fixed structured-extraction baseline with verified source evidence and explicit
+  unanswered outcomes; compare bounded agents only after observing baseline errors.
+- Trial GLiNER-BioMed/OpenMed, sectioning, or normalization when the task needs their outputs and
+  a controlled comparison shows benefit. Normalized concepts are optional in Amber's Mention.
+- Separate zero-shot instructions from few-shot demonstrations and multi-call voting; count expert
+  prompt work and all calls. Compare them on the same task and split under declared budgets.
+- Consider fine-tuning or distillation once Examples and a stable evaluation protocol exist.
+  Choose the annotation budget from learning curves and total expert effort, not a universal
+  100-document rule. Keep pseudo-labels separate from held-out expert gold.
 
 ## Gaps / to watch
 

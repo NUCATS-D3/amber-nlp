@@ -2,11 +2,15 @@
 
 AMBER - A Mention Binds Every Record
 
-Messy clinical text, hardened into structured data with the evidence still visible inside. Grounded clinical information extraction: agents with a constrained tool belt, an evidence DAG behind every decision, and MLflow (open-source or Databricks) for prompts, models, traces, and evaluation.
+Messy clinical text, hardened into structured data with the evidence still visible inside.
+Clinical extraction pipelines and optional agents share verified quotes, evidence validation,
+explicit outcomes, and OSS-compatible MLflow tracking. The goal is to reduce total expert effort
+at a declared clinical quality target.
 
 This is milestone M0 plus the first interface scaffold: the design, contract, toolchain, public
-Python facade, CLI, and optional FastAPI application. Extraction behavior begins with M1. Start
-with `docs/`.
+Python facade, CLI, and optional FastAPI application. M1 builds the evidence kernel; M2–M3 deliver
+one fixed extraction baseline and a minimal correction experiment before broader agent work.
+Clinical performance has not yet been measured. Start with `docs/`.
 
 ```
 docs/
@@ -31,11 +35,13 @@ tests/
 ```sh
 uv python install 3.11
 uv sync --extra dev                       # core + dev
-uv sync --extra dev --extra agents --extra nlp          # M2–M5 work
+uv sync --extra dev --extra agents                     # provider/agent integrations
+uv sync --extra dev --extra agents --extra nlp          # when targeted NLP is needed
 uv sync --extra dev --extra agents --extra nlp --extra mlx     # on a Mac
 uv sync --extra dev --extra agents --extra nlp --extra train --extra gpu   # Linux GPU box
 uv run pytest
-uv run ruff check . && uv run ruff format .
+uv run ruff check .
+uv run ruff format --check .
 uv run amber info
 uv run amber api serve                    # requires --extra app
 ```
@@ -61,4 +67,8 @@ The API is created with `amber.api.create_app`; its health endpoints are `/healt
 
 ## Where to begin
 
-`docs/04-roadmap.md` M1: the data model and the grounding kernel (`quote`). Everything else depends on those two.
+`docs/04-roadmap.md` M1–M3: define one task and its acceptance criteria, implement the evidence
+kernel (`quote`, commit validation, and explicit outcomes), then compare a fixed extraction and
+correction workflow with manual authoring. Measure correctness, evidence support, omissions,
+automation coverage, expert time, and cost. Additional agents and backends require demonstrated
+benefit on that protocol.

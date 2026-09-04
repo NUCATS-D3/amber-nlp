@@ -1,4 +1,4 @@
-"""commit_claim(...) -> Claim and no_claim(reason). Validates against the task's AnswerModel,
-requires evidence (per claim or per field), records InferenceEvidence from the current
-trace, checks acyclicity. The only way an agent produces output.
+"""commit_claim(...) -> Claim; no_claim(...) -> CaseOutcome. Validates the task's AnswerModel,
+field evidence, case scope, and the full source-backed support DAG. Shared by fixed pipelines
+and agents; explicit unanswered outcomes never mint null-valued clinical claims.
 """
