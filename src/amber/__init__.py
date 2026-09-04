@@ -1,6 +1,8 @@
-"""amber: messy clinical text hardened into structured data, evidence preserved as inclusions.
+"""Public Python interface for grounded clinical information extraction."""
 
-See docs/ before editing.
-"""
+from amber.client import Amber, create_client
+from amber.services.system import package_version
 
-__version__ = "0.0.0"
+__version__ = package_version()
+
+__all__ = ["Amber", "__version__", "create_client"]

@@ -14,3 +14,7 @@ outputs/
 .env
 *.db
 .DS_Store
+
+# Keep the data directory, but do not track local datasets.
+/data/*
+!/data/.gitkeep

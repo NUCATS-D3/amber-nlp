@@ -1,8 +1,12 @@
 # amber
 
+AMBER - A Mention Binds Every Record
+
 Messy clinical text, hardened into structured data with the evidence still visible inside. Grounded clinical information extraction: agents with a constrained tool belt, an evidence DAG behind every decision, and MLflow (open-source or Databricks) for prompts, models, traces, and evaluation.
 
-This is milestone M0: the design, the contract, the toolchain, and an empty package skeleton. Nothing is implemented yet. Start with `docs/`.
+This is milestone M0 plus the first interface scaffold: the design, contract, toolchain, public
+Python facade, CLI, and optional FastAPI application. Extraction behavior begins with M1. Start
+with `docs/`.
 
 ```
 docs/
@@ -13,7 +17,10 @@ docs/
   04-roadmap.md                  milestones M0–M8
 CLAUDE.md                        working agreement for the coding agent
 pyproject.toml                   uv-managed; extras: agents, nlp, langextract, train, mlx, gpu, app, dagster, dev
-src/amber/                      package skeleton (module docstrings state responsibilities)
+src/amber/                      core library and public Amber facade
+src/amber/services/             use cases shared by every interface
+src/amber/cli/                  Click command groups
+src/amber/api/                  optional FastAPI application and versioned routes
 examples/synthetic_breast_pathology/   synthetic reports + labels (from Strata, Apache 2.0; see NOTICE)
 prompts/                         seed prompts to register in the MLflow prompt registry
 tests/
@@ -29,11 +36,28 @@ uv sync --extra dev --extra agents --extra nlp --extra mlx     # on a Mac
 uv sync --extra dev --extra agents --extra nlp --extra train --extra gpu   # Linux GPU box
 uv run pytest
 uv run ruff check . && uv run ruff format .
+uv run amber info
+uv run amber api serve                    # requires --extra app
 ```
 
 `mlx` and `gpu` are declared as conflicting extras. Torch resolves from PyPI (CUDA builds on Linux, CPU/MPS on macOS). For a CPU-only Linux box add `--index https://download.pytorch.org/whl/cpu` or a `[[tool.uv.index]]` entry.
 
 MLflow: run `uv run mlflow server --backend-store-uri sqlite:///mlflow.db --artifacts-destination ./mlartifacts` locally, or set `MLFLOW_TRACKING_URI` (and, on Databricks, `MLFLOW_REGISTRY_URI=databricks-uc`). See `.env.example`.
+
+## Interfaces
+
+Use the same application facade from Python, the CLI, or FastAPI:
+
+```python
+from amber import create_client
+
+amber = create_client()
+print(amber.info())
+```
+
+The API is created with `amber.api.create_app`; its health endpoints are `/health` and
+`/api/v1/admin/health`. FastAPI and Uvicorn stay in the optional `app` dependency extra so
+`import amber` remains lightweight.
 
 ## Where to begin
 

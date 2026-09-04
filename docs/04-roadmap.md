@@ -8,7 +8,7 @@ uv project, dependency groups, docs, empty package skeleton with module responsi
 
 ## M1 — Data model and grounding kernel
 
-`schemas.py` per `02-v1-schemas-and-tools.md` §1–§7 with validators (quote == text[start:end]; acyclic edges; evidence required on commit). `quote()` with exact + fuzzy alignment and a grounding-failure result. Parquet/DuckDB tables. Tests: round-trips, invariants, alignment edge cases (whitespace, line breaks, OCR-ish noise).
+`schemas/` per `02-v1-schemas-and-tools.md` §1–§7 with validators (quote == text[start:end]; acyclic edges; evidence required on commit). `quote()` with exact + fuzzy alignment and a grounding-failure result. Parquet/DuckDB tables. Tests: round-trips, invariants, alignment edge cases (whitespace, line breaks, OCR-ish noise).
 Measure: none yet beyond tests.
 
 ## M2 — Deterministic cascade
