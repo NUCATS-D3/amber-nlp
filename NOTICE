@@ -1,0 +1,9 @@
+amber
+Copyright 2026 Will Thompson
+
+The synthetic example data under examples/synthetic_breast_pathology and the default
+fine-tuning recipe derive from Strata (https://github.com/YalaLab/strata), Copyright the
+Strata authors, licensed under the Apache License, Version 2.0.
+
+Reference: Liu L., Lian L., et al. "Human level information extraction from clinical reports
+with finetuned language models." Scientific Reports (2025).
