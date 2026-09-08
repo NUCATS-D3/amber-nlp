@@ -1,4 +1,4 @@
-"""CORAL -> amber adapter.
+"""Draft CORAL -> amber adapter for the CORAL experiment; requires unimplemented M1 schemas.
 
 The first consumer of `amber.schemas`, and therefore the thing that pins down its
 contract. Everywhere CORAL's annotation scheme disagrees with amber's data model,

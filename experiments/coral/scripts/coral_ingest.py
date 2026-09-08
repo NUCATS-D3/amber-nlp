@@ -2,8 +2,8 @@
 """Load CORAL's BRAT standoff annotations and classify how they diverge from the text.
 
 Usage:
-    coral_ingest.py <root>
-    coral_ingest.py <root> --jsonl out/coral_mentions.jsonl --category redacted
+    uv run python experiments/coral/scripts/coral_ingest.py <root> --show 0
+    Add --jsonl experiments/coral/outputs/<run-id>/coral_mentions.jsonl for a local audit export.
 
 The .txt is the source of truth: text[start:end] IS the span, and is what any model
 sees. The quote field in the .ann is a redundant copy that CORAL does not maintain --

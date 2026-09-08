@@ -18,3 +18,10 @@ outputs/
 # Keep the data directory, but do not track local datasets.
 /data/*
 !/data/.gitkeep
+
+# Experiment inputs and generated outputs stay local; track only their placeholders.
+/experiments/*/data/*
+!/experiments/*/data/.gitkeep
+!/experiments/*/outputs/
+/experiments/*/outputs/*
+!/experiments/*/outputs/.gitkeep

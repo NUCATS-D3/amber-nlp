@@ -48,7 +48,9 @@ rules below whenever work touches ingestion, schemas, grounding, splitting, or e
 
 Amber uses a `src` layout. Production code is under `src/amber/`, tests are under `tests/`, and
 only synthetic fixtures belong in `examples/`. Seed prompt definitions live in `prompts/`, while
-thin operational utilities live in `scripts/`.
+shared operational utilities live in `scripts/`. Each dataset experiment lives under
+`experiments/<experiment>/`, containing its scripts, evaluation code, and ignored local `data/`
+and `outputs/`. Keep reusable behavior in `src/amber/`; core code must not import experiments.
 
 Keep dependencies pointing inward:
 
@@ -183,15 +185,17 @@ that adapter's dependency; the existing import test covers FastAPI only.
 
 ## CORAL Dataset
 
-The local documentation is
-`data/CORAL_ expert-Curated medical Oncology Reports to Advance Language model inference v1.0.pdf`.
+The local documentation is in `experiments/coral/data/`, named
+`CORAL_ expert-Curated medical Oncology Reports to Advance Language model inference v1.0.pdf`.
 The canonical dataset citation is CORAL v1.0, DOI `10.13026/v69y-xa45`. Consult the documentation
-and `data/coral/annotated/annotation.conf` before interpreting labels.
+and `experiments/coral/data/raw/annotated/annotation.conf` before interpreting labels.
 
-- `data/coral/annotated/` contains the expert-labeled gold set: 20 breast-cancer and 20 pancreatic-
-  cancer progress notes in BRAT `.txt`/`.ann` pairs, plus `subject-info.csv` and BRAT configuration.
-- `data/coral/unannotated/` contains 200 different notes and GPT-4-generated outputs. Those outputs
-  are pseudo-labels, not expert gold; never mix them into the held-out gold evaluation silently.
+- `experiments/coral/data/raw/annotated/` contains the expert-labeled gold set: 20 breast-cancer
+  and 20 pancreatic-cancer progress notes in BRAT `.txt`/`.ann` pairs, plus `subject-info.csv`
+  and BRAT configuration.
+- `experiments/coral/data/raw/unannotated/` contains 200 different notes and GPT-4-generated
+  outputs. Those outputs are pseudo-labels, not expert gold; never mix them into the held-out
+  gold evaluation silently.
 - Split at the `coral_idx`/patient or document level before deriving examples. Never split mentions,
   relations, chunks, or generated exports independently, because that leaks source text.
 - Treat each `.txt` file as immutable and authoritative. Read it without newline translation and
@@ -205,9 +209,10 @@ and `data/coral/annotated/annotation.conf` before interpreting labels.
   report mismatches rather than silently repairing offsets or text.
   The ingest script's `redacted` classification is a same-length mismatch heuristic, not proof
   that offsets are valid. Validate bounds separately before using any span as evidence.
-- Keep CORAL-specific parsing and mapping separate: `scripts/coral_ingest.py` audits the BRAT
-  records, while `scripts/coral_adapter.py` contains draft mapping decisions that depend on the M1
+- Keep CORAL-specific parsing and mapping separate: experiment script `coral_ingest.py` audits
+  the BRAT records, while `coral_adapter.py` contains draft mapping decisions that depend on the M1
   schemas. Move reusable code into `src/amber/` with synthetic tests as the adapter stabilizes.
+  Both scripts live in `experiments/coral/scripts/`.
   The adapter currently imports schema classes that do not exist, leaves IDs empty, lacks fragment
   grouping, and has an empty manual-fix table. Its docstrings are not acceptance criteria;
   validate and version its widening, modality, section, and relation policies before using it.
@@ -222,7 +227,8 @@ version with evaluation results.
 For a local aggregate audit without printing example spans, use:
 
 ```sh
-uv run python scripts/coral_ingest.py data/coral/annotated --show 0
+uv run python experiments/coral/scripts/coral_ingest.py \
+  experiments/coral/data/raw/annotated --show 0
 ```
 
 The default audit prints mismatch text. `--category` and `--dump-unparsed` can also expose raw
@@ -234,9 +240,11 @@ concatenated quote is not necessarily the source slice between its outer `start`
 ## Data Safety and Working-Tree Hygiene
 
 Never commit PHI, real clinical notes, credentials, `.env`, local databases, MLflow artifacts, or
-model weights. `examples/` is synthetic-only. `data/` is for ignored local datasets; keep only its
-placeholder under version control. CORAL access requires credentialing, the PhysioNet Credentialed
-Health Data License 1.5.0, its data-use agreement, and required training. Do not redistribute its
+model weights. `examples/` is synthetic-only. Experiment datasets and generated artifacts belong
+in ignored `experiments/<experiment>/data/` and `outputs/`; keep only their placeholders under
+version control. The root `data/` remains ignored for other local data. CORAL access requires
+credentialing, the PhysioNet Credentialed Health Data License 1.5.0, its data-use agreement, and
+required training. Do not redistribute its
 raw notes, annotations, demographics, or reconstructable derivatives. Treat source text, offsets,
 annotations, prompt versions, and provenance as coupled data: changes to one may require migrations
 or regenerated derived outputs.

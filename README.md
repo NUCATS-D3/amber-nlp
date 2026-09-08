@@ -26,6 +26,8 @@ src/amber/services/             use cases shared by every interface
 src/amber/cli/                  Click command groups
 src/amber/api/                  optional FastAPI application and versioned routes
 examples/synthetic_breast_pathology/   synthetic reports + labels (from Strata, Apache 2.0; see NOTICE)
+experiments/                     one folder per dataset experiment: scripts, eval, local data, outputs
+scripts/                         shared operational utilities
 prompts/                         seed prompts to register in the MLflow prompt registry
 tests/
 ```
@@ -66,6 +68,11 @@ The API is created with `amber.api.create_app`; its health endpoints are `/healt
 `import amber` remains lightweight.
 
 ## Where to begin
+
+Use [`experiments/`](experiments/README.md) for runs of Amber on particular datasets.
+[`experiments/coral/`](experiments/coral/README.md) contains the initial CORAL workspace,
+including its audit scripts, draft adapter, and places for evaluation code and ignored local
+data and outputs.
 
 `docs/04-roadmap.md` M1–M3: define one task and its acceptance criteria, implement the evidence
 kernel (`quote`, commit validation, and explicit outcomes), then compare a fixed extraction and

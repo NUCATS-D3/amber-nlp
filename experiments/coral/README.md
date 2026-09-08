@@ -1,0 +1,49 @@
+# CORAL experiment
+
+Initial workspace for running Amber on CORAL v1.0 (DOI `10.13026/v69y-xa45`). The annotation
+audit is runnable. The adapter is a draft that imports M1 schemas which do not exist yet;
+the extraction run and evaluation remain to be implemented under the
+[M1–M3 roadmap](../../docs/04-roadmap.md).
+
+```text
+coral/
+  scripts/coral_ingest.py    BRAT annotation audit
+  scripts/coral_adapter.py   draft CORAL-to-Amber mapping policies
+  eval/                     evaluation code and analysis
+  data/raw/annotated/        40 expert-labeled notes (local only)
+  data/raw/unannotated/      200 other notes and GPT-4 pseudo-labels (local only)
+  data/                     dataset documentation and derived inputs (local only)
+  outputs/                  audit exports, predictions, and evaluation reports (local only)
+```
+
+Place the credentialed dataset's `annotated/` and `unannotated/` directories under `data/raw/`.
+The existing local copy has moved here from the repository-level `data/coral/`. Keep the
+dataset documentation in `data/` as
+`CORAL_ expert-Curated medical Oncology Reports to Advance Language model inference v1.0.pdf`.
+Neither the dataset nor its documentation is distributed with this repository.
+
+CORAL is restricted, deidentified clinical data, declared as `Sensitivity.deidentified`.
+Preserve raw `.txt` and `.ann` files exactly, including newlines. Consult the dataset
+documentation and `data/raw/annotated/annotation.conf` before interpreting labels. Follow
+the repository's [CORAL rules](../../AGENTS.md#coral-dataset) for grounding, mapping policies,
+patient/document splits, and permitted destinations. Keep the expert gold set separate from
+the GPT-4 pseudo-labels.
+
+From the repository root, run an aggregate audit without printing example spans:
+
+```sh
+uv run python experiments/coral/scripts/coral_ingest.py \
+  experiments/coral/data/raw/annotated --show 0
+```
+
+The default audit prints mismatch text; `--category`, `--dump-unparsed`, and `--jsonl` can
+expose source-bearing data. Save exports under `experiments/coral/outputs/<run-id>/`, keep
+them out of shared logs and commits, and retain the dataset's access restrictions. Audit
+JSONL is not a validated Amber `Example`, and the `redacted` heuristic does not validate
+span bounds. The draft adapter's mapping policies require validation before gold derivation.
+
+Before extraction or scoring, define the clinical task, answer schema, annotation coverage,
+gold derivation, patient/document split, numeric acceptance criteria, and permitted provider
+and artifact destinations. Record the dataset manifest/hash and versioned adapter policy
+with results. Evaluation code belongs in `eval/`; local manifests and derived examples belong
+in `data/`, and generated reports belong in `outputs/`.
