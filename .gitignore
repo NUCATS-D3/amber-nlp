@@ -11,6 +11,7 @@ outputs/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+notebooks/**/__marimo__/
 .env
 *.db
 .DS_Store

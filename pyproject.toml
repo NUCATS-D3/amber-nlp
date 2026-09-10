@@ -27,6 +27,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Interactive notebooks and their model client.
+notebooks = [
+    "marimo>=0.24.0",
+    "openai>=1.50",
+]
 # Agent runtime. Model-agnostic; talks to any OpenAI-compatible endpoint.
 agents = [
     "pydantic-ai>=1.0",
