@@ -164,6 +164,12 @@ commands and run `git diff --check`; do not add tests just to exercise unchanged
 Follow the local MLflow server command in `README.md` or use `bash scripts/mlflow_local.sh` when a
 task genuinely needs MLflow integration; the script keeps its database and artifacts in `.mlflow/`.
 
+## Notebooks
+
+Notebooks in this repository are marimo notebooks: pure Python programs represented as reactive
+DAGs. Variable names must be unique across cells; prefix cell-local values with an underscore.
+All notebook edits must pass `uvx marimo check` before the turn ends.
+
 ## Coding and Testing Conventions
 
 Use four-space indentation, a 100-character line limit, `snake_case` for modules/functions/data,
