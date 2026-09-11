@@ -3,7 +3,7 @@
     {
       "id": "git",
       "title": "Git",
-      "command": "lazygit",
+      "command": "if command -v lazygit >/dev/null 2>&1; then exec lazygit; else git status --short --branch; fi",
       "height": 300
     },
     {
@@ -18,6 +18,13 @@
       "height": 220
     },
     {
+      "id": "notebooks",
+      "title": "Marimo Notebooks",
+      "command": "export PATH=\"/Applications/cmux.app/Contents/Resources/bin:$HOME/.homebrew/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"; (for attempt in {1..120}; do curl -fs http://127.0.0.1:2718 >/dev/null && { cmux browser open http://127.0.0.1:2718 --window \"$CMUX_WORKSPACE_ID\" --focus true; exit; }; sleep 0.25; done) & exec uv run marimo edit --headless --no-token --host 127.0.0.1 --port 2718",
+      "cwd": "notebooks",
+      "height": 220
+    },
+    {
       "id": "tests",
       "title": "Tests",
       "command": "PATH=\"$HOME/.homebrew/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" uv run --extra dev --extra app pytest -q",
@@ -26,7 +33,7 @@
     {
       "id": "quality",
       "title": "Quality",
-      "command": "PATH=\"$HOME/.homebrew/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" uv run --extra dev ruff check . && PATH=\"$HOME/.homebrew/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" uv run --extra dev ruff format --check . && PATH=\"$HOME/.homebrew/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" uv run --extra dev mypy src && PATH=\"$HOME/.homebrew/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" uv run marimo check notebooks/scratch.py",
+      "command": "export PATH=\"$HOME/.homebrew/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"; uv run --extra dev ruff check . && uv run --extra dev ruff format --check . && uv run --extra dev mypy src && uv run marimo check notebooks/scratch.py",
       "height": 220
     }
   ]
