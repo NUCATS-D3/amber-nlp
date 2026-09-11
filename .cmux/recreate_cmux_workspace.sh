@@ -41,18 +41,18 @@ workspace_ref="$(
 )"
 
 cmux workspace-group rename "${group_ref}" --name "${group_name}"
+cmux workspace rename "${workspace_ref}" --title "${group_name}"
 cmux workspace-group set-color "${group_ref}" --hex '#FFBF00'
 cmux workspace-group set-icon "${group_ref}" --symbol 'hexagon.fill'
 cmux workspace-group unpin "${group_ref}"
 cmux workspace-group expand "${group_ref}"
 
-# The anchor starts with one terminal. Launch Codex there, then create the
-# matching idle terminal as an equally sized split on its right.
+# The anchor starts with one terminal. Launch Codex there, then add the idle
+# shell as a background tab in the same pane.
 cmux send --workspace "${workspace_ref}" "${codex_command}"
 cmux send-key --workspace "${workspace_ref}" Enter
-cmux new-pane \
+cmux new-surface \
     --type terminal \
-    --direction right \
     --workspace "${workspace_ref}" \
     --focus false >/dev/null
 
