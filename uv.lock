@@ -245,6 +245,7 @@ train = [
 [package.dev-dependencies]
 dev = [
     { name = "httpx" },
+    { name = "marimo" },
     { name = "pytest" },
 ]
 
@@ -310,6 +311,7 @@ provides-extras = ["notebooks", "agents", "nlp", "langextract", "train", "mlx", 
 [package.metadata.requires-dev]
 dev = [
     { name = "httpx", specifier = ">=0.27" },
+    { name = "marimo", specifier = ">=0.24.0" },
     { name = "pytest", specifier = ">=9.1.1" },
 ]
 

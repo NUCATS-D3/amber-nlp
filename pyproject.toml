@@ -131,5 +131,6 @@ markers = ["slow: tests that load a model", "gpu: tests that need CUDA", "mlx: t
 [dependency-groups]
 dev = [
     "httpx>=0.27",
+    "marimo>=0.24.0",
     "pytest>=9.1.1",
 ]
