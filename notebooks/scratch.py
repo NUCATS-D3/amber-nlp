@@ -13,8 +13,8 @@ def summarize_agents():
 
     # _data_sensitivity = _os.environ["AMBER_DATA_SENSITIVITY"]
     # _provider_zone = _os.environ["AMBER_PROVIDER_ZONE"]
-    _data_sensitivity = 'synthetic'
-    _provider_zone = 'local'
+    _data_sensitivity = "synthetic"
+    _provider_zone = "local"
 
     _allowed_zones = {
         "phi": {"local", "institution"},

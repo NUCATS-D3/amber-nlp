@@ -1,0 +1,33 @@
+{
+  "controls": [
+    {
+      "id": "git",
+      "title": "Git",
+      "command": "lazygit",
+      "height": 300
+    },
+    {
+      "id": "gstat",
+      "title": "Git Status",
+      "command": "git status"
+    },
+    {
+      "id": "api",
+      "title": "Amber API",
+      "command": "PATH=\"$HOME/.homebrew/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" uv run --extra app amber api serve",
+      "height": 220
+    },
+    {
+      "id": "tests",
+      "title": "Tests",
+      "command": "PATH=\"$HOME/.homebrew/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" uv run --extra dev --extra app pytest -q",
+      "height": 220
+    },
+    {
+      "id": "quality",
+      "title": "Quality",
+      "command": "PATH=\"$HOME/.homebrew/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" uv run --extra dev ruff check . && PATH=\"$HOME/.homebrew/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" uv run --extra dev ruff format --check . && PATH=\"$HOME/.homebrew/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" uv run --extra dev mypy src && PATH=\"$HOME/.homebrew/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" uv run marimo check notebooks/scratch.py",
+      "height": 220
+    }
+  ]
+}
