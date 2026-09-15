@@ -26,6 +26,10 @@ demonstrated.
 
 ### Implemented
 
+- [Current progression protocol v1.0.0](protocols/oncology_current_progression-v1.md): the
+  note-level question, evidence and outcome rules, independent adjudication, fixed split policy,
+  and prospective pilot gates. This is a research protocol document, not a clinical validation
+  result, generated split manifest, or adjudicated gold dataset.
 - Python facade: `Amber` and `create_client` in [client.py](../src/amber/client.py), environment
   [settings](../src/amber/config.py), and [SystemInfo](../src/amber/services/system.py).
 - CLI: [amber info](../src/amber/cli/main.py), including `--json`, and
@@ -58,9 +62,9 @@ demonstrated.
 ### Planned or incomplete
 
 - The [current-progression implementation plan](superpowers/plans/2026-09-15-m1-current-progression-task-protocol.md)
-  describes the next protocol-first slice. Its strict answer schema, versioned clinical protocol,
-  CORAL candidates, and split/manifest tooling are not implemented. The plan is not a released
-  protocol or an adjudicated gold dataset.
+  continues with the strict answer schema, CORAL candidates, and split/manifest tooling; these
+  remain unimplemented. The protocol document is complete, but its clinical gates remain
+  unevaluated and its independent human review has not been performed by this implementation.
 - Mentions, claims, structured/inference evidence, graph validation, field-level evidence policies,
   `commit_claim`, `CaseOutcome`, `Example`, and provider/destination policy enforcement remain
   unimplemented. Having sensitivity/zone enums does not implement the policy gate.

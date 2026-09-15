@@ -25,14 +25,17 @@ additional NLP stages, and backend breadth require measured benefit before adopt
 Before model or prompt selection, version a task protocol describing the answer schema, explicit
 negative answers, abstention rules, annotation coverage, intended workflow, and gold derivation.
 Set numeric acceptance thresholds for correctness, unsupported claims, omissions, automation
-coverage, expert minutes per accepted case, and cost. Values depend on the task and are open
-decisions; no clinical acceptance threshold has been established yet.
+coverage, expert minutes per accepted case, and cost. The first task is now defined in the
+[current progression protocol v1.0.0](protocols/oncology_current_progression-v1.md), including
+task-specific pilot gates. These are prospective research targets; none has been clinically
+demonstrated, and the task schema, candidate tooling, and clinical evaluation remain subsequent work.
 
 CORAL v1.0 (DOI `10.13026/v69y-xa45`) is the first clinical evaluation dataset. Its 40 expert-labeled
 notes support a pilot, not a broad generalization claim. Consult its documentation and BRAT
 configuration before selecting labels; confirm that the selected annotations support the chosen
-note-level answers. Any additional expert adjudication counts toward annotation effort. Keep the
-200 other notes and their GPT-4 pseudo-labels separate from expert gold.
+note-level answers. Any additional expert adjudication counts toward annotation effort. The 200
+other notes and their GPT-4 pseudo-labels are categorically excluded from the current-progression
+slice, including all train, development, and test partitions.
 
 Split by patient/document before deriving examples. Freeze the adapter policies and split manifest
 before held-out evaluation; resample patients/documents for uncertainty estimates. Synthetic
@@ -259,8 +262,10 @@ the first experiment; keep source text and evidence round-trippable through the 
 
 ## Open questions (remaining)
 
-1. Which clinical task and downstream workflow to pilot, and whether CORAL's annotation coverage supplies its gold answers without additional labeling.
-2. Which quality, unsupported-claim, omission, automation-coverage, expert-time, and cost thresholds define success for that task.
+1. How much additional independent review and adjudication CORAL needs to establish gold answers
+   under the current progression protocol; candidate annotations alone do not supply task gold.
+2. Whether the first task can meet its protocol's quality, coverage, cost, and expert-effort gates
+   in the small pilot; all gates remain unevaluated until the M2/M3 measurements exist.
 3. Which permitted provider and tracking/artifact destinations are available under the dataset's terms.
 4. Whether measured errors justify an agent, reviewer, targeted NLP/normalization, or additional training after the fixed baseline.
 5. Later: which EDW tables and deployment/storage requirements justify expanding the first implementation.

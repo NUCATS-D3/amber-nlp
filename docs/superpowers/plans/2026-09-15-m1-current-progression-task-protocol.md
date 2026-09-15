@@ -27,6 +27,11 @@ globally, enforce manifest immutability, and state CORAL's selection on document
 The follow-up review clarifies not-mentioned outcomes and freezes metric denominators,
 point-estimate gates, uncertainty reporting, and inconclusive-result handling.
 
+**Progress (2026-09-15):** Task 1 is complete: the
+[versioned protocol](../../protocols/oncology_current_progression-v1.md) is documented and reviewed.
+Tasks 2–6 remain unimplemented. No split manifest, adjudicated task gold, or clinical gate result
+has been produced by this documentation checkpoint.
+
 ## Global Constraints
 
 - This is an M1 protocol/schema/tooling slice only. Do not add extraction models, model calls,
@@ -138,7 +143,7 @@ pretend it can recognize every historical statement from BRAT polarity alone.
 - Produces: the authoritative human-readable protocol named by
   `ONCOLOGY_CURRENT_PROGRESSION_PROTOCOL_VERSION = "1.0.0"` in Task 2.
 
-- [ ] **Step 1: Create the protocol document with frozen identity and scope**
+- [x] **Step 1: Create the protocol document with frozen identity and scope**
 
 Start the document with this exact metadata table:
 
@@ -164,7 +169,7 @@ patient's cancer?” Define “current” as the clinical state asserted at the 
 not every historical event mentioned in the note. State that skipped text is outside annotation
 scope but any candidate overlapping it is escalated rather than silently discarded.
 
-- [ ] **Step 2: Write the answer and outcome decision table**
+- [x] **Step 2: Write the answer and outcome decision table**
 
 Include all of these rows and requirements:
 
@@ -188,7 +193,7 @@ finding no relevant evidence is `not_mentioned`; historical recurrence alone is
 Incomplete review is insufficient even if no relevant evidence has been found so far. The absence
 of an answerable current fact must never be used as the definition of not mentioned.
 
-- [ ] **Step 3: Document the CORAL candidate mapping and its limits**
+- [x] **Step 3: Document the CORAL candidate mapping and its limits**
 
 Read the local CORAL documentation and `annotation.conf` before freezing the mapping. The declared
 entity is `DiseaseState`; `DiseaseProgression`, `Remission`, and `Hospice` occur in configuration
@@ -220,7 +225,7 @@ State in a highlighted warning:
 > Claims or Examples. Gold requires independent human review and adjudication under this protocol.
 ```
 
-- [ ] **Step 4: Document gold creation and leakage controls**
+- [x] **Step 4: Document gold creation and leakage controls**
 
 Require two qualified reviewers to independently assign answer/outcome and exact evidence. Send
 any answer, outcome, or material evidence-span disagreement to a third oncology reviewer. Preserve
@@ -237,7 +242,7 @@ policy or annotation changes do not authorize repartitioning. The initial toolin
 inputs against an existing manifest; a future explicit revision must retain assignments for known
 patients and preserve the prior artifact and test-exposure history.
 
-- [ ] **Step 5: Document pilot gates, reporting, and limitations**
+- [x] **Step 5: Document pilot gates, reporting, and limitations**
 
 Record these gates verbatim:
 
@@ -362,7 +367,7 @@ The 40-note pilot cannot establish prevalence, clinical validation, deployment s
 generalization. Require reporting dataset version, manifest hash, split, protocol and adapter
 versions, sample counts, exclusions, and expert effort.
 
-- [ ] **Step 6: Validate and commit the protocol**
+- [x] **Step 6: Validate and commit the protocol**
 
 Run:
 
