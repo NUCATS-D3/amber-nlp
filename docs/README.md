@@ -30,6 +30,11 @@ demonstrated.
   note-level question, evidence and outcome rules, independent adjudication, fixed split policy,
   and prospective pilot gates. This is a research protocol document, not a clinical validation
   result, generated split manifest, or adjudicated gold dataset.
+- Frozen, extra-forbidden [AnswerModel](../src/amber/schemas/answers.py) and
+  [OncologyCurrentProgressionAnswer](../src/amber/schemas/oncology_current_progression.py), with a
+  required strict boolean and exported task/version/scope/evidence-policy constants.
+  [Schema tests](../tests/test_answer_schemas.py) cover validation and serialization. The constants
+  declare field-level evidence requirements; they do not implement evidence-policy enforcement.
 - Python facade: `Amber` and `create_client` in [client.py](../src/amber/client.py), environment
   [settings](../src/amber/config.py), and [SystemInfo](../src/amber/services/system.py).
 - CLI: [amber info](../src/amber/cli/main.py), including `--json`, and
@@ -62,8 +67,8 @@ demonstrated.
 ### Planned or incomplete
 
 - The [current-progression implementation plan](superpowers/plans/2026-09-15-m1-current-progression-task-protocol.md)
-  continues with the strict answer schema, CORAL candidates, and split/manifest tooling; these
-  remain unimplemented. The protocol document is complete, but its clinical gates remain
+  continues with parser diagnostics, CORAL candidates, and split/manifest tooling; these remain
+  unimplemented. The protocol and answer value schema are complete, but the clinical gates remain
   unevaluated and its independent human review has not been performed by this implementation.
 - Mentions, claims, structured/inference evidence, graph validation, field-level evidence policies,
   `commit_claim`, `CaseOutcome`, `Example`, and provider/destination policy enforcement remain

@@ -27,10 +27,11 @@ globally, enforce manifest immutability, and state CORAL's selection on document
 The follow-up review clarifies not-mentioned outcomes and freezes metric denominators,
 point-estimate gates, uncertainty reporting, and inconclusive-result handling.
 
-**Progress (2026-09-15):** Task 1 is complete: the
-[versioned protocol](../../protocols/oncology_current_progression-v1.md) is documented and reviewed.
-Tasks 2–6 remain unimplemented. No split manifest, adjudicated task gold, or clinical gate result
-has been produced by this documentation checkpoint.
+**Progress (2026-09-15):** Tasks 1–2 are complete: the
+[versioned protocol](../../protocols/oncology_current_progression-v1.md) is documented and reviewed,
+and the strict public answer schema is implemented and tested. Tasks 3–6 remain unimplemented.
+No split manifest, adjudicated task gold, or clinical gate result has been produced by these
+checkpoints. Answer validation does not enforce evidence requirements.
 
 ## Global Constraints
 
@@ -403,7 +404,7 @@ do not add an evaluator or executable clinical acceptance tests in this M1 slice
   `ONCOLOGY_CURRENT_PROGRESSION_TASK`, `ONCOLOGY_CURRENT_PROGRESSION_PROTOCOL_VERSION`,
   `ONCOLOGY_CURRENT_PROGRESSION_SCOPE`, and `ONCOLOGY_CURRENT_PROGRESSION_EVIDENCE_POLICY`.
 
-- [ ] **Step 1: Write failing schema tests**
+- [x] **Step 1: Write failing schema tests**
 
 Create `tests/test_answer_schemas.py` with these cases:
 
@@ -447,7 +448,7 @@ def test_current_progression_task_metadata_is_frozen_in_code() -> None:
     assert ONCOLOGY_CURRENT_PROGRESSION_EVIDENCE_POLICY == "field"
 ```
 
-- [ ] **Step 2: Run the tests to verify the public API is absent**
+- [x] **Step 2: Run the tests to verify the public API is absent**
 
 Run:
 
@@ -457,7 +458,7 @@ uv run pytest tests/test_answer_schemas.py -q
 
 Expected: collection fails because the new exports do not exist.
 
-- [ ] **Step 3: Implement the minimal answer models and constants**
+- [x] **Step 3: Implement the minimal answer models and constants**
 
 Create `src/amber/schemas/answers.py`:
 
@@ -497,7 +498,7 @@ class OncologyCurrentProgressionAnswer(AnswerModel):
 Re-export all six names from `src/amber/schemas/__init__.py` and add them to `__all__`. Do not add
 a `Task` model, registry, lookup dictionary, prompt, or import from an interface package.
 
-- [ ] **Step 4: Run focused tests and static checks**
+- [x] **Step 4: Run focused tests and static checks**
 
 Run:
 
@@ -509,7 +510,7 @@ uv run mypy src/amber/schemas
 
 Expected: all commands pass.
 
-- [ ] **Step 5: Commit the public schema**
+- [x] **Step 5: Commit the public schema**
 
 ```bash
 git add src/amber/schemas/answers.py \

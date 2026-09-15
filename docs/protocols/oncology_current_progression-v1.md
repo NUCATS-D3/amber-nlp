@@ -13,10 +13,10 @@
 | Split | 20 train / 10 dev / 10 test documents, seed `20260915` |
 | Intended use | Retrospective research workflow only |
 
-Status: versioned M1 research protocol. The schema, manifest tooling, clinical extraction,
-evaluation, and correction workflow are not implemented by this document. All performance gates
-are unevaluated. This protocol is not clinical validation, expert endorsement, a gold-generation
-result, or evidence of deployment safety.
+Status: versioned M1 research protocol with an implemented answer value schema. Manifest tooling,
+clinical extraction, evaluation, and the correction workflow remain unimplemented. All performance
+gates are unevaluated. This protocol is not clinical validation, expert endorsement, a
+gold-generation result, or evidence of deployment safety.
 
 ## Question and review scope
 
@@ -33,8 +33,8 @@ than silently discarded. Malformed data or an unresolved skip boundary can preve
 The answer has one required strict boolean field, `progression_or_recurrence`. It has no null,
 default, or extra answer fields. It records a supported current clinical state, not whether
 progression or recurrence appears anywhere in the note and not whether the patient has ever
-experienced it. `OncologyCurrentProgressionAnswer` is the planned schema; it is not implemented by
-this documentation checkpoint.
+experienced it. The [OncologyCurrentProgressionAnswer schema](../../src/amber/schemas/oncology_current_progression.py)
+validates answer shape only; it does not establish source grounding or semantic support.
 
 ## Decisions and outcomes
 
