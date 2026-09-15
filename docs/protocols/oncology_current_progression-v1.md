@@ -14,8 +14,9 @@
 | Intended use | Retrospective research workflow only |
 
 Status: versioned M1 research protocol with implemented answer-schema, candidate, and manifest
-tooling. The restricted-data manifest freeze, clinical extraction, evaluation, and correction
-workflow remain subsequent work. All performance gates are unevaluated. This protocol is not
+tooling. The restricted-data split is frozen locally, with input hashes and unchanged-byte/mtime
+reuse verified. Clinical extraction, evaluation, and correction remain subsequent work.
+All performance gates are unevaluated. This protocol is not
 clinical validation, expert endorsement, a gold-generation result, or evidence of deployment safety.
 
 ## Question and review scope

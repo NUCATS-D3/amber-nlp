@@ -46,9 +46,11 @@ SPLIT_POLICY_VERSION = "current-progression-split-1.0.0"
 SPLIT_SEED = 20260915
 _O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 _O_DIRECTORY = getattr(os, "O_DIRECTORY", 0)
+_O_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
 _SAFE_DIRECTORY_OPERATIONS = bool(
     _O_NOFOLLOW
     and _O_DIRECTORY
+    and _O_NONBLOCK
     and all(
         function in os.supports_dir_fd
         for function in (os.open, os.mkdir, os.stat, os.unlink, os.link)
@@ -569,7 +571,7 @@ def _read_existing(
     try:
         descriptor = os.open(
             filename,
-            os.O_RDONLY | _O_NOFOLLOW,
+            os.O_RDONLY | _O_NOFOLLOW | _O_NONBLOCK,
             dir_fd=directory_fd,
         )
         metadata = os.fstat(descriptor)
@@ -612,8 +614,9 @@ def _open_project_root(path: Path) -> int:
 def _open_or_create_parent(root_fd: int, parts: tuple[str, ...]) -> int:
     if not _SAFE_DIRECTORY_OPERATIONS:
         raise ManifestWriteError("directory-safe operations are unavailable")
-    current_fd = os.dup(root_fd)
+    current_fd: int | None = None
     try:
+        current_fd = os.dup(root_fd)
         for part in parts:
             with suppress(FileExistsError):
                 os.mkdir(part, mode=0o700, dir_fd=current_fd)
@@ -622,12 +625,18 @@ def _open_or_create_parent(root_fd: int, parts: tuple[str, ...]) -> int:
                 os.O_RDONLY | _O_NOFOLLOW | _O_DIRECTORY,
                 dir_fd=current_fd,
             )
-            os.close(current_fd)
+            previous_fd = current_fd
             current_fd = next_fd
-        return current_fd
+            os.close(previous_fd)
+        result = current_fd
+        current_fd = None
+        return result
     except OSError as exc:
-        os.close(current_fd)
         raise ManifestWriteError("manifest directory could not be anchored") from exc
+    finally:
+        if current_fd is not None:
+            with suppress(OSError):
+                os.close(current_fd)
 
 
 def _destination_exists(directory_fd: int, filename: str) -> bool:

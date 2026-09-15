@@ -29,8 +29,9 @@ coverage, expert minutes per accepted case, and cost. The first task is now defi
 [current progression protocol v1.0.0](protocols/oncology_current_progression-v1.md), including
 task-specific pilot gates. These are prospective research targets; none has been clinically
 demonstrated. The strict answer value schema, non-authoritative CORAL candidate rules, and
-deterministic split/manifest tooling are implemented. The restricted-data manifest freeze,
-evidence-policy enforcement, and clinical evaluation remain subsequent work.
+deterministic split/manifest tooling are implemented. The restricted-data split is frozen locally,
+with input hashes and an unchanged-byte/mtime rerun verified. Evidence-policy enforcement and
+clinical evaluation remain subsequent work.
 
 CORAL v1.0 (DOI `10.13026/v69y-xa45`) is the first clinical evaluation dataset. Its 40 expert-labeled
 notes support a pilot, not a broad generalization claim. Consult its documentation and BRAT

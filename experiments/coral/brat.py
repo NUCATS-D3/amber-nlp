@@ -194,7 +194,10 @@ def parse_ann(path: Path, text: str) -> Document:
                     or not re.fullmatch(r"\d+ \d+(?:;\d+ \d+)*", offsets)
                 ):
                     raise ValueError
-                spans = [tuple(map(int, fragment.split(" "))) for fragment in offsets.split(";")]
+                spans: list[tuple[int, int]] = []
+                for fragment in offsets.split(";"):
+                    start_text, end_text = fragment.split(" ")
+                    spans.append((int(start_text), int(end_text)))
                 quote = parts[2]
                 text_quote = "".join(text[lo:hi] for lo, hi in spans)
 
@@ -291,8 +294,8 @@ def parse_ann(path: Path, text: str) -> Document:
         else:
             seen_attributes[key] = {attribute.value}
 
-    for record_id, lineno, targets in references:
-        if targets - known_ids:
+    for record_id, lineno, reference_targets in references:
+        if reference_targets - known_ids:
             doc.diagnostics.append(ParseDiagnostic("dangling_reference", record_id, lineno))
 
     doc.unparsed.sort(key=lambda item: item[0])

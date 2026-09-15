@@ -6,6 +6,7 @@ import hashlib
 import itertools
 import json
 import os
+import stat
 import subprocess
 import sys
 from collections import Counter
@@ -791,3 +792,61 @@ def test_interrupted_publication_leaves_no_partial_destination(
     assert "restricted write detail" not in result.output
     assert not output.exists()
     assert not list(output.parent.glob(f".{output.name}.*.tmp"))
+
+
+def test_descriptor_exhaustion_is_a_safe_write_failure_without_mutation(
+    invented_tree: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, annotated, output = invented_tree
+    raw_before = _raw_hashes(annotated)
+
+    def exhaust_descriptors(descriptor: int) -> int:
+        raise OSError("invented sensitive descriptor detail")
+
+    monkeypatch.setattr(manifest_module.os, "dup", exhaust_descriptors)
+
+    result = _invoke(annotated, output)
+
+    assert result.exit_code != 0
+    assert "manifest write failed" in result.output
+    assert "sensitive descriptor detail" not in result.output
+    assert not output.exists()
+    assert _raw_hashes(annotated) == raw_before
+
+
+def test_existing_fifo_destination_is_rejected_without_blocking(
+    invented_tree: tuple[Path, Path, Path],
+) -> None:
+    project_root, annotated, _ = invented_tree
+    output = project_root / "experiments" / "coral" / "outputs" / "manifest.json"
+    output.parent.mkdir(parents=True)
+    os.mkfifo(output)
+    raw_before = _raw_hashes(annotated)
+    code = (
+        "import pathlib; "
+        "from experiments.coral.scripts import coral_current_progression_manifest as module; "
+        "module.PROJECT_ROOT = pathlib.Path(__import__('sys').argv[1]); "
+        "module.main(args=[__import__('sys').argv[2], '--output', __import__('sys').argv[3]])"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", code, str(project_root), str(annotated), str(output)],
+        cwd=Path(__file__).resolve().parents[1],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=3)
+    except subprocess.TimeoutExpired:
+        process.terminate()
+        try:
+            process.communicate(timeout=1)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate()
+        pytest.fail("manifest command blocked while opening an existing FIFO")
+
+    assert process.returncode != 0
+    assert "immutable manifest conflict" in stdout + stderr
+    assert stat.S_ISFIFO(output.stat().st_mode)
+    assert _raw_hashes(annotated) == raw_before

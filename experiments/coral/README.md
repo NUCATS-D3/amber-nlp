@@ -3,8 +3,7 @@
 Initial workspace for running Amber on CORAL v1.0 (DOI `10.13026/v69y-xa45`). The annotation
 audit, pure current-progression candidate rules, and split/manifest tooling are implemented.
 The domain adapter remains a draft with missing M1 schema dependencies; extraction and evaluation
-remain to be implemented under the
-[M1–M3 roadmap](../../docs/04-roadmap.md).
+remain to be implemented under the [M1–M3 roadmap](../../docs/04-roadmap.md).
 
 ```text
 coral/
@@ -75,6 +74,11 @@ validation before gold derivation.
 
 ## Current-progression candidates
 
+The public [OncologyCurrentProgressionAnswer](../../src/amber/schemas/oncology_current_progression.py)
+requires the strict boolean `progression_or_recurrence`. It is frozen and forbids extra fields.
+Task metadata declares note scope and field-level evidence requirements; value validation does
+not establish evidence support or implement the rest of the domain adapter.
+
 The [candidate module](scripts/coral_current_progression.py) implements the conservative mapping
 in [protocol v1.0.0](../../docs/protocols/oncology_current_progression-v1.md). Pass an existing parsed
 `Document` to `derive_current_progression_candidate`; it returns a frozen candidate with sorted
@@ -117,11 +121,77 @@ versions, or membership fail. First publication is atomic and never replaces a c
 The selected manifest is the freeze authority. Choosing a new filename does not authorize
 repartitioning exposed patients. A successor needs an explicit future migration retaining known
 assignments and linking the original artifact; no migration or overwrite mode is implemented.
-Synthetic tests cover the tooling; the real CORAL manifest freeze and complete operator workflow
-remain the next implementation checkpoint.
 
-Before extraction or scoring, define the clinical task, answer schema, annotation coverage,
-gold derivation, patient/document split, numeric acceptance criteria, and permitted provider
-and artifact destinations. Record the dataset manifest/hash and versioned adapter policy
-with results. Evaluation code belongs in `eval/`; local manifests and derived examples belong
-in `data/`, and generated reports belong in `outputs/`.
+## Local preparation workflow
+
+Run these commands from the repository root after obtaining authorized access to CORAL v1.0.
+The manifest command reads only the 40 expert-labeled notes under `data/raw/annotated/`, with
+`subject-info.csv` and `annotation.conf`. The 200 other notes and their GPT-4 pseudo-labels are
+excluded from every partition in this slice. Inputs are declared `deidentified`, never public or
+synthetic. Neither command performs a model call or contacts a tracking service.
+
+1. Run the synthetic schema and CORAL tests. These do not need dataset access:
+
+   ```sh
+   uv run pytest tests/test_answer_schemas.py \
+     tests/test_coral_brat.py tests/test_coral_audit.py \
+     tests/test_coral_current_progression.py \
+     tests/test_coral_current_progression_manifest.py -q
+   ```
+
+   Use the [test guide](../../tests/README.md) for full-suite dependencies and checks.
+
+2. Audit the immutable annotated inputs without example spans:
+
+   ```sh
+   uv run python experiments/coral/scripts/coral_ingest.py \
+     experiments/coral/data/raw/annotated --show 0
+   ```
+
+   Retain parser diagnostics. An incomplete inventory cannot seed an answer; it contributes an
+   insufficient-evidence candidate to the other stratum. Do not repair raw files or weaken the
+   adapter merely to obtain expected counts.
+
+3. Create the selected local freeze artifact, or verify it if it already exists:
+
+   ```sh
+   uv run python experiments/coral/scripts/coral_current_progression_manifest.py \
+     experiments/coral/data/raw/annotated \
+     --output experiments/coral/data/manifests/oncology-current-progression-v1.json
+   ```
+
+   This command incorporates candidate derivation; there is no separate candidate CLI. Success
+   reports the output path, canonical manifest hash, 40 documents, 20/10/10 split counts, and
+   aggregate candidate/diagnostic counts. It never prints source text, quotes, offsets, or
+   individual annotations. The manifest records 10/5/5 per cancer, input byte hashes, dataset and
+   protocol versions, adapter `current-progression-candidate-1.0.0`, and split policy
+   `current-progression-split-1.0.0`.
+
+   Run the exact same command again to verify the existing artifact. An identical rerun leaves
+   its bytes and modification time unchanged. Input, candidate, version, quota, or membership
+   differences fail without replacement. Stop on a conflict; a new filename, deletion, or manual
+   editing is not an authorized resplit. Unsupported safe filesystem operations fail closed.
+
+4. Confirm the artifact remains ignored and absent from the staged changes:
+
+   ```sh
+   git check-ignore -v \
+     experiments/coral/data/manifests/oncology-current-progression-v1.json
+   git status --short
+   ```
+
+   Do not add the manifest with `git add -f`, paste its contents into shared logs, or commit
+   document-level metadata. Record only aggregate check results in shared handoffs; retain the
+   selected manifest and its hash in permitted local research records.
+
+The first successful artifact freezes membership, not clinical labels. Gold still requires two
+qualified reviewers independently assigning answers/outcomes and exact source-backed evidence,
+with unresolved disagreements going to a third oncology reviewer under the
+[protocol](../../docs/protocols/oncology_current_progression-v1.md). That human workflow and its
+adjudication records are not implemented here. Do not expose test cases to training or use their
+corrections as demonstrations within the evaluated workflow.
+
+Before extraction or scoring, complete task adjudication and confirm permitted provider and
+artifact destinations. Clinical extraction, APIs, persistence, model evaluation, automatic gold
+creation, and acceptance-gate measurements remain outside this preparation slice. Its completion
+does not establish clinical validity, prevalence, or completion of M1's evidence kernel.

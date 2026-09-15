@@ -27,13 +27,14 @@ globally, enforce manifest immutability, and state CORAL's selection on document
 The follow-up review clarifies not-mentioned outcomes and freezes metric denominators,
 point-estimate gates, uncertainty reporting, and inconclusive-result handling.
 
-**Progress (2026-09-15):** Tasks 1–5 are complete: the
+**Progress (2026-09-15):** Tasks 1–6 are complete: the
 [versioned protocol](../../protocols/oncology_current_progression-v1.md) is documented and reviewed,
 and the strict public answer schema, CORAL parser diagnostics, non-authoritative candidate
-rules, and immutable split/manifest tooling are implemented and tested. Task 6's operator workflow
-and restricted-data integration/freeze checks remain outstanding.
-No split manifest, adjudicated task gold, or clinical gate result has been produced by these
-checkpoints. Answer validation does not enforce evidence requirements.
+rules, and immutable split/manifest tooling are implemented and tested. The operator workflow is
+documented, and the selected restricted local manifest is frozen with verified input hashes,
+document/patient membership, exact split margins, and unchanged bytes/mtime on an identical rerun.
+No adjudicated task gold or clinical gate result has been produced. Answer validation does not
+enforce evidence requirements, and M1's remaining evidence-kernel work is not complete.
 
 ## Global Constraints
 
@@ -1075,6 +1076,18 @@ Do not add the generated manifest.
 **Files:**
 
 - Modify: `experiments/coral/README.md`
+- Reconcile status: `docs/00-goals-and-architecture.md`, `docs/README.md`,
+  `docs/protocols/oncology_current_progression-v1.md`, and this plan.
+- Narrow verification fixes: `experiments/coral/brat.py`,
+  `experiments/coral/scripts/coral_current_progression_manifest.py`, and
+  `tests/test_coral_current_progression_manifest.py`.
+
+Final-verification cleanup also resolves the two deferred review items: guard descriptor
+duplication failure in the manifest write path with a synthetic regression, and correct parser
+tuple/reference-variable typing without changing its interpretation of BRAT. Final review also
+identified blocking reads of existing FIFO destinations; nonblocking open plus the regular-file
+check and a bounded synthetic regression resolve that failure. These narrow fixes do not change
+protocol, candidate, or split policy versions.
 
 **Interfaces:**
 
@@ -1082,7 +1095,7 @@ Do not add the generated manifest.
   Tasks 1–5.
 - Produces: a safe operator workflow and verification record; no dataset-derived tracked artifact.
 
-- [ ] **Step 1: Update the CORAL experiment README**
+- [x] **Step 1: Update the CORAL experiment README**
 
 Describe the new answer schema and task-specific candidate/manifest commands, linking the protocol.
 Retain the warning that the broader `coral_adapter.py` still depends on unfinished domain schemas;
@@ -1100,7 +1113,7 @@ these task-specific commands do not complete that adapter. Explain that:
   and
 - extraction, APIs, persistence, model evaluation, and automatic gold creation remain out of scope.
 
-- [ ] **Step 2: Run focused schema and CORAL tests**
+- [x] **Step 2: Run focused schema and CORAL tests**
 
 ```bash
 uv run pytest tests/test_answer_schemas.py \
@@ -1111,7 +1124,7 @@ uv run pytest tests/test_answer_schemas.py \
 
 Expected: all tests pass using invented data only.
 
-- [ ] **Step 3: Run the full offline quality suite**
+- [x] **Step 3: Run the full offline quality suite**
 
 ```bash
 uv run pytest
@@ -1124,7 +1137,7 @@ git diff --check
 Expected: every command exits zero. If formatting changes are required, format only the changed
 Python paths and rerun the complete list.
 
-- [ ] **Step 4: Run the restricted aggregate CORAL integration checks**
+- [x] **Step 4: Run the restricted aggregate CORAL integration checks**
 
 First run the existing no-span audit exactly as follows:
 
@@ -1149,7 +1162,7 @@ never weaken validation to produce the expected counts. Record only aggregate co
 status in the handoff. Do not paste corpus annotations, text, offsets, document metadata, or local
 manifest contents into commits or shared logs.
 
-- [ ] **Step 5: Prove generated restricted artifacts are untracked**
+- [x] **Step 5: Prove generated restricted artifacts are untracked**
 
 ```bash
 git check-ignore -v \
@@ -1160,12 +1173,33 @@ git status --short
 Expected: `.gitignore` matches the manifest. Status shows only the planned source, test, and
 documentation changes, plus the user's pre-existing untracked `.omx/` and `docs/slides/` content.
 
-- [ ] **Step 6: Commit the workflow documentation**
+- [x] **Step 6: Commit the workflow documentation**
 
 ```bash
-git add experiments/coral/README.md
+git add experiments/coral/README.md experiments/coral/brat.py \
+  experiments/coral/scripts/coral_current_progression_manifest.py \
+  tests/test_coral_current_progression_manifest.py \
+  docs/00-goals-and-architecture.md docs/README.md \
+  docs/protocols/oncology_current_progression-v1.md \
+  docs/superpowers/plans/2026-09-15-m1-current-progression-task-protocol.md
 git commit -m "M1: document CORAL progression preparation"
 ```
+
+### Observed final verification (2026-09-15)
+
+- 216 focused schema/CORAL tests passed; the full synthetic suite passed all 242 tests on both
+  Python 3.11 and 3.12 without skips. Two pre-existing Starlette/AnyIO deprecation warnings remain.
+- Ruff lint/format, `mypy src`, expanded typing for the BRAT parser and both progression scripts,
+  offline lock consistency, and whitespace checks passed. Existing temporary development
+  environments were used; the project environment and dependencies were not changed.
+- Independent task and whole-slice reviews found no remaining blocking issues; a scoped re-review
+  approved the final FIFO fix without new findings.
+- The aggregate `--show 0` audit passed: 40 documents, 38 complete annotation inventories, and
+  two preserved unknown-record diagnostics. No raw input was repaired or policy weakened.
+- The selected ignored local manifest contains 40 unique document/patient identities, 20/10/10
+  overall membership and 10/5/5 per cancer. All 82 input hashes, frozen metadata, candidate quotas,
+  and the canonical self-hash verified. An identical command rerun preserved bytes and nanosecond
+  modification time; raw-input fingerprints were unchanged. No manifest content is tracked.
 
 ## Completion criteria
 
