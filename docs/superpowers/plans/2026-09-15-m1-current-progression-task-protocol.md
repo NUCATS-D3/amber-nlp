@@ -27,10 +27,10 @@ globally, enforce manifest immutability, and state CORAL's selection on document
 The follow-up review clarifies not-mentioned outcomes and freezes metric denominators,
 point-estimate gates, uncertainty reporting, and inconclusive-result handling.
 
-**Progress (2026-09-15):** Tasks 1–3 are complete: the
+**Progress (2026-09-15):** Tasks 1–4 are complete: the
 [versioned protocol](../../protocols/oncology_current_progression-v1.md) is documented and reviewed,
-and the strict public answer schema and CORAL parser diagnostics are implemented and tested.
-Tasks 4–6 remain unimplemented.
+and the strict public answer schema, CORAL parser diagnostics, and non-authoritative candidate
+rules are implemented and tested. Tasks 5–6 remain unimplemented.
 No split manifest, adjudicated task gold, or clinical gate result has been produced by these
 checkpoints. Answer validation does not enforce evidence requirements.
 
@@ -638,7 +638,7 @@ diagnostic counts, and the existing explicit local audit-export options retain t
   `derive_current_progression_candidate(doc: Document) -> CurrentProgressionCandidate` and immutable
   dataclasses `CandidateSignal` and `CurrentProgressionCandidate`.
 
-- [ ] **Step 1: Define the immutable candidate result contract in failing tests**
+- [x] **Step 1: Define the immutable candidate result contract in failing tests**
 
 In `tests/test_coral_current_progression.py`, load the experiment script using pytest's scoped
 `monkeypatch.syspath_prepend` for `experiments/coral/scripts`. Use invented BRAT files passed
@@ -684,7 +684,7 @@ class CurrentProgressionCandidate:
     clinical_scope_reviewed: Literal[False] = False
 ```
 
-- [ ] **Step 2: Add parameterized tests for all value/modality rules**
+- [x] **Step 2: Add parameterized tests for all value/modality rules**
 
 Use helper builders that generate invented text such as `"synthetic progression statement"` and
 derive exact offsets from that string. Cover this table:
@@ -713,7 +713,7 @@ the positive seed and warning. Add a synthetic historical statement whose annota
 historical/current applicability from that attribute. A temporal relation to a `Datetime` entity
 adds `temporal_relation_unresolved`; no date parsing or temporal-resolution claim is made.
 
-- [ ] **Step 3: Add adversarial scope and span tests**
+- [x] **Step 3: Add adversarial scope and span tests**
 
 Create invented cases for each of the following and expect `insufficient_evidence` plus a stable
 flag: out-of-bounds span (`malformed_span`), reversed/empty span (`malformed_span`), discontinuous
@@ -735,7 +735,7 @@ substring. Add a case with a valid relevant span adjacent to, but not overlappin
 it must retain its normal answer. Overlap is `a_start < b_end and b_start < a_end`, so touching
 boundaries do not overlap.
 
-- [ ] **Step 4: Run tests to verify the candidate module is absent**
+- [x] **Step 4: Run tests to verify the candidate module is absent**
 
 Run:
 
@@ -743,9 +743,10 @@ Run:
 uv run pytest tests/test_coral_current_progression.py -q
 ```
 
-Expected: collection fails because `coral_current_progression` does not exist.
+Expected: import fails because `coral_current_progression` does not exist. With the scoped import
+fixture, pytest reports this during fixture setup rather than collection.
 
-- [ ] **Step 5: Implement annotation indexing and span/scope validation**
+- [x] **Step 5: Implement annotation indexing and span/scope validation**
 
 In `coral_current_progression.py`, define private helpers named `_attributes_by_target`,
 `_valid_intervals`, `_overlaps`, `_skip_intervals`, and `_classify_entity`. Their exact interfaces
@@ -762,8 +763,12 @@ the explicit CORAL mapping; unknown modality must not fall back to affirmed.
 `_valid_intervals` accepts only ordered nonempty spans satisfying
 `0 <= start < end <= len(doc.text)`. `_skip_intervals` keeps fragments separate and reports scope
 incomplete if any skip fragment is invalid. Never widen a skip region or normalize source text.
+For discontinuous skips, compare the copied surface with BRAT's space-joined exact source fragments;
+the parser's `discontinuous` category alone cannot verify it. A mismatch blocks scope with
+`source_surface_mismatch` and `incomplete_scope`. Test that a relevant span in the gap between
+valid skip fragments remains usable. Single-span surface checks use the exact source slice.
 
-- [ ] **Step 6: Implement the deterministic rule precedence**
+- [x] **Step 6: Implement the deterministic rule precedence**
 
 `derive_current_progression_candidate` must:
 
@@ -786,7 +791,7 @@ record order. Include `non_authoritative` and `clinical_review_required` in ever
 that non-answered dispositions have `value=None`, answered values are strict booleans, and parse
 failures cannot be marked complete. Do not import `Claim`, `Example`, or gold schema types.
 
-- [ ] **Step 7: Run focused candidate tests and lint**
+- [x] **Step 7: Run focused candidate tests and lint**
 
 Run:
 
@@ -798,7 +803,7 @@ uv run ruff check experiments/coral/scripts/coral_current_progression.py \
 
 Expected: all candidate rules and adversarial cases pass.
 
-- [ ] **Step 8: Commit the candidate derivation**
+- [x] **Step 8: Commit the candidate derivation**
 
 ```bash
 git add experiments/coral/scripts/coral_current_progression.py \

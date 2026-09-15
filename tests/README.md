@@ -10,6 +10,8 @@ Keep the suite flat and grouped by the boundary under test:
 - `test_invariants.py`: the implemented source, ID, and exact-grounding invariants.
 - `test_coral_brat.py` and `test_coral_audit.py`: parser integrity, preserved source text, safe
   aggregate diagnostics, and explicit local audit exports; invented BRAT and temporary files only.
+- `test_coral_current_progression.py`: non-authoritative candidate rules, warning/blocker
+  precedence, annotation completeness, and relevant span/skip safety using invented BRAT.
 
 ## Local checks
 

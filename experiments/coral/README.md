@@ -1,8 +1,8 @@
 # CORAL experiment
 
 Initial workspace for running Amber on CORAL v1.0 (DOI `10.13026/v69y-xa45`). The annotation
-audit is runnable. The adapter is a draft that imports M1 schemas which do not exist yet;
-the extraction run and evaluation remain to be implemented under the
+audit and pure current-progression candidate rules are implemented. The domain adapter remains a
+draft with missing M1 schema dependencies; extraction and evaluation remain to be implemented under the
 [M1–M3 roadmap](../../docs/04-roadmap.md).
 
 ```text
@@ -11,6 +11,7 @@ coral/
   audit.py                   annotation audit CLI and local JSONL export
   scripts/coral_ingest.py    compatibility launcher for the audit CLI
   scripts/coral_adapter.py   draft CORAL-to-Amber mapping policies
+  scripts/coral_current_progression.py  pure candidate rules (no CLI or file writes)
   eval/                     evaluation code and analysis
   data/raw/annotated/        40 expert-labeled notes (local only)
   data/raw/unannotated/      200 other notes and GPT-4 pseudo-labels (local only)
@@ -69,6 +70,34 @@ JSONL is not a validated Amber `Example`, and the `redacted` heuristic does not 
 span bounds. Its legacy attribute map is not lossless for conflicting attributes; consult the
 parser diagnostics and full in-memory attribute list. The draft adapter's mapping policies require
 validation before gold derivation.
+
+## Current-progression candidates
+
+The [candidate module](scripts/coral_current_progression.py) implements the conservative mapping
+in [protocol v1.0.0](../../docs/protocols/oncology_current_progression-v1.md). Pass an existing parsed
+`Document` to `derive_current_progression_candidate`; it returns a frozen candidate with sorted
+signals and flags. The function performs no file writes or model calls. There is no candidate CLI,
+manifest generator, or split assignment yet.
+
+Every result is `non_authoritative`, requires clinical review, and leaves `clinical_scope_reviewed`
+false. An answered candidate proposes a strict boolean, not a gold label or evidence-backed Amber
+Claim. Usable seeds retain `temporality_unverified`; missing modality is an explicit flagged
+assumption. Incomplete annotation inventories, invalid required attributes, unsafe relevant spans,
+source-surface mismatches, and unresolved skip boundaries block answers. Other-experiencer,
+uncertain, historical-modality, future, hospice, and unsupported-entity signals are warnings that
+do not override an independently usable seed. No annotation-only rule establishes currentness.
+
+Skip fragments remain separate: a candidate in the gap between them is not excluded by widening.
+The **discontinuous skip surface** policy compares copied text with the exact source fragments
+joined by one space, as in BRAT's discontinuous representation. A disagreement requires review;
+the parser's `discontinuous` category alone is not verification. Single spans use the exact source
+slice, and all intervals require independent bounds checks.
+
+Candidate objects omit source text, copied quotes, and offsets, but their document/annotation IDs
+remain linked to restricted data. Keep derived results local under the dataset's access rules;
+do not print or commit individual candidates. `not_mentioned` with `annotation_absence_only` means
+only that no relevant annotation was found in a complete inventory, not that a human reviewed the
+whole note. Gold still requires independent review and adjudication.
 
 Before extraction or scoring, define the clinical task, answer schema, annotation coverage,
 gold derivation, patient/document split, numeric acceptance criteria, and permitted provider

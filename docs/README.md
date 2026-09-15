@@ -60,6 +60,11 @@ demonstrated.
   The parser diagnoses malformed, unknown, duplicate, conflicting, and dangling records;
   `--show 0` reports aggregate diagnostic counts. Annotation inventory completeness does not
   establish clinical review coverage, valid evidence bounds, or gold labels.
+- Pure [CORAL progression-candidate rules](../experiments/coral/scripts/coral_current_progression.py),
+  covered by [invented-BRAT tests](../tests/test_coral_current_progression.py). They reject incomplete
+  inventories and unsafe relevant spans/skip boundaries, preserve semantic warnings, and require
+  human review for every result. Candidates contain no quotes or offsets and never create gold;
+  annotation absence is not a certification of complete clinical review.
 - A four-dependency core, with storage, evaluation, and tracking dependencies selected through
   extras. See the [installation guide](../README.md#toolchain); selecting an extra does not
   implement the corresponding planned workflow.
@@ -70,8 +75,8 @@ demonstrated.
 ### Planned or incomplete
 
 - The [current-progression implementation plan](superpowers/plans/2026-09-15-m1-current-progression-task-protocol.md)
-  continues with CORAL candidates and split/manifest tooling; these remain
-  unimplemented. The protocol and answer value schema are complete, but the clinical gates remain
+  continues with split/manifest tooling and final integration checks. The protocol, answer value
+  schema, parser diagnostics, and candidate rules are implemented, but the clinical gates remain
   unevaluated and its independent human review has not been performed by this implementation.
 - Mentions, claims, structured/inference evidence, graph validation, field-level evidence policies,
   `commit_claim`, `CaseOutcome`, `Example`, and provider/destination policy enforcement remain
