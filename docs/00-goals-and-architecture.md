@@ -3,8 +3,9 @@
 Name: **amber** — messy text hardened into structured, durable data with the evidence still visible inside. A verified span of source text preserved in a claim is an **inclusion** (the gemological term for what is trapped in amber). Structured-source evidence and inference steps keep their descriptive names.
 
 Status: revised plan, 2026-09-04. Supersedes the Strata-anchored framing in
-`03-strata-scaffold-notes.md`. This repository implements the plan; it currently contains M0 and
-an interface scaffold. Extraction quality and reductions in expert effort remain untested.
+`03-strata-scaffold-notes.md`. This document describes the intended architecture; see
+[Current implementation](README.md#current-implementation) for what exists on disk and what
+remains planned.
 
 ## Goals as stated
 

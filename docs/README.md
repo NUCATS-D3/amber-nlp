@@ -1,0 +1,77 @@
+# Documentation
+
+Start here to distinguish the implementation on disk from the planned clinical workflow.
+
+## Reading order and authority
+
+Before changing architecture or domain behavior, read:
+
+1. [Goals and architecture](00-goals-and-architecture.md) — purpose, boundaries, and decisions.
+2. [V1 contract](02-v1-schemas-and-tools.md) — binding domain fields, tools, and invariants.
+3. [Roadmap](04-roadmap.md) — milestone order, scope, and exit evidence.
+4. [Working agreement](../CLAUDE.md) — non-negotiable invariants and conventions.
+
+[Repository guidelines](../AGENTS.md) cover development commands, dependency boundaries, and data
+safety. If documents disagree, preserve the working agreement's invariants and the v1 contract,
+then reconcile the stale document. A plan or module docstring is not evidence of implementation.
+
+## Current implementation
+
+Checked against code and tests on 2026-09-15. This is the canonical implementation-status summary;
+update it when capabilities change rather than copying inventories into other documents.
+
+M0's workspace and interfaces exist, and part of the M1 evidence kernel is implemented. M1 is not
+complete. No extraction quality, clinical acceptance, or reduction in expert effort has been
+demonstrated.
+
+### Implemented
+
+- Python facade: `Amber` and `create_client` in [client.py](../src/amber/client.py), environment
+  [settings](../src/amber/config.py), and [SystemInfo](../src/amber/services/system.py).
+- CLI: [amber info](../src/amber/cli/main.py), including `--json`, and
+  [amber api serve](../src/amber/cli/server.py). The optional [FastAPI factory](../src/amber/api/app.py)
+  exposes `/health`, `/api/v1/admin/health`, and `/api/v1/admin/info` with the default prefix.
+- Kernel foundations: [canonical hashing and IDs](../src/amber/ids.py), frozen
+  [Source and Section models](../src/amber/schemas/sources.py) with source-text identity and bounds
+  checks, and [Provenance, Sensitivity, and Zone](../src/amber/schemas/provenance.py).
+- Exact grounding: [Inclusion and GroundingFailure](../src/amber/schemas/evidence.py),
+  [exact_quote](../src/amber/grounding.py), and the deterministic [quote tool](../src/amber/tools/quote.py).
+  Repeated text requires an exact hint; returned offsets refer to the unchanged source text.
+- [Interface smoke tests](../tests/test_interfaces.py) and
+  [kernel invariant tests](../tests/test_invariants.py), including source identity/mutation,
+  section bounds, Unicode/CRLF offsets, repeated quotes, grounding failures, and direct minting
+  rejection. These cover the implemented subset, not every planned invariant.
+- A minimal [MLflow run-context provider](../src/amber/mlflow_ext/context.py) emitting only
+  `amber.version`, and the experiment-local [CORAL annotation audit](../experiments/coral/scripts/coral_ingest.py).
+
+### Planned or incomplete
+
+- The [current-progression implementation plan](superpowers/plans/2026-09-15-m1-current-progression-task-protocol.md)
+  describes the next protocol-first slice. Its strict answer schema, versioned clinical protocol,
+  CORAL candidates, and split/manifest tooling are not implemented. The plan is not a released
+  protocol or an adjudicated gold dataset.
+- Mentions, claims, structured/inference evidence, graph validation, field-level evidence policies,
+  `commit_claim`, `CaseOutcome`, `Example`, and provider/destination policy enforcement remain
+  unimplemented. Having sensitivity/zone enums does not implement the policy gate.
+- Persistence, exports, extraction, clinical evaluation, correction, agent/backend integrations,
+  and training remain future work. Extraction/annotation routers are empty; the job module is a
+  responsibility docstring, not a queue.
+- [CORAL's draft adapter](../experiments/coral/scripts/coral_adapter.py) imports domain classes that
+  do not exist yet; it is not a working domain integration or a gold-generation path.
+- [Prompt seeds](../prompts/README.md) are documented but no YAML seeds or `amber register-prompts`
+  command exist. MLflow prompt/model helpers and shared test fixtures are placeholders.
+
+Use the [M1–M3 roadmap](04-roadmap.md) for remaining delivery requirements. Check code and tests
+before claiming a feature or milestone is complete; synthetic tests cannot establish clinical
+performance.
+
+## Background and experiment documentation
+
+- [State of the art](01-state-of-the-art.md) — background research, not the implementation contract.
+- [Strata scaffold notes](03-strata-scaffold-notes.md) — historical reference only; do not copy its structure.
+- [Experiments](../experiments/README.md) — experiment layout and reproducibility conventions.
+- [CORAL workspace](../experiments/coral/README.md) — local setup, audit commands, and data restrictions.
+
+CORAL is credentialed, deidentified clinical data, not a synthetic fixture. Keep its source data
+and reconstructable derivatives in restricted, ignored local storage; follow the
+[CORAL rules](../AGENTS.md#coral-dataset).

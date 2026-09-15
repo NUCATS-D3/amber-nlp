@@ -7,18 +7,13 @@ Clinical extraction pipelines and optional agents share verified quotes, evidenc
 explicit outcomes, and OSS-compatible MLflow tracking. The goal is to reduce total expert effort
 at a declared clinical quality target.
 
-This is milestone M0 plus the first interface scaffold: the design, contract, toolchain, public
-Python facade, CLI, and optional FastAPI application. M1 builds the evidence kernel; M2–M3 deliver
-one fixed extraction baseline and a minimal correction experiment before broader agent work.
-Clinical performance has not yet been measured. Start with `docs/`.
+Start with the [documentation index](docs/README.md) and its
+[current implementation summary](docs/README.md#current-implementation) to distinguish working
+capabilities from planned behavior. The [M1–M3 roadmap](docs/04-roadmap.md) leads from the task
+protocol and evidence kernel to a fixed extraction baseline and a minimal correction experiment.
 
 ```
-docs/
-  00-goals-and-architecture.md   goals, principles, data model, agentic architecture, decisions
-  01-state-of-the-art.md         field survey (living doc)
-  02-v1-schemas-and-tools.md     the v1 contract: pydantic models, tools, agents, tables, OMOP, MLflow mapping
-  03-strata-scaffold-notes.md    notes from a prior scaffold (reference only)
-  04-roadmap.md                  milestones M0–M8
+docs/README.md                   documentation index, reading order, and implementation status
 CLAUDE.md                        working agreement for the coding agent
 pyproject.toml                   uv-managed; extras: agents, nlp, langextract, train, mlx, gpu, app, dagster, dev
 src/amber/                      core library and public Amber facade
@@ -28,7 +23,7 @@ src/amber/api/                  optional FastAPI application and versioned route
 examples/synthetic_breast_pathology/   synthetic reports + labels (from Strata, Apache 2.0; see NOTICE)
 experiments/                     one folder per dataset experiment: scripts, eval, local data, outputs
 scripts/                         shared operational utilities
-prompts/                         seed prompts to register in the MLflow prompt registry
+prompts/                         planned seed prompts for the MLflow prompt registry
 tests/
 ```
 
@@ -74,8 +69,7 @@ Use [`experiments/`](experiments/README.md) for runs of Amber on particular data
 including its audit scripts, draft adapter, and places for evaluation code and ignored local
 data and outputs.
 
-`docs/04-roadmap.md` M1–M3: define one task and its acceptance criteria, implement the evidence
-kernel (`quote`, commit validation, and explicit outcomes), then compare a fixed extraction and
-correction workflow with manual authoring. Measure correctness, evidence support, omissions,
-automation coverage, expert time, and cost. Additional agents and backends require demonstrated
-benefit on that protocol.
+For implementation work, follow the [documentation reading order](docs/README.md#reading-order-and-authority)
+and [roadmap](docs/04-roadmap.md). The index links the current-progression plan and separates the
+implemented kernel foundations from the remaining M1 work. Additional agents and backends require
+demonstrated benefit on the clinical protocol.

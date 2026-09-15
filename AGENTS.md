@@ -16,25 +16,13 @@ When documents disagree, preserve the invariants in `CLAUDE.md` and the contract
 
 ## Current Implementation and Scope
 
-The repository is M0 plus a small interface scaffold. Check implementations and tests before
-claiming a milestone or feature is complete; much of the documentation describes planned behavior.
+Read [Current implementation](docs/README.md#current-implementation) for the canonical status
+inventory and links to code and tests. Update that section when capabilities change. Check
+implementations and tests before claiming a milestone or feature is complete; much of the
+documentation describes planned behavior.
 
-- Implemented: `Amber`, `create_client`, `SystemInfo`, environment settings, `amber info`
-  (including `--json`), `amber api serve`, and the optional FastAPI application factory.
-  HTTP routes are `/health`, `/api/v1/admin/health`, and `/api/v1/admin/info` with the default
-  prefix.
-- `api/v1/routers/extraction.py` and `annotation.py` are empty routers. `api/jobs.py` is a
-  responsibility docstring. There is no extraction API, annotation workflow, or job queue yet.
-- Domain schemas, IDs, grounding, graph validation, policy enforcement, tools, agents, backends,
-  storage, exports, training, and evaluation are placeholders. The MLflow run-context provider
-  exists but emits only `amber.version`; prompt/model helpers are placeholders.
-- `tests/test_interfaces.py` contains four smoke tests. `tests/test_invariants.py` and
-  `tests/conftest.py` contain docstrings, not invariant tests or shared fixtures.
-- `prompts/` contains a README only. YAML seeds and the documented `amber register-prompts`
-  command do not exist yet.
-
-M1 is next: define one clinical task and acceptance protocol, then implement the evidence kernel
-and one local persistence path with synthetic tests. M2 adds one permitted provider and a fixed
+M1 requires one clinical task and acceptance protocol, the evidence kernel, and one local
+persistence path with synthetic tests. M2 adds one permitted provider and a fixed
 extraction baseline; M3 adds minimal correction and measures total expert effort. Agents/reviewers,
 broad NLP, and additional backends are conditional on measured benefit. V1 remains note-scoped:
 reviewers work over sections/chunks of one note. PatientFact, patient aggregation, and FHIR are

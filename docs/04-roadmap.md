@@ -13,12 +13,16 @@ Use development cases for failure analysis and selection of later experiments. T
 exposure across milestones; if test findings guide a change, use a fresh independent evaluation
 for a confirmatory claim or label the repeated comparison exploratory.
 
-## M0 — Workspace and interface scaffold (current)
+For implemented capabilities and outstanding work, see the canonical
+[Current implementation](README.md#current-implementation) summary. Milestone requirements below
+describe delivery scope, not a claim that every listed component exists.
 
-Implemented: uv project, docs, synthetic fixtures, public Python facade, settings, info CLI,
-optional FastAPI health/info routes, four interface smoke tests, and a minimal MLflow version tag
-provider. Domain and extraction modules remain placeholders. CORAL ingestion is an audit utility;
-its draft adapter is not a working domain integration. No clinical performance result exists.
+## M0 — Workspace and interface scaffold
+
+Establish the uv project, docs, synthetic fixtures, public Python facade, settings, info CLI,
+optional FastAPI health/info routes, interface smoke tests, and a minimal MLflow version tag
+provider. An interface scaffold or corpus audit alone does not establish a working extraction
+pipeline or clinical performance.
 
 ## M1 — Task protocol and evidence kernel
 

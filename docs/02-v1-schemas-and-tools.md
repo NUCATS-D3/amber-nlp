@@ -10,8 +10,8 @@ the first experiment can use the native table export. See the revised M1–M3 de
 All domain models use Pydantic v2 with `ConfigDict(extra="forbid")`; identity/provenance-bearing
 value objects are frozen. Cross-object validation uses the exact source and evidence store at
 construction, commit, and load boundaries. The blocks below abbreviate that validation machinery.
-This revision adds `CaseOutcome` and explicit final-claim IDs; domain models are not implemented
-yet, so this is a contract change rather than a completed runtime migration.
+See [Current implementation](README.md#current-implementation) for the implemented subset and
+remaining work. Specification blocks do not establish that a model or runtime migration exists.
 
 ## 1. Identifiers and provenance
 
