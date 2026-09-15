@@ -42,7 +42,10 @@ demonstrated.
   section bounds, Unicode/CRLF offsets, repeated quotes, grounding failures, and direct minting
   rejection. These cover the implemented subset, not every planned invariant.
 - A minimal [MLflow run-context provider](../src/amber/mlflow_ext/context.py) emitting only
-  `amber.version`, and the experiment-local [CORAL annotation audit](../experiments/coral/scripts/coral_ingest.py).
+  `amber.version`, and the experiment-local [CORAL annotation audit](../experiments/coral/audit.py).
+  Its [BRAT parser](../experiments/coral/brat.py) is independently importable using only the
+  standard library; [parser](../tests/test_coral_brat.py) and [CLI](../tests/test_coral_audit.py)
+  regression tests use invented data. The existing script command remains a compatibility launcher.
 
 ### Planned or incomplete
 

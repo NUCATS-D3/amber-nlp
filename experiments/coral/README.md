@@ -7,7 +7,9 @@ the extraction run and evaluation remain to be implemented under the
 
 ```text
 coral/
-  scripts/coral_ingest.py    BRAT annotation audit
+  brat.py                    importable BRAT records and parser (stdlib only)
+  audit.py                   annotation audit CLI and local JSONL export
+  scripts/coral_ingest.py    compatibility launcher for the audit CLI
   scripts/coral_adapter.py   draft CORAL-to-Amber mapping policies
   eval/                     evaluation code and analysis
   data/raw/annotated/        40 expert-labeled notes (local only)
@@ -35,6 +37,19 @@ From the repository root, run an aggregate audit without printing example spans:
 uv run python experiments/coral/scripts/coral_ingest.py \
   experiments/coral/data/raw/annotated --show 0
 ```
+
+The equivalent module command is `uv run python -m experiments.coral.audit` with the same
+arguments. Other experiment modules and tests import the parser directly:
+
+```python
+from experiments.coral.brat import Document, Entity, parse_ann, read_text
+```
+
+These modules are importable from a repository checkout; they are not shipped in the Amber
+wheel. The parser has no Click or Amber dependency and does not load data or run the audit on
+import. Its record parsing and quote-agreement heuristics are unchanged by this separation;
+malformed-record diagnostics and bounds validation remain planned work. The draft domain
+adapter still requires missing M1 schemas and is not made runnable by its parser import change.
 
 The default audit prints mismatch text; `--category`, `--dump-unparsed`, and `--jsonl` can
 expose source-bearing data. Save exports under `experiments/coral/outputs/<run-id>/`, keep

@@ -44,8 +44,6 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from coral_ingest import Document, Entity
-
 from amber.schemas import (  # M1 deliverable; see 02-v1-schemas-and-tools.md §1-§3
     Experiencer,
     Mention,
@@ -58,6 +56,7 @@ from amber.schemas import (  # M1 deliverable; see 02-v1-schemas-and-tools.md §
     Temporality,
     Zone,
 )
+from experiments.coral.brat import Document, Entity
 
 # --------------------------------------------------------------------------- #
 # 1. Discontinuous spans

@@ -24,8 +24,11 @@ versions, budgets, and evaluation commands with each run. Keep repeated executio
 `outputs/<run-id>/` directories so results can be compared without overwriting earlier runs.
 
 Experiment code calls Amber's public facade/services. Promote reusable behavior into
-`src/amber/` with synthetic tests; core code must not import from `experiments/`. Shared
-operational utilities, such as starting MLflow, remain in the repository-level `scripts/`.
+`src/amber/` with synthetic tests; core code must not import from `experiments/`.
+Experiment-local logic can live in importable modules beside `scripts/`, as in CORAL's
+`brat.py`; command launchers remain thin. Experiment modules are checkout-local, not part of
+the distributed Amber package. Shared operational utilities, such as starting MLflow, remain
+in the repository-level `scripts/`.
 Run commands from the repository root using its `uv` environment. Corpus-dependent evaluation
 is a separate local step and must not become a requirement for repository tests or CI.
 

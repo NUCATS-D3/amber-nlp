@@ -203,10 +203,13 @@ and `experiments/coral/data/raw/annotated/annotation.conf` before interpreting l
   report mismatches rather than silently repairing offsets or text.
   The ingest script's `redacted` classification is a same-length mismatch heuristic, not proof
   that offsets are valid. Validate bounds separately before using any span as evidence.
-- Keep CORAL-specific parsing and mapping separate: experiment script `coral_ingest.py` audits
-  the BRAT records, while `coral_adapter.py` contains draft mapping decisions that depend on the M1
-  schemas. Move reusable code into `src/amber/` with synthetic tests as the adapter stabilizes.
-  Both scripts live in `experiments/coral/scripts/`.
+- Keep CORAL-specific parsing and mapping separate: `experiments/coral/brat.py` contains the
+  importable BRAT records/parser, and `experiments/coral/audit.py` owns the audit CLI.
+  `experiments/coral/scripts/coral_ingest.py` is a compatibility launcher, not a parser library.
+  Import parser types/functions from `experiments.coral.brat`; keep checkout-path bootstrapping
+  at the script boundary. `experiments/coral/scripts/coral_adapter.py` contains draft mapping
+  decisions that depend on the M1 schemas. Move reusable code into `src/amber/` with synthetic
+  tests as the adapter stabilizes.
   The adapter currently imports schema classes that do not exist, leaves IDs empty, lacks fragment
   grouping, and has an empty manual-fix table. Its docstrings are not acceptance criteria;
   validate and version its widening, modality, section, and relation policies before using it.

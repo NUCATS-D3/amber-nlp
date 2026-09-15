@@ -108,9 +108,12 @@ pretend it can recognize every historical statement from BRAT polarity alone.
   constants.
 - Create `tests/test_answer_schemas.py`: strict construction, serialization, mutation, and extra
   field tests.
-- Modify `experiments/coral/scripts/coral_ingest.py`: preserve record-level diagnostics and detect
+- Modify `experiments/coral/brat.py`: preserve record-level diagnostics and detect
   incomplete, duplicate, conflicting, and dangling records without exposing source data.
-- Create `tests/test_coral_ingest.py`: parser tests beginning with invented BRAT records.
+- Modify `experiments/coral/audit.py`: report aggregate parser diagnostics through the audit CLI.
+- Extend `tests/test_coral_brat.py` and `tests/test_coral_audit.py`: existing invented-BRAT
+  parser and CLI regression tests. Import parser types/functions from `experiments.coral.brat`;
+  `scripts/coral_ingest.py` is only a compatibility launcher.
 - Create `experiments/coral/scripts/coral_current_progression.py`: pure CORAL annotation-to-candidate
   decision logic with no file writes.
 - Create `experiments/coral/scripts/coral_current_progression_manifest.py`: local-only CLI for
@@ -516,8 +519,8 @@ git commit -m "M1: add current progression answer schema"
 
 **Files:**
 
-- Modify: `experiments/coral/scripts/coral_ingest.py`
-- Test: `tests/test_coral_ingest.py`
+- Modify: `experiments/coral/brat.py`, `experiments/coral/audit.py`
+- Test: `tests/test_coral_brat.py`, `tests/test_coral_audit.py`
 
 **Interfaces:**
 
@@ -559,8 +562,8 @@ input must not print the raw record or expose it through an uncaught exception.
 
 - [ ] **Step 2: Verify the parser tests fail for missing diagnostics**
 
-Run `uv run pytest tests/test_coral_ingest.py -q`. Expected: failures because diagnostics and
-inventory completeness are not implemented.
+Run `uv run pytest tests/test_coral_brat.py tests/test_coral_audit.py -q`. Expected: new tests fail
+because diagnostics and inventory completeness are not implemented.
 
 - [ ] **Step 3: Add the diagnostic contract and record validation**
 
@@ -589,17 +592,19 @@ duplicates get `duplicate_attribute`; differing values get `conflicting_attribut
 Catch record-format errors locally, retain their raw audit records, and emit fixed diagnostic
 codes rather than exception text containing the record. Keep supported comments/normalizations as
 explicitly recognized record types. Do not alter raw files, copied quotes, or source text.
-Correct the ingest module's existing docstring assertions that same-length `redacted` mismatches
-prove valid offsets: they are a surface-mismatch heuristic and require independent bounds checks.
+Preserve the parser module's warning that same-length `redacted` mismatches are a surface-mismatch
+heuristic, not proof of valid offsets; require independent bounds checks.
 
 - [ ] **Step 4: Verify safe audit behavior and commit**
 
 Run:
 
 ```bash
-uv run pytest tests/test_coral_ingest.py -q
-uv run ruff check experiments/coral/scripts/coral_ingest.py tests/test_coral_ingest.py
-git add experiments/coral/scripts/coral_ingest.py tests/test_coral_ingest.py
+uv run pytest tests/test_coral_brat.py tests/test_coral_audit.py -q
+uv run ruff check experiments/coral/brat.py experiments/coral/audit.py \
+  tests/test_coral_brat.py tests/test_coral_audit.py
+git add experiments/coral/brat.py experiments/coral/audit.py \
+  tests/test_coral_brat.py tests/test_coral_audit.py
 git commit -m "M1: preserve CORAL parser diagnostics"
 ```
 
@@ -1083,7 +1088,7 @@ these task-specific commands do not complete that adapter. Explain that:
 
 ```bash
 uv run pytest tests/test_answer_schemas.py \
-  tests/test_coral_ingest.py \
+  tests/test_coral_brat.py tests/test_coral_audit.py \
   tests/test_coral_current_progression.py \
   tests/test_coral_current_progression_manifest.py -q
 ```
