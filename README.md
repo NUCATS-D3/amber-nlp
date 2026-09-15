@@ -1,6 +1,4 @@
-# amber
-
-AMBER - A Mention Binds Every Record
+# AMBER - A Mention Binds Every Record
 
 Messy clinical text, hardened into structured data with the evidence still visible inside.
 Clinical extraction pipelines and optional agents share verified quotes, evidence validation,

@@ -1,0 +1,2 @@
+#!/bin/sh
+exec '/Users/wkt406/.homebrew/Cellar/node/26.8.2/bin/node' '/Users/wkt406/.homebrew/lib/node_modules/oh-my-codex/dist/cli/omx.js' "$@"
