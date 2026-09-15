@@ -8,7 +8,8 @@ Keep the suite flat and grouped by the boundary under test:
 - `test_api.py`: optional HTTP health/info routes; requires `app` and HTTPX.
 - `test_tracking.py`: optional MLflow entry point, missing dependencies, and the local launcher.
 - `test_invariants.py`: the implemented source, ID, and exact-grounding invariants.
-- `test_coral_brat.py` and `test_coral_audit.py`: invented BRAT records and temporary files only.
+- `test_coral_brat.py` and `test_coral_audit.py`: parser integrity, preserved source text, safe
+  aggregate diagnostics, and explicit local audit exports; invented BRAT and temporary files only.
 
 ## Local checks
 

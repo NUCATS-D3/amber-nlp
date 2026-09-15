@@ -47,15 +47,28 @@ from experiments.coral.brat import Document, Entity, parse_ann, read_text
 
 These modules are importable from a repository checkout; they are not shipped in the Amber
 wheel. The parser has no Click or Amber dependency and does not load data or run the audit on
-import. Its record parsing and quote-agreement heuristics are unchanged by this separation;
-malformed-record diagnostics and bounds validation remain planned work. The draft domain
-adapter still requires missing M1 schemas and is not made runnable by its parser import change.
+import. `Document.diagnostics` records malformed or unknown records, duplicate IDs, duplicate or
+conflicting attributes, and dangling references. Raw malformed, unknown, and duplicate-ID records
+remain available in the restricted in-memory audit; parsed attributes remain a complete list.
+`Document.annotation_inventory_complete` is true only when both
+diagnostics and unparsed records are empty; this describes parse integrity, not human review of
+the note or evidence validity. References are checked after parsing so forward references work.
+The audit reports diagnostic counts with `--show 0` without printing the raw problem records.
+Independent span bounds validation remains required before using annotations as evidence; quote
+agreement categories do not supply it. The draft domain adapter still requires missing M1 schemas.
+
+The **empty metadata tail** adapter policy accepts one empty trailing tab field on attribute,
+directed relation, event, and symmetric-relation records. CORAL uses this representation; it
+adds no annotation content. Nonempty surplus fields remain malformed. This parsing policy does
+not rewrite raw files or trim copied entity quotes.
 
 The default audit prints mismatch text; `--category`, `--dump-unparsed`, and `--jsonl` can
 expose source-bearing data. Save exports under `experiments/coral/outputs/<run-id>/`, keep
 them out of shared logs and commits, and retain the dataset's access restrictions. Audit
 JSONL is not a validated Amber `Example`, and the `redacted` heuristic does not validate
-span bounds. The draft adapter's mapping policies require validation before gold derivation.
+span bounds. Its legacy attribute map is not lossless for conflicting attributes; consult the
+parser diagnostics and full in-memory attribute list. The draft adapter's mapping policies require
+validation before gold derivation.
 
 Before extraction or scoring, define the clinical task, answer schema, annotation coverage,
 gold derivation, patient/document split, numeric acceptance criteria, and permitted provider

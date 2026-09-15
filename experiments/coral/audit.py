@@ -61,6 +61,13 @@ def main(
     orphans = sum(len(d.unparsed) for d in docs)
     if orphans:
         click.echo(f"unparsed lines {orphans}")
+    complete = sum(doc.annotation_inventory_complete for doc in docs)
+    click.echo(f"annotation inventory complete {complete}/{len(docs)}")
+    diagnostic_counts = Counter(item.code for doc in docs for item in doc.diagnostics)
+    if diagnostic_counts:
+        click.echo("\nparse diagnostics")
+        for code in sorted(diagnostic_counts):
+            click.echo(f"  {diagnostic_counts[code]:6d}  {code}")
 
     status_counts = Counter(e.status for e in entities)
     click.echo("\nspan/quote agreement")

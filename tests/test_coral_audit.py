@@ -54,6 +54,24 @@ def test_aggregate_audit_omits_example_text(invented_corpus: Path) -> None:
         assert value not in result.output
     assert "25.0%  discontinuous" in result.output
     assert "1 undirected" in result.output
+    assert "annotation inventory complete 0/1" in result.output
+    assert "parse diagnostics" in result.output
+    assert "1  unknown_record" in result.output
+
+
+def test_aggregate_diagnostics_do_not_expose_malformed_records(tmp_path: Path) -> None:
+    root = tmp_path / "corpus"
+    root.mkdir()
+    (root / "invented.txt").write_text("alpha", encoding="utf-8")
+    secret_record = "T1\tSecretType zero five\tDO_NOT_PRINT"
+    (root / "invented.ann").write_text(secret_record + "\n", encoding="utf-8")
+
+    result = CliRunner().invoke(main, [str(root), "--show", "0"])
+
+    assert result.exit_code == 0, result.output
+    assert "annotation inventory complete 0/1" in result.output
+    assert "1  malformed_record" in result.output
+    assert "DO_NOT_PRINT" not in result.output
 
 
 def test_default_audit_still_prints_mismatch_examples(invented_corpus: Path) -> None:

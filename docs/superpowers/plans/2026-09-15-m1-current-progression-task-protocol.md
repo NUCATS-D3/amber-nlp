@@ -27,9 +27,10 @@ globally, enforce manifest immutability, and state CORAL's selection on document
 The follow-up review clarifies not-mentioned outcomes and freezes metric denominators,
 point-estimate gates, uncertainty reporting, and inconclusive-result handling.
 
-**Progress (2026-09-15):** Tasks 1–2 are complete: the
+**Progress (2026-09-15):** Tasks 1–3 are complete: the
 [versioned protocol](../../protocols/oncology_current_progression-v1.md) is documented and reviewed,
-and the strict public answer schema is implemented and tested. Tasks 3–6 remain unimplemented.
+and the strict public answer schema and CORAL parser diagnostics are implemented and tested.
+Tasks 4–6 remain unimplemented.
 No split manifest, adjudicated task gold, or clinical gate result has been produced by these
 checkpoints. Answer validation does not enforce evidence requirements.
 
@@ -534,7 +535,7 @@ git commit -m "M1: add current progression answer schema"
 - Produces: `ParseDiagnostic`, `Document.diagnostics`, and
   `Document.annotation_inventory_complete`; preserves existing `Document.unparsed` audit records.
 
-- [ ] **Step 1: Add raw-record regression tests**
+- [x] **Step 1: Add raw-record regression tests**
 
 Use pytest temporary files containing invented text and BRAT; parse them through `parse_ann`.
 Require diagnostics for truncated entity/attribute records, nonnumeric offsets, duplicate IDs,
@@ -566,12 +567,12 @@ Add Unicode/CRLF byte fixtures, a valid discontinuous annotation, and valid forw
 Verify copied-quote mismatch classification remains separate from bounds validation. Malformed
 input must not print the raw record or expose it through an uncaught exception.
 
-- [ ] **Step 2: Verify the parser tests fail for missing diagnostics**
+- [x] **Step 2: Verify the parser tests fail for missing diagnostics**
 
 Run `uv run pytest tests/test_coral_brat.py tests/test_coral_audit.py -q`. Expected: new tests fail
 because diagnostics and inventory completeness are not implemented.
 
-- [ ] **Step 3: Add the diagnostic contract and record validation**
+- [x] **Step 3: Add the diagnostic contract and record validation**
 
 ```python
 @dataclass(frozen=True)
@@ -598,10 +599,13 @@ duplicates get `duplicate_attribute`; differing values get `conflicting_attribut
 Catch record-format errors locally, retain their raw audit records, and emit fixed diagnostic
 codes rather than exception text containing the record. Keep supported comments/normalizations as
 explicitly recognized record types. Do not alter raw files, copied quotes, or source text.
+Preserve CORAL's single empty trailing tab field on metadata-only records through the named
+`empty metadata tail` adapter policy; nonempty surplus fields remain malformed. Cover this legacy
+format with invented fixtures, without copying corpus records or rewriting inputs.
 Preserve the parser module's warning that same-length `redacted` mismatches are a surface-mismatch
 heuristic, not proof of valid offsets; require independent bounds checks.
 
-- [ ] **Step 4: Verify safe audit behavior and commit**
+- [x] **Step 4: Verify safe audit behavior and commit**
 
 Run:
 
