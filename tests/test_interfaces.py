@@ -12,9 +12,16 @@ from amber.cli import cli
 from amber.config import Settings
 
 
-def test_importing_library_does_not_import_fastapi() -> None:
+def test_importing_core_does_not_import_optional_stacks() -> None:
     result = subprocess.run(
-        [sys.executable, "-c", "import amber, sys; assert 'fastapi' not in sys.modules"],
+        [
+            sys.executable,
+            "-c",
+            "import amber, amber.schemas, amber.tools.quote, sys; "
+            "assert not {'fastapi', 'mlflow', 'pandas', 'pyarrow', 'duckdb', "
+            "'numpy', 'scipy', 'sklearn', 'pydantic_ai', 'transformers', 'mlx'} "
+            "& sys.modules.keys()",
+        ],
         check=False,
         capture_output=True,
         text=True,

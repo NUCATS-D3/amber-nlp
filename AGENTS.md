@@ -57,10 +57,10 @@ Keep dependencies pointing inward:
 Deferred components are described in the [roadmap](docs/04-roadmap.md#deferred-implementation-locations).
 Add their modules with implementation and tests, not as docstring-only promises of future behavior.
 
-Keep `import amber` lightweight: it must not import FastAPI, PydanticAI, Transformers, MLX, or
-other optional stacks. Import optional dependencies at their boundary and return an actionable
-installation message when they are absent. Resolve environment configuration in `config.py` at
-process boundaries and pass explicit settings into testable application code.
+Keep `import amber` lightweight: it must not import FastAPI, MLflow, PydanticAI, Transformers,
+MLX, storage/analytics libraries, or other optional stacks. Import optional dependencies at their
+boundary and return an actionable installation message when they are absent. Resolve environment
+configuration in `config.py` at process boundaries and pass explicit settings into testable code.
 
 ## Configuration and Interface Boundaries
 
@@ -129,15 +129,25 @@ update it with dependency changes and preserve it during unrelated work.
 
 There are two distinct dev declarations in `pyproject.toml`: the `dev` extra supplies Ruff, mypy,
 coverage, and other development tools; the default `dev` dependency group supplies pytest and
-HTTPX. `uv sync` alone does not select the full development extra. HTTP interface tests need both
+HTTPX plus marimo. `uv sync` alone does not select the full development extra. HTTP tests need both
 the `app` extra and HTTPX from the dev group.
 
+Core runtime dependencies are Pydantic, pydantic-settings, python-ulid, and Click. Select
+`storage` for pandas/PyArrow/DuckDB, `evaluation` for NumPy/SciPy/scikit-learn, and `tracking` for
+MLflow/PyYAML. RapidFuzz belongs to `nlp`; fuzzy grounding is not implemented. Extras install
+dependencies, not features, and can overlap transitively. Use `--no-default-groups` with both
+`uv sync` and `uv run` for core-only runtime checks. Keep the default dev group unchanged unless
+the task specifically changes developer tooling.
+
 ```sh
+uv sync --no-default-groups                # minimal runtime
 uv sync --extra dev
 uv sync --extra dev --extra app             # API work
+uv sync --extra dev --extra app --extra tracking  # full tests/type checks
 uv sync --extra dev --extra agents --extra nlp
 uv run pytest
 uv run --extra dev --extra app pytest tests/test_interfaces.py
+uv run --extra dev --extra tracking pytest tests/test_tracking.py
 uv run pytest --cov=amber
 uv run ruff check .
 uv run ruff format --check .
@@ -150,10 +160,13 @@ uv run amber api serve                       # requires the app extra
 Use `uv run ruff format <paths>` only when intentionally formatting files; use `--check` for
 validation. Start with focused tests and changed-file linting, then run the relevant full checks
 before handoff. API changes must be tested with the `app` extra installed so optional HTTP tests
-do not pass merely by being skipped. For documentation-only changes, check referenced paths and
-commands and run `git diff --check`; do not add tests just to exercise unchanged code.
+do not pass merely by being skipped. Tracking changes likewise require the `tracking` extra;
+test its installed entry point and missing-dependency behavior. For documentation-only changes,
+check referenced paths and commands and run `git diff --check`; do not add tests just to exercise
+unchanged code.
 Follow the local MLflow server command in `README.md` or use `bash scripts/mlflow_local.sh` when a
-task genuinely needs MLflow integration; the script keeps its database and artifacts in `.mlflow/`.
+task genuinely needs MLflow integration; the script selects `tracking` and keeps its database and
+artifacts in `.mlflow/`.
 
 ## Notebooks
 

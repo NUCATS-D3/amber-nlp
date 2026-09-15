@@ -15,7 +15,7 @@ protocol and evidence kernel to a fixed extraction baseline and a minimal correc
 ```
 docs/README.md                   documentation index, reading order, and implementation status
 CLAUDE.md                        working agreement for the coding agent
-pyproject.toml                   uv-managed; extras: agents, nlp, langextract, train, mlx, gpu, app, dagster, dev
+pyproject.toml                   uv-managed dependencies and optional extras
 src/amber/                      core library and public Amber facade
 src/amber/services/             use cases shared by every interface
 src/amber/cli/                  Click command groups
@@ -31,7 +31,9 @@ tests/
 
 ```sh
 uv python install 3.11
+uv sync --no-default-groups               # minimal core, without development dependencies
 uv sync --extra dev                       # core + dev
+uv sync --extra dev --extra app --extra tracking       # full offline test/type-check setup
 uv sync --extra dev --extra agents                     # provider/agent integrations
 uv sync --extra dev --extra agents --extra nlp          # when targeted NLP is needed
 uv sync --extra dev --extra agents --extra nlp --extra mlx     # on a Mac
@@ -45,7 +47,29 @@ uv run amber api serve                    # requires --extra app
 
 `mlx` and `gpu` are declared as conflicting extras. Torch resolves from PyPI (CUDA builds on Linux, CPU/MPS on macOS). For a CPU-only Linux box add `--index https://download.pytorch.org/whl/cpu` or a `[[tool.uv.index]]` entry.
 
-MLflow: run `uv run mlflow server --backend-store-uri sqlite:///mlflow.db --artifacts-destination ./mlartifacts` locally, or set `MLFLOW_TRACKING_URI` (and, on Databricks, `MLFLOW_REGISTRY_URI=databricks-uc`). See `.env.example`.
+Core requires only Pydantic, pydantic-settings, python-ulid, and Click. Optional extras can be
+combined with repeated `--extra` flags:
+
+| Extra | Dependencies / purpose |
+|---|---|
+| `storage` | pandas, PyArrow, DuckDB for planned persistence and table exports |
+| `evaluation` | NumPy, SciPy, scikit-learn for planned metrics and analysis |
+| `tracking` | OSS MLflow and PyYAML for tracking and planned prompt assets |
+| `nlp` | Optional NLP stack, including RapidFuzz; core grounding remains exact-only |
+
+Extras install dependencies; they do not implement the planned features. Some stacks also bring
+these libraries transitively (for example, MLflow includes analytics dependencies). Existing
+agent, training, hardware, app, and notebook extras remain available.
+
+The default `dev` dependency group installs pytest, HTTPX, and marimo; the separate `dev` extra
+adds lint/type-check and other development tools. Use `--no-default-groups` with both `uv sync`
+and `uv run` for a minimal runtime. For example: `uv run --no-default-groups amber info`.
+
+MLflow is opt-in: use `uv sync --extra tracking` or run `bash scripts/mlflow_local.sh` from the
+repository root. The launcher selects `tracking` and keeps its database/artifacts in `.mlflow/`.
+For a remote server, set `MLFLOW_TRACKING_URI` (and, on Databricks,
+`MLFLOW_REGISTRY_URI=databricks-uc`); select `tracking` for MLflow commands and integrations.
+See `.env.example` for configuration examples, not implemented institutional integrations.
 
 ## Interfaces
 

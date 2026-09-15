@@ -157,23 +157,9 @@ version = "0.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
-    { name = "duckdb" },
-    { name = "mlflow" },
-    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'linux' and extra == 'extra-5-amber-gpu') or (extra == 'extra-5-amber-gpu' and extra == 'extra-5-amber-mlx')" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and sys_platform != 'linux') or (python_full_version < '3.12' and extra != 'extra-5-amber-gpu') or (extra == 'extra-5-amber-gpu' and extra == 'extra-5-amber-mlx')" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and sys_platform != 'linux') or (python_full_version >= '3.12' and extra != 'extra-5-amber-gpu') or (extra == 'extra-5-amber-gpu' and extra == 'extra-5-amber-mlx')" },
-    { name = "pandas" },
-    { name = "pyarrow" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "python-ulid" },
-    { name = "pyyaml" },
-    { name = "rapidfuzz" },
-    { name = "rich" },
-    { name = "scikit-learn" },
-    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-5-amber-gpu' and extra == 'extra-5-amber-mlx')" },
-    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-5-amber-gpu' and extra == 'extra-5-amber-mlx')" },
-    { name = "tqdm" },
 ]
 
 [package.optional-dependencies]
@@ -203,6 +189,14 @@ dev = [
     { name = "pytest-cov" },
     { name = "ruff" },
 ]
+evaluation = [
+    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'linux' and extra == 'extra-5-amber-gpu') or (extra == 'extra-5-amber-gpu' and extra == 'extra-5-amber-mlx')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and sys_platform != 'linux') or (python_full_version < '3.12' and extra != 'extra-5-amber-gpu') or (extra == 'extra-5-amber-gpu' and extra == 'extra-5-amber-mlx')" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and sys_platform != 'linux') or (python_full_version >= '3.12' and extra != 'extra-5-amber-gpu') or (extra == 'extra-5-amber-gpu' and extra == 'extra-5-amber-mlx')" },
+    { name = "scikit-learn" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-5-amber-gpu' and extra == 'extra-5-amber-mlx')" },
+    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-5-amber-gpu' and extra == 'extra-5-amber-mlx')" },
+]
 gpu = [
     { name = "bitsandbytes", marker = "sys_platform == 'linux'" },
     { name = "unsloth", marker = "sys_platform == 'linux'" },
@@ -222,6 +216,7 @@ nlp = [
     { name = "negspacy", version = "1.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-5-amber-gpu' and extra == 'extra-5-amber-mlx')" },
     { name = "negspacy", version = "1.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-5-amber-gpu' and extra == 'extra-5-amber-mlx')" },
     { name = "rank-bm25" },
+    { name = "rapidfuzz" },
     { name = "sentence-transformers" },
     { name = "spacy", version = "3.7.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-5-amber-gpu' and extra == 'extra-5-amber-mlx')" },
     { name = "spacy", version = "3.8.16", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-5-amber-gpu' and extra == 'extra-5-amber-mlx')" },
@@ -229,6 +224,15 @@ nlp = [
 notebooks = [
     { name = "marimo" },
     { name = "openai" },
+]
+storage = [
+    { name = "duckdb" },
+    { name = "pandas" },
+    { name = "pyarrow" },
+]
+tracking = [
+    { name = "mlflow" },
+    { name = "pyyaml" },
 ]
 train = [
     { name = "accelerate" },
@@ -259,7 +263,7 @@ requires-dist = [
     { name = "dagster-mlflow", marker = "extra == 'dagster'" },
     { name = "datasets", marker = "extra == 'train'", specifier = ">=3.4,<4.4" },
     { name = "dateparser", marker = "extra == 'nlp'", specifier = ">=1.2" },
-    { name = "duckdb", specifier = ">=1.1" },
+    { name = "duckdb", marker = "extra == 'storage'", specifier = ">=1.1" },
     { name = "fastapi", marker = "extra == 'app'", specifier = ">=0.115" },
     { name = "gliner", marker = "extra == 'nlp'", specifier = ">=0.2.20" },
     { name = "google-genai", marker = "extra == 'agents'", specifier = ">=1.0" },
@@ -267,18 +271,18 @@ requires-dist = [
     { name = "langextract", marker = "extra == 'langextract'", specifier = ">=1.6" },
     { name = "marimo", marker = "extra == 'notebooks'", specifier = ">=0.24.2" },
     { name = "medspacy", marker = "extra == 'nlp'", specifier = ">=1.3" },
-    { name = "mlflow", specifier = ">=3.5" },
+    { name = "mlflow", marker = "extra == 'tracking'", specifier = ">=3.5" },
     { name = "mlx-lm", marker = "sys_platform == 'darwin' and extra == 'mlx'", specifier = ">=0.28" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
     { name = "negspacy", marker = "extra == 'nlp'", specifier = ">=1.0" },
-    { name = "numpy" },
+    { name = "numpy", marker = "extra == 'evaluation'" },
     { name = "openai", marker = "extra == 'agents'", specifier = ">=1.50" },
     { name = "openai", marker = "extra == 'notebooks'", specifier = ">=1.50" },
     { name = "outlines", marker = "extra == 'mlx'", specifier = ">=1.0" },
-    { name = "pandas", specifier = ">=2.2" },
+    { name = "pandas", marker = "extra == 'storage'", specifier = ">=2.2" },
     { name = "peft", marker = "extra == 'train'", specifier = ">=0.18" },
     { name = "pre-commit", marker = "extra == 'dev'" },
-    { name = "pyarrow", specifier = ">=17" },
+    { name = "pyarrow", marker = "extra == 'storage'", specifier = ">=17" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "pydantic-ai", marker = "extra == 'agents'", specifier = ">=1.0" },
     { name = "pydantic-settings", specifier = ">=2.5" },
@@ -286,26 +290,24 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'" },
     { name = "python-multipart", marker = "extra == 'app'" },
     { name = "python-ulid", specifier = ">=2.7" },
-    { name = "pyyaml" },
+    { name = "pyyaml", marker = "extra == 'tracking'" },
     { name = "rank-bm25", marker = "extra == 'nlp'", specifier = ">=0.2" },
-    { name = "rapidfuzz", specifier = ">=3.9" },
-    { name = "rich" },
+    { name = "rapidfuzz", marker = "extra == 'nlp'", specifier = ">=3.9" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
-    { name = "scikit-learn" },
-    { name = "scipy" },
+    { name = "scikit-learn", marker = "extra == 'evaluation'" },
+    { name = "scipy", marker = "extra == 'evaluation'" },
     { name = "sentence-transformers", marker = "extra == 'nlp'", specifier = ">=3.0" },
     { name = "sentencepiece", marker = "extra == 'train'" },
     { name = "spacy", marker = "extra == 'nlp'", specifier = ">=3.7,<4" },
     { name = "sqlalchemy", marker = "extra == 'app'", specifier = ">=2.0" },
     { name = "torch", marker = "extra == 'train'", specifier = ">=2.4" },
-    { name = "tqdm" },
     { name = "transformers", marker = "extra == 'train'", specifier = ">=4.51.3,<5" },
     { name = "trl", marker = "extra == 'train'", specifier = ">=0.18.2,<=0.24" },
     { name = "unsloth", marker = "sys_platform == 'linux' and extra == 'gpu'", specifier = ">=2025.9" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'app'", specifier = ">=0.30" },
     { name = "vllm", marker = "sys_platform == 'linux' and extra == 'gpu'", specifier = ">=0.10" },
 ]
-provides-extras = ["notebooks", "agents", "nlp", "langextract", "train", "mlx", "gpu", "app", "dagster", "dev"]
+provides-extras = ["storage", "evaluation", "tracking", "notebooks", "agents", "nlp", "langextract", "train", "mlx", "gpu", "app", "dagster", "dev"]
 
 [package.metadata.requires-dev]
 dev = [
