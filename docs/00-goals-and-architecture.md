@@ -28,9 +28,9 @@ Set numeric acceptance thresholds for correctness, unsupported claims, omissions
 coverage, expert minutes per accepted case, and cost. The first task is now defined in the
 [current progression protocol v1.0.0](protocols/oncology_current_progression-v1.md), including
 task-specific pilot gates. These are prospective research targets; none has been clinically
-demonstrated. The strict answer value schema and non-authoritative CORAL candidate rules are
-implemented; split/manifest tooling, evidence-policy enforcement, and clinical evaluation remain
-subsequent work.
+demonstrated. The strict answer value schema, non-authoritative CORAL candidate rules, and
+deterministic split/manifest tooling are implemented. The restricted-data manifest freeze,
+evidence-policy enforcement, and clinical evaluation remain subsequent work.
 
 CORAL v1.0 (DOI `10.13026/v69y-xa45`) is the first clinical evaluation dataset. Its 40 expert-labeled
 notes support a pilot, not a broad generalization claim. Consult its documentation and BRAT

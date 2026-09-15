@@ -27,10 +27,11 @@ globally, enforce manifest immutability, and state CORAL's selection on document
 The follow-up review clarifies not-mentioned outcomes and freezes metric denominators,
 point-estimate gates, uncertainty reporting, and inconclusive-result handling.
 
-**Progress (2026-09-15):** Tasks 1–4 are complete: the
+**Progress (2026-09-15):** Tasks 1–5 are complete: the
 [versioned protocol](../../protocols/oncology_current_progression-v1.md) is documented and reviewed,
-and the strict public answer schema, CORAL parser diagnostics, and non-authoritative candidate
-rules are implemented and tested. Tasks 5–6 remain unimplemented.
+and the strict public answer schema, CORAL parser diagnostics, non-authoritative candidate
+rules, and immutable split/manifest tooling are implemented and tested. Task 6's operator workflow
+and restricted-data integration/freeze checks remain outstanding.
 No split manifest, adjudicated task gold, or clinical gate result has been produced by these
 checkpoints. Answer validation does not enforce evidence requirements.
 
@@ -830,7 +831,7 @@ git commit -m "M1: derive CORAL progression candidates"
   `build_manifest(root: Path) -> dict[str, object]`, and a Click command that creates or verifies
   one immutable JSON manifest. No rebalancing or overwrite mode is included.
 
-- [ ] **Step 1: Write failing hash and split tests**
+- [x] **Step 1: Write failing hash and split tests**
 
 Create 40 synthetic `ManifestInput` records: 20 breast and 20 pancreatic, each with a unique
 `coral_idx`, and with both positive and non-positive pre-adjudication candidates in each cancer
@@ -859,7 +860,7 @@ document order and stratum insertion order; the full document-to-split map must 
 For `sha256_file`, write invented CRLF and Unicode bytes and compare its result with
 `hashlib.sha256(raw_bytes).hexdigest()`.
 
-- [ ] **Step 2: Write failing manifest safety tests**
+- [x] **Step 2: Write failing manifest safety tests**
 
 Build a temporary invented dataset tree containing `.txt`/`.ann` pairs,
 `subject-info.csv`, and `annotation.conf`. Exercise the Click command and assert the JSON contains:
@@ -898,7 +899,7 @@ Freeze tests must prove all of the following:
 - creation racing with another writer cannot overwrite the first valid artifact; and
 - an interrupted write never leaves a partial manifest at the final destination.
 
-- [ ] **Step 3: Run tests to verify the manifest module is absent**
+- [x] **Step 3: Run tests to verify the manifest module is absent**
 
 Run:
 
@@ -908,7 +909,7 @@ uv run pytest tests/test_coral_current_progression_manifest.py -q
 
 Expected: collection fails because the manifest module does not exist.
 
-- [ ] **Step 4: Implement byte hashes and manifest input discovery**
+- [x] **Step 4: Implement byte hashes and manifest input discovery**
 
 Define an immutable input record:
 
@@ -934,7 +935,7 @@ unknown directories instead of inferring cancer type from note text. Treat only 
 as `progression_candidate=True`; all other pre-adjudication outcomes are the other stratum, never
 a clinical-negative label. Report aggregate warning/diagnostic counts with these candidate counts.
 
-- [ ] **Step 5: Implement stable stratified 20/10/10 assignment**
+- [x] **Step 5: Implement stable stratified 20/10/10 assignment**
 
 Validate one document per unique `group_id` and twenty patients per cancer before allocation.
 Use explicit orders: cancer types `("breast", "pancreatic")`, candidate strata `(True, False)`,
@@ -1005,7 +1006,7 @@ matching the selected quotas. Record quota counts and split-policy version
 `current-progression-split-1.0.0` in the manifest. Never recompute membership to improve balance
 after adjudication or after a manifest has been frozen.
 
-- [ ] **Step 6: Implement safe JSON generation and CLI output**
+- [x] **Step 6: Implement safe JSON generation and CLI output**
 
 Build a canonical JSON-compatible dictionary with sorted document entries. Use UTF-8,
 `sort_keys=True`, `separators=(",", ":")`, `ensure_ascii=False`, and `allow_nan=False` for the
@@ -1044,7 +1045,7 @@ Print only the output path, manifest hash, document count, split counts, and agg
 or diagnostic counts. Never print annotations, source text, quotes, offsets, or raw exception
 messages. Input/parse/write failures produce a nonzero exit and a fixed safe error category.
 
-- [ ] **Step 7: Run focused manifest tests and lint**
+- [x] **Step 7: Run focused manifest tests and lint**
 
 Run:
 
@@ -1057,7 +1058,7 @@ uv run ruff check experiments/coral/scripts/coral_current_progression_manifest.p
 Expected: all quota, ordering, leakage, malformed input, hashing, immutable-rerun, and output-safety
 tests pass.
 
-- [ ] **Step 8: Commit the manifest tooling**
+- [x] **Step 8: Commit the manifest tooling**
 
 ```bash
 git add experiments/coral/scripts/coral_current_progression_manifest.py \

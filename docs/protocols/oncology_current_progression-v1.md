@@ -13,10 +13,10 @@
 | Split | 20 train / 10 dev / 10 test documents, seed `20260915` |
 | Intended use | Retrospective research workflow only |
 
-Status: versioned M1 research protocol with an implemented answer value schema. Manifest tooling,
-clinical extraction, evaluation, and the correction workflow remain unimplemented. All performance
-gates are unevaluated. This protocol is not clinical validation, expert endorsement, a
-gold-generation result, or evidence of deployment safety.
+Status: versioned M1 research protocol with implemented answer-schema, candidate, and manifest
+tooling. The restricted-data manifest freeze, clinical extraction, evaluation, and correction
+workflow remain subsequent work. All performance gates are unevaluated. This protocol is not
+clinical validation, expert endorsement, a gold-generation result, or evidence of deployment safety.
 
 ## Question and review scope
 

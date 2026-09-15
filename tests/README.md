@@ -12,6 +12,9 @@ Keep the suite flat and grouped by the boundary under test:
   aggregate diagnostics, and explicit local audit exports; invented BRAT and temporary files only.
 - `test_coral_current_progression.py`: non-authoritative candidate rules, warning/blocker
   precedence, annotation completeness, and relevant span/skip safety using invented BRAT.
+- `test_coral_current_progression_manifest.py`: deterministic quotas and patient-level splits,
+  byte hashes, restricted output paths, immutable reruns, and atomic publication using invented
+  dataset trees only.
 
 ## Local checks
 

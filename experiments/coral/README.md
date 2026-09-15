@@ -1,8 +1,9 @@
 # CORAL experiment
 
 Initial workspace for running Amber on CORAL v1.0 (DOI `10.13026/v69y-xa45`). The annotation
-audit and pure current-progression candidate rules are implemented. The domain adapter remains a
-draft with missing M1 schema dependencies; extraction and evaluation remain to be implemented under the
+audit, pure current-progression candidate rules, and split/manifest tooling are implemented.
+The domain adapter remains a draft with missing M1 schema dependencies; extraction and evaluation
+remain to be implemented under the
 [M1–M3 roadmap](../../docs/04-roadmap.md).
 
 ```text
@@ -12,6 +13,7 @@ coral/
   scripts/coral_ingest.py    compatibility launcher for the audit CLI
   scripts/coral_adapter.py   draft CORAL-to-Amber mapping policies
   scripts/coral_current_progression.py  pure candidate rules (no CLI or file writes)
+  scripts/coral_current_progression_manifest.py  deterministic splits and immutable local manifest
   eval/                     evaluation code and analysis
   data/raw/annotated/        40 expert-labeled notes (local only)
   data/raw/unannotated/      200 other notes and GPT-4 pseudo-labels (local only)
@@ -76,8 +78,8 @@ validation before gold derivation.
 The [candidate module](scripts/coral_current_progression.py) implements the conservative mapping
 in [protocol v1.0.0](../../docs/protocols/oncology_current_progression-v1.md). Pass an existing parsed
 `Document` to `derive_current_progression_candidate`; it returns a frozen candidate with sorted
-signals and flags. The function performs no file writes or model calls. There is no candidate CLI,
-manifest generator, or split assignment yet.
+signals and flags. The function performs no file writes or model calls. The separate manifest
+command below consumes these candidates for pre-adjudication stratification.
 
 Every result is `non_authoritative`, requires clinical review, and leaves `clinical_scope_reviewed`
 false. An answered candidate proposes a strict boolean, not a gold label or evidence-backed Amber
@@ -98,6 +100,25 @@ remain linked to restricted data. Keep derived results local under the dataset's
 do not print or commit individual candidates. `not_mentioned` with `annotation_absence_only` means
 only that no relevant annotation was found in a complete inventory, not that a human reviewed the
 whole note. Gold still requires independent review and adjudication.
+
+## Split and manifest tooling
+
+The [manifest command](scripts/coral_current_progression_manifest.py) implements deterministic
+20/10/10 document splitting with seed `20260915`, preserving 10/5/5 per cancer type. Positive
+candidate quotas are allocated jointly before hash-ordering patients within each stratum. Only an
+`answered true` candidate enters the positive stratum; the other stratum is not a clinical-negative
+label. Repeated patient identities are rejected rather than split across partitions.
+
+Manifests contain restricted linked metadata, hashes, and aggregate diagnostics, not source text
+or evidence. Output is limited to ignored `data/manifests/` or `outputs/` paths outside input trees.
+Existing artifacts are immutable: identical reruns verify without writing; changed inputs,
+versions, or membership fail. First publication is atomic and never replaces a competing artifact.
+
+The selected manifest is the freeze authority. Choosing a new filename does not authorize
+repartitioning exposed patients. A successor needs an explicit future migration retaining known
+assignments and linking the original artifact; no migration or overwrite mode is implemented.
+Synthetic tests cover the tooling; the real CORAL manifest freeze and complete operator workflow
+remain the next implementation checkpoint.
 
 Before extraction or scoring, define the clinical task, answer schema, annotation coverage,
 gold derivation, patient/document split, numeric acceptance criteria, and permitted provider
