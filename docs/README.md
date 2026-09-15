@@ -37,7 +37,8 @@ demonstrated.
 - Exact grounding: [Inclusion and GroundingFailure](../src/amber/schemas/evidence.py),
   [exact_quote](../src/amber/grounding.py), and the deterministic [quote tool](../src/amber/tools/quote.py).
   Repeated text requires an exact hint; returned offsets refer to the unchanged source text.
-- [Interface smoke tests](../tests/test_interfaces.py) and
+- [Core interface smoke tests](../tests/test_interfaces.py), separate optional
+  [HTTP tests](../tests/test_api.py), [isolated settings tests](../tests/test_config.py), and
   [kernel invariant tests](../tests/test_invariants.py), including source identity/mutation,
   section bounds, Unicode/CRLF offsets, repeated quotes, grounding failures, and direct minting
   rejection. These cover the implemented subset, not every planned invariant.
@@ -50,6 +51,9 @@ demonstrated.
 - A four-dependency core, with storage, evaluation, and tracking dependencies selected through
   extras. See the [installation guide](../README.md#toolchain); selecting an extra does not
   implement the corresponding planned workflow.
+- [CI checks](../.github/workflows/ci.yml) for core-only installation and the full synthetic suite
+  on Python 3.11/3.12, plus lint, formatting, type, and lockfile checks. The
+  [test guide](../tests/README.md) documents local reproduction and optional dependencies.
 
 ### Planned or incomplete
 
@@ -67,8 +71,7 @@ demonstrated.
 - [CORAL's draft adapter](../experiments/coral/scripts/coral_adapter.py) imports domain classes that
   do not exist yet; it is not a working domain integration or a gold-generation path.
 - [Prompt seeds](../prompts/README.md) are documented but no YAML seeds or `amber register-prompts`
-  command exist. MLflow prompt helpers and shared test fixtures are placeholders; model packaging
-  remains deferred.
+  command exist. MLflow prompt helpers remain placeholders; model packaging remains deferred.
 
 Use the [M1–M3 roadmap](04-roadmap.md) for remaining delivery requirements. Check code and tests
 before claiming a feature or milestone is complete; synthetic tests cannot establish clinical

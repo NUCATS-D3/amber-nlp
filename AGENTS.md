@@ -146,7 +146,7 @@ uv sync --extra dev --extra app             # API work
 uv sync --extra dev --extra app --extra tracking  # full tests/type checks
 uv sync --extra dev --extra agents --extra nlp
 uv run pytest
-uv run --extra dev --extra app pytest tests/test_interfaces.py
+uv run --extra dev --extra app pytest tests/test_api.py
 uv run --extra dev --extra tracking pytest tests/test_tracking.py
 uv run pytest --cov=amber
 uv run ruff check .
@@ -161,9 +161,10 @@ Use `uv run ruff format <paths>` only when intentionally formatting files; use `
 validation. Start with focused tests and changed-file linting, then run the relevant full checks
 before handoff. API changes must be tested with the `app` extra installed so optional HTTP tests
 do not pass merely by being skipped. Tracking changes likewise require the `tracking` extra;
-test its installed entry point and missing-dependency behavior. For documentation-only changes,
-check referenced paths and commands and run `git diff --check`; do not add tests just to exercise
-unchanged code.
+test its installed entry point and missing-dependency behavior. See [tests/README.md](tests/README.md)
+for suite organization, settings isolation, and the Python 3.11/3.12 CI checks. For documentation-only
+changes, check referenced paths and commands and run `git diff --check`; do not add tests just to
+exercise unchanged code.
 Follow the local MLflow server command in `README.md` or use `bash scripts/mlflow_local.sh` when a
 task genuinely needs MLflow integration; the script selects `tracking` and keeps its database and
 artifacts in `.mlflow/`.
@@ -190,8 +191,9 @@ cycles, and disallowed provider/sensitivity combinations as the relevant kernel 
 Cover source-free support branches and answer/abstention/failure consistency. Clinical experiments
 also measure semantic support, omissions, automation coverage, and total expert effort; passing
 kernel tests does not demonstrate clinical usefulness.
-When adding an optional adapter, test in a fresh process that importing core Amber does not import
-that adapter's dependency; the existing import test covers FastAPI only.
+When adding an optional adapter, extend the fresh-process core import test and the core-only
+installation smoke check. Settings-dependent tests opt into the `isolated_settings` fixture;
+it isolates the caller's environment/dotenv and clears the settings cache before and after use.
 
 ## CORAL Dataset
 

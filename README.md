@@ -71,6 +71,13 @@ For a remote server, set `MLFLOW_TRACKING_URI` (and, on Databricks,
 `MLFLOW_REGISTRY_URI=databricks-uc`); select `tracking` for MLflow commands and integrations.
 See `.env.example` for configuration examples, not implemented institutional integrations.
 
+## Tests and CI
+
+See the [test guide](tests/README.md) for focused commands and settings isolation. GitHub Actions
+checks a minimal installed package and the full synthetic suite on Python 3.11/3.12, with HTTP
+and tracking extras installed. Ruff, formatting, mypy, and lockfile checks run without clinical
+data, models, or external services; dependency installation requires network access.
+
 ## Interfaces
 
 Use the same application facade from Python, the CLI, or FastAPI:
