@@ -25,7 +25,7 @@ acceptance targets and patient/document splits before selection; never tune on h
 
 - Python 3.11+, `uv` for everything (`uv sync --extra dev`, `uv run pytest`, `uv run ruff check`). Add dependencies to the right extra in `pyproject.toml`; core stays model- and GPU-free.
 - Pydantic v2 everywhere; `model_config = ConfigDict(extra="forbid")` on data-model classes.
-- One module per responsibility as laid out in `src/amber/` docstrings; keep the deterministic tools importable without the agent runtime, and the agent runtime importable without any model weights.
+- One module per responsibility, following the v1 contract and roadmap. Add deferred modules with implementation and tests, not docstring-only placeholders; keep deterministic tools importable without the agent runtime, and the agent runtime importable without model weights.
 - Tests: unit tests must run on CPU with no network; mark `slow`, `gpu`, `mlx` as appropriate. Every invariant above has a test that tries to violate it.
 - Prompts live in the MLflow prompt registry; a checked-in YAML under `prompts/` is the seed, and the code loads by version, never by inline string.
 - Log to MLflow through `amber.mlflow_ext` helpers so runs, traces, and tags stay consistent; no ad hoc `mlflow.log_*` scattered through agents.

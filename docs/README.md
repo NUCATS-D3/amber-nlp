@@ -57,12 +57,14 @@ demonstrated.
   `commit_claim`, `CaseOutcome`, `Example`, and provider/destination policy enforcement remain
   unimplemented. Having sensitivity/zone enums does not implement the policy gate.
 - Persistence, exports, extraction, clinical evaluation, correction, agent/backend integrations,
-  and training remain future work. Extraction/annotation routers are empty; the job module is a
-  responsibility docstring, not a queue.
+  and training remain future work. Extraction/annotation routers are empty; no job queue is
+  implemented. Distant-future docstring-only modules have been removed; their intended
+  responsibilities and locations remain in the [roadmap](04-roadmap.md#deferred-implementation-locations).
 - [CORAL's draft adapter](../experiments/coral/scripts/coral_adapter.py) imports domain classes that
   do not exist yet; it is not a working domain integration or a gold-generation path.
 - [Prompt seeds](../prompts/README.md) are documented but no YAML seeds or `amber register-prompts`
-  command exist. MLflow prompt/model helpers and shared test fixtures are placeholders.
+  command exist. MLflow prompt helpers and shared test fixtures are placeholders; model packaging
+  remains deferred.
 
 Use the [M1–M3 roadmap](04-roadmap.md) for remaining delivery requirements. Check code and tests
 before claiming a feature or milestone is complete; synthetic tests cannot establish clinical

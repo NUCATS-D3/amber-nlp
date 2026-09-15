@@ -153,6 +153,28 @@ PatientFact, temporal aggregation, patient-wide search, FHIR, additional tasks/i
 SpanTask adapters, and trajectory distillation remain later work. Preserve extension points in
 the kernel without making these prerequisites for the first measured clinical task.
 
+## Deferred implementation locations
+
+Keep these future responsibilities in the design until a milestone needs working code and tests.
+The paths below are intended locations, not an inventory of implemented modules. Removing empty
+scaffolding does not remove the capability from the roadmap or change its evidence requirements.
+
+- `agents/`: bounded note extraction and note-scoped review in M4/M5, using the shared tools,
+  versioned registry prompts, and centralized MLflow tracing. Patient-wide review remains deferred.
+- Additional `backends/` implementations and `train/`: capability-checked MLX or Transformers/PEFT
+  execution when another runtime is needed; Example-based training exports and validated adapter
+  conversion in M7. These do not precede M2's single permitted provider.
+- Additional `tools/` modules: sectioning, template/copy-forward marking, mention/context
+  extraction, concept normalization, within-note search, dates/calculation, and provider-gated
+  structured lookups. Add only what the selected task or measured errors require; search hits
+  remain candidates until grounded, and template flags do not define annotation coverage.
+- `export/omop.py`: the validated mention-to-`NOTE_NLP` mapping when the downstream workflow needs
+  it. M1's native persistence/export path remains first; patient-level tables and FHIR stay deferred.
+- `mlflow_ext/model.py`: pyfunc packaging of model/adapter/task references with evidence-linked
+  prediction output when deployment needs it. Preserve the OSS-only integration boundary.
+- `api/jobs.py`: a background-job boundary only when use cases need work to outlive an HTTP
+  request. Choose a concrete queue then; the existing health/info interfaces do not require one.
+
 ## Milestone changes from the initial scaffold
 
 M1 now includes the task protocol and policy rules. The original M3 provider work moves into M2's

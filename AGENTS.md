@@ -50,9 +50,12 @@ Keep dependencies pointing inward:
 - `client.py` is the stable Python facade. CLI and API adapters call the facade/services instead
   of duplicating business logic.
 - `cli/` and `api/` are delivery adapters. Keep HTTP and Click models at those boundaries.
-- `agents/` and `backends/` contain optional runtime integrations behind capability-checked
-  interfaces. `store/`, `export/`, and `mlflow_ext/` are outward adapters.
+- Optional runtime integrations belong in `agents/` and `backends/` behind capability-checked
+  interfaces when implemented. `store/`, `export/`, and `mlflow_ext/` are outward adapter boundaries.
   Services depend on store/provider protocols rather than concrete database or model packages.
+
+Deferred components are described in the [roadmap](docs/04-roadmap.md#deferred-implementation-locations).
+Add their modules with implementation and tests, not as docstring-only promises of future behavior.
 
 Keep `import amber` lightweight: it must not import FastAPI, PydanticAI, Transformers, MLX, or
 other optional stacks. Import optional dependencies at their boundary and return an actionable
