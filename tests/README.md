@@ -11,6 +11,8 @@ Keep the suite flat and grouped by the boundary under test:
   errors, invalid references, rejected support, all-component cycles, and deep iterative chains.
 - `test_graph.py`: owned graph state, idempotent/atomic registration, support traversal, detached
   views, strict snapshots, and source-revalidated restore against caller-supplied context.
+- `test_commit.py`: proposed positive/negative answers, field citations, rationale/provenance,
+  atomic failure, supporting-claim chains, and structural-versus-semantic support boundaries.
 - `test_api.py`: optional HTTP health/info routes; requires `app` and HTTPX.
 - `test_tracking.py`: optional MLflow entry point, missing dependencies, and the local launcher.
 - `test_invariants.py`: the implemented source, ID, and exact-grounding invariants.
@@ -53,7 +55,8 @@ and 3.12 on Linux. Jobs install from `uv.lock`, with no dataset credentials or e
 
 - Core installation: install non-editably without extras or default dependency groups, then run
   [check_core_install.py](../scripts/check_core_install.py) with `python -I`. This checks the
-  installed package location, absence of optional stacks, facade, Unicode/CRLF grounding, and CLI.
+  installed package location, absence of optional stacks, facade, Unicode/CRLF grounding,
+  evidence-backed proposed commits, validated graph restore, and CLI.
 - Full suite: install `dev`, `app`, and `tracking` plus the default dev group. Explicitly import
   the optional interfaces before testing so a missing dependency fails the job rather than
   skipping its tests. Run the synthetic CPU suite on both Python versions; run Ruff, formatting,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Mapping, Sequence
+from copy import deepcopy
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, NoReturn
@@ -62,7 +63,7 @@ def build_context(
     try:
         if not isinstance(source, Source) or not isinstance(task, Task):
             _raise("invalid_context")
-        copied_source = Source.model_validate(source.model_dump(warnings=False))
+        copied_source = Source.model_validate(deepcopy(source.model_dump(warnings=False)))
         copied_task = Task.model_validate(task.model_dump(warnings=False))
     except GraphValidationError:
         raise

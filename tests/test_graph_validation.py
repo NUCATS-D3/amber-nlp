@@ -134,6 +134,21 @@ def test_context_revalidates_source_and_task_and_breaks_mutable_aliases() -> Non
     assert context.schema_ref == schema_ref(task.answer_model)
 
 
+def test_context_copies_arbitrary_mutable_source_metadata() -> None:
+    source = make_source()
+    source.meta["bytes"] = bytearray(b"original")
+
+    context = build_context(
+        source=source,
+        task=make_task(),
+        sensitivity=Sensitivity.synthetic,
+    )
+    source.meta["bytes"][0] = ord("x")
+
+    assert context.source.meta["bytes"] == bytearray(b"original")
+    assert context.source.meta["bytes"] is not source.meta["bytes"]
+
+
 @pytest.mark.parametrize("target", ["source", "task"])
 def test_context_revalidation_suppresses_source_bearing_serializer_warnings(target: str) -> None:
     source = make_source()

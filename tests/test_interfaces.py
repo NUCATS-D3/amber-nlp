@@ -19,7 +19,10 @@ def test_importing_core_does_not_import_optional_stacks() -> None:
         [
             sys.executable,
             "-c",
-            "import amber, amber.schemas, amber.tools.quote, sys; "
+            "import amber, amber.graph, amber.schemas, amber.tools.commit, amber.tools.quote, sys; "
+            "from amber.graph import EvidenceGraph; "
+            "from amber.schemas import Claim, Provenance, Task; "
+            "from amber.tools.commit import commit_claim; "
             "assert not {'fastapi', 'mlflow', 'pandas', 'pyarrow', 'duckdb', "
             "'numpy', 'scipy', 'sklearn', 'pydantic_ai', 'transformers', 'mlx'} "
             "& sys.modules.keys()",

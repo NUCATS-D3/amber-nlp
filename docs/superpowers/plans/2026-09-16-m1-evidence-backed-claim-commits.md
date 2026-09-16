@@ -18,9 +18,9 @@ do not become one large module.
 approved by the user on 2026-09-16. The [v1 contract](../../02-v1-schemas-and-tools.md) and
 [working agreement](../../../CLAUDE.md) remain binding.
 
-**Progress:** Tasks 1–3 complete (464 tests on both Python versions; independent reviews approved).
-Task 4 remains. Each checkpoint includes tests, review, and a commit.
-Continue the established subagent-driven workflow in the current checkout; no push.
+**Progress:** Complete. All four checkpoints are implemented and independently reviewed, including
+the whole-slice review and its fixes. Final verification: 517 tests pass on each supported Python
+version, with all other checks passing. Work remains in the existing checkout; no push.
 
 ## Global Constraints
 
@@ -457,7 +457,7 @@ The graph method omits the `graph` argument. For this API `effective_datetime=No
 source datetime; a supplied datetime overrides it. The resulting field may be `None` when the
 source date is absent. Do not introduce a status parameter.
 
-- [ ] **Step 1: Write failing end-to-end commit tests**
+- [x] **Step 1: Write failing end-to-end commit tests**
 
 ```python
 @pytest.mark.parametrize("value", [True, False])
@@ -494,7 +494,7 @@ injection may replace ULID generation to prove that a late-stage error cannot pu
 Add one exactly grounded but semantically wrong citation that passes structural checks, explicitly
 showing why proposed status is not semantic verification. Do not add an automatic clinical judge.
 
-- [ ] **Step 2: Demonstrate RED and implement graph-owned commit**
+- [x] **Step 2: Demonstrate RED and implement graph-owned commit**
 
 Run `uv run pytest tests/test_commit.py -q` first. Validate Task binding, a complete strict answer,
 nonblank rationale, unique/nonempty evidence IDs, and field-role keys and ID subsets. Raw claim IDs
@@ -522,7 +522,7 @@ when omitted. Pass the complete candidate graph through `validate_state`, publis
 after success, and return its minted Claim. The thin tool does not duplicate validation or state.
 No model, trace server, provider, or database call occurs.
 
-- [ ] **Step 3: Verify core imports and installed behavior**
+- [x] **Step 3: Verify core imports and installed behavior**
 
 Extend the fresh-process import check to import the new schemas/graph/tool and assert no optional
 web/agent/model/storage/tracking packages load. Extend the existing installed smoke script with a
@@ -530,7 +530,15 @@ synthetic source, grounded inclusion, registered evidence, proposed commit, and 
 Use the script's existing assertion/error style; source text is invented, and no cleanup-only
 production API is added. This tests packaging rather than duplicating every unit assertion.
 
-- [ ] **Step 4: Verify the completed slice, review, and commit**
+- [x] **Step 4: Verify the completed slice, review, and commit**
+
+Final verification completed with 517 passing tests on Python 3.11 and 517 on Python 3.12;
+each run retained the two known Starlette/AnyIO deprecation warnings. Ruff lint and
+format checks, mypy, the offline lock check, and `git diff --check` passed. The non-editable,
+core-only installed smoke passed in `/private/tmp/amber-task4-core.CXdHkQ`, including synthetic
+grounding, proposed claim commit, and validated snapshot restore. Task and whole-slice reviews
+are approved after fixing source-bearing serializer warnings and mutable Source metadata aliasing.
+Required-nullable record omissions also have regression coverage. M1 remains incomplete.
 
 Run all focused tests, both full Python suites, Ruff, mypy, offline lock and whitespace checks.
 Run the installed core smoke in a temporary core-only environment without changing dependencies

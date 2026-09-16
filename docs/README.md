@@ -51,7 +51,7 @@ demonstrated.
   [evidence schemas](../src/amber/schemas/evidence.py). Nested values, inference inputs, and
   provenance prompt versions resist ordinary mutation while preserving JSON shapes. Canonical
   schema references and ULID validation are covered by [schema tests](../tests/test_claim_schemas.py).
-  These records alone do not admit claims or implement a commit path.
+  Claims are admitted only through complete graph validation, not standalone construction.
 - Complete internal [graph validation](../src/amber/_graph_validation.py) with
   [source-safe diagnostic codes](../src/amber/graph_errors.py): one note/task/sensitivity context,
   exact inclusion revalidation, exclusions, field citations, complete references, cycles, and
@@ -64,7 +64,13 @@ demonstrated.
   all evidence; snapshots contain source quotes and are never printed by the graph. Registration
   failures leave graph state unchanged. [Lifecycle tests](../tests/test_graph.py) cover forged
   copies, ownership, idempotency, corrupt payloads, and strict snapshot context/version checks.
-  The claim-commit tool remains the next checkpoint; no file/database persistence is added.
+  No file/database persistence is added.
+- Atomic [claim commits](../src/amber/tools/commit.py) delegate to graph-owned staging and full
+  validation before publishing a proposed Claim, rationale inference, and field-specific edges.
+  Explicit negative answers require the same evidence as positive ones. Provenance and source
+  datetime defaults are retained; rejected operations leave no partial state.
+  [End-to-end tests](../tests/test_commit.py) distinguish structural validity from semantic support
+  and exercise atomic failures, supporting-claim chains, and snapshot round-trips.
 - [Core interface smoke tests](../tests/test_interfaces.py), separate optional
   [HTTP tests](../tests/test_api.py), [isolated settings tests](../tests/test_config.py), and
   [kernel invariant tests](../tests/test_invariants.py), including source identity/mutation,
@@ -105,11 +111,12 @@ demonstrated.
 - Independent human review and adjudication for the current-progression task have not been
   performed by this implementation, and every clinical gate remains unevaluated. Completing
   protocol/schema/candidate/split preparation does not establish clinical performance or gold.
-- Mentions, structured evidence, `commit_claim`, `CaseOutcome`, `Example`,
-  and provider/destination policy enforcement remain
-  unimplemented. Having sensitivity/zone enums does not implement the policy gate.
-  The next proposed increment is the [in-memory claim-commit design](superpowers/specs/2026-09-16-m1-evidence-backed-claim-commits-design.md),
-  approved for implementation under its [checkpoint plan](superpowers/plans/2026-09-16-m1-evidence-backed-claim-commits.md).
+- Mentions, structured evidence, `CaseOutcome`, `Example`, human status review, and
+  provider/destination policy enforcement remain unimplemented. Having sensitivity/zone enums
+  or checking provenance sensitivity does not implement the policy gate. The
+  [in-memory claim-commit design](superpowers/specs/2026-09-16-m1-evidence-backed-claim-commits-design.md)
+  and [checkpoint plan](superpowers/plans/2026-09-16-m1-evidence-backed-claim-commits.md)
+  describe the bounded evidence slice; M1 is still incomplete.
 - Persistence, exports, extraction, clinical evaluation, correction, agent/backend integrations,
   and training remain future work. Extraction/annotation routers are empty; no job queue is
   implemented. Distant-future docstring-only modules have been removed; their intended
@@ -122,6 +129,37 @@ demonstrated.
 Use the [M1–M3 roadmap](04-roadmap.md) for remaining delivery requirements. Check code and tests
 before claiming a feature or milestone is complete; synthetic tests cannot establish clinical
 performance.
+
+## Synthetic kernel usage
+
+The [installed core smoke example](../scripts/check_core_install.py) shows the complete invented-data
+workflow; [the test guide](../tests/README.md#ci) gives the isolated installation command. Supply one
+explicit `Source`, `Task`, and `Sensitivity` to `EvidenceGraph`, ground a quote against that exact
+source, and register the resulting `Inclusion`. Then use the [commit tool](../src/amber/tools/commit.py)
+with explicit provenance and field evidence:
+
+```python
+claim = commit_claim(
+    task,
+    {"progression_or_recurrence": False},
+    [inclusion.evidence_id],
+    "Interpretation of an invented example only.",
+    {"progression_or_recurrence": [inclusion.evidence_id]},
+    graph=graph,
+    provenance=provenance,
+)
+assert claim.status == "proposed"
+```
+
+An omitted effective datetime uses the source datetime. Claims require a nullable `confidence`
+field in their serialized record; the tool fills it with `None` when the caller omits it.
+`graph.to_payload()` is source-bearing, even though it performs no I/O. Do not log or commit real
+snapshots. Restore with `EvidenceGraph.from_payload(...)` and the same authoritative source, task,
+sensitivity, and exclusions. Failed registration or commit leaves the graph unchanged.
+
+This path proves structural validity and source traceability, not clinical correctness. It does
+not certify complete note review, authorize transfers, assign gold status, or create clinical
+outcomes. Use invented data until provider/destination policy and clinical integration are designed.
 
 ## Background and experiment documentation
 

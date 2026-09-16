@@ -194,6 +194,18 @@ def test_context_and_views_do_not_expose_graph_owned_state() -> None:
     assert graph.edges == ()
 
 
+def test_source_view_copies_arbitrary_mutable_metadata() -> None:
+    source = make_source("Stable.")
+    source.meta["bytes"] = bytearray(b"original")
+    graph = EvidenceGraph(source=source, task=make_task(), sensitivity=Sensitivity.synthetic)
+
+    view = graph.source
+    view.meta["bytes"][0] = ord("x")
+
+    assert graph.source.meta["bytes"] == bytearray(b"original")
+    assert graph.source.meta["bytes"] is not view.meta["bytes"]
+
+
 def test_support_traversal_visits_all_branches_and_returns_sorted_source_leaves() -> None:
     graph, ids = _graph_with_support_tree()
 

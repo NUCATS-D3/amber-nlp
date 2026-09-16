@@ -286,6 +286,14 @@ def test_claim_record_accepts_nullable_bounded_confidence(confidence: float | No
     assert _ClaimRecord.model_validate(claim_data(confidence=confidence)).confidence == confidence
 
 
+def test_claim_record_requires_explicit_nullable_confidence() -> None:
+    data = claim_data(confidence=None)
+    data.pop("confidence")
+
+    with pytest.raises(ValidationError):
+        _ClaimRecord.model_validate(data)
+
+
 @pytest.mark.parametrize("confidence", [-0.01, 1.01, float("nan"), float("inf"), float("-inf")])
 def test_claim_record_rejects_out_of_range_or_nonfinite_confidence(confidence: float) -> None:
     with pytest.raises(ValidationError):
@@ -359,6 +367,15 @@ def test_inference_evidence_has_exact_v1_fields_and_immutable_inputs() -> None:
         inference.inputs.append("changed")
     assert inference.model_dump()["inputs"] == ["source-evidence-1"]
     assert json.loads(inference.model_dump_json())["inputs"] == ["source-evidence-1"]
+
+
+@pytest.mark.parametrize("field", ["trace_id", "span_id"])
+def test_inference_evidence_requires_explicit_nullable_trace_fields(field: str) -> None:
+    data = inference_data(**{field: None})
+    data.pop(field)
+
+    with pytest.raises(ValidationError):
+        InferenceEvidence.model_validate(data)
 
 
 @pytest.mark.parametrize("rationale", ["", " ", "\t\n"])

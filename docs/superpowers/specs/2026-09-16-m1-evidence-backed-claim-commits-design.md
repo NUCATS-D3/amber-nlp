@@ -1,8 +1,9 @@
 # M1 evidence-backed claim commits
 
-Status: written design approved by the user, 2026-09-16. Implementation follows the
-[checkpoint plan](../plans/2026-09-16-m1-evidence-backed-claim-commits.md); approval does not claim
-implementation or clinical validation.
+Status: approved, implemented, and verified on 2026-09-16 under the
+[checkpoint plan](../plans/2026-09-16-m1-evidence-backed-claim-commits.md). Independent reviews and
+517 tests on each supported Python version cover this slice; it does not establish clinical
+validation or complete M1.
 
 ## Purpose and authority
 
@@ -15,9 +16,10 @@ The [v1 contract](../../02-v1-schemas-and-tools.md), especially sections 4–6 a
 [goals](../../00-goals-and-architecture.md), [roadmap](../../04-roadmap.md), and
 [current-progression protocol](../../protocols/oncology_current_progression-v1.md).
 
-Current foundations are `Source`, `Inclusion`, exact grounding, `AnswerModel`, canonical IDs, and
-provenance. `graph.py` and `tools/commit.py` are placeholders. Ordinary `Inclusion` construction is
-already guarded, but the future graph must independently recheck evidence against the source.
+At design approval, the foundations were `Source`, `Inclusion`, exact grounding, `AnswerModel`,
+canonical IDs, and provenance; `graph.py` and `tools/commit.py` were placeholders. Ordinary
+`Inclusion` construction was already guarded, but the graph still needed to independently recheck
+evidence against the source.
 Pydantic's `frozen=True` does not make nested dictionaries or lists immutable.
 
 The chosen approach is an in-memory graph with atomic claim commits. A models-only increment

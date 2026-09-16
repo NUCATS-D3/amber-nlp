@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from copy import deepcopy
+from datetime import datetime
 from types import MappingProxyType
 from typing import Any, NoReturn
 
+from pydantic import ValidationError
+
 from amber._graph_validation import _GraphContext, _ValidatedState, build_context, validate_state
 from amber.graph_errors import GraphValidationCode, GraphValidationError
+from amber.ids import new_ulid
 from amber.schemas.claims import Claim
 from amber.schemas.evidence import EvidenceEdge, Inclusion, InferenceEvidence
-from amber.schemas.provenance import Sensitivity
+from amber.schemas.provenance import Provenance, Sensitivity
 from amber.schemas.sources import Source
 from amber.schemas.tasks import Task
 
@@ -78,16 +83,29 @@ def _snapshot_exclusions(value: Any, *, source_length: int) -> tuple[tuple[int, 
 
 def _copy_source(source: Source) -> Source:
     try:
-        return Source.model_validate(source.model_dump())
+        return Source.model_validate(deepcopy(source.model_dump(warnings=False)))
     except (TypeError, ValueError):
         _raise("invalid_context")
 
 
 def _copy_task(task: Task) -> Task:
     try:
-        return Task.model_validate(task.model_dump())
+        return Task.model_validate(task.model_dump(warnings=False))
     except (TypeError, ValueError):
         _raise("invalid_context")
+
+
+def _validated_identifiers(value: Any) -> list[str]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+        _raise("invalid_schema")
+    identifiers = list(value)
+    if not identifiers or any(
+        type(identifier) is not str or not identifier.strip() for identifier in identifiers
+    ):
+        _raise("invalid_schema")
+    if len(identifiers) != len(set(identifiers)):
+        _raise("invalid_schema")
+    return identifiers
 
 
 class EvidenceGraph:
@@ -197,6 +215,132 @@ class EvidenceGraph:
 
         self._state = candidate_state
         return incoming.model_copy(deep=True)
+
+    def commit_claim(
+        self,
+        task: Task,
+        value: dict[str, Any],
+        evidence_ids: Sequence[str],
+        rationale: str,
+        field_roles: Mapping[str, Sequence[str]] | None = None,
+        *,
+        provenance: Provenance,
+        effective_datetime: datetime | None = None,
+        confidence: float | None = None,
+    ) -> Claim:
+        """Atomically validate and publish one evidence-backed proposed claim."""
+        try:
+            if not isinstance(task, Task):
+                _raise("invalid_context")
+            bound_task = Task.model_validate(task.model_dump(warnings=False))
+        except GraphValidationError:
+            raise
+        except (AttributeError, TypeError, ValueError, ValidationError):
+            _raise("invalid_context")
+        if bound_task != self._context.task:
+            _raise("invalid_context")
+
+        try:
+            if not isinstance(value, Mapping):
+                _raise("invalid_schema")
+            answer = bound_task.answer_model.model_validate(dict(value))
+            normalized_value = answer.model_dump(mode="json", warnings=False)
+        except GraphValidationError:
+            raise
+        except (TypeError, ValueError, ValidationError):
+            _raise("invalid_schema")
+
+        primary_ids = _validated_identifiers(evidence_ids)
+        if any(evidence_id not in self._state.evidence for evidence_id in primary_ids):
+            _raise("unknown_reference")
+
+        if type(rationale) is not str or not rationale.strip():
+            _raise("invalid_schema")
+
+        try:
+            if not isinstance(provenance, Provenance):
+                _raise("invalid_schema")
+            validated_provenance = Provenance.model_validate(provenance.model_dump(warnings=False))
+        except GraphValidationError:
+            raise
+        except (AttributeError, TypeError, ValueError, ValidationError):
+            _raise("invalid_schema")
+
+        normalized_roles: dict[str, list[str]] = {}
+        if field_roles is not None:
+            if not isinstance(field_roles, Mapping):
+                _raise("invalid_schema")
+            try:
+                role_items = list(field_roles.items())
+            except (AttributeError, TypeError, ValueError):
+                _raise("invalid_schema")
+            known_fields = frozenset(bound_task.answer_model.model_fields)
+            for role, role_ids in role_items:
+                if type(role) is not str or role not in known_fields:
+                    _raise("invalid_context")
+                normalized_ids = _validated_identifiers(role_ids)
+                if not set(normalized_ids).issubset(primary_ids):
+                    _raise("invalid_context")
+                normalized_roles[role] = normalized_ids
+
+        claim_id = new_ulid()
+        inference_id = new_ulid()
+        provenance_payload = validated_provenance.model_dump(warnings=False)
+        claim_payload = {
+            "claim_id": claim_id,
+            "source_id": self._context.source.source_id,
+            "patient_id": self._context.source.patient_id,
+            "task": self._context.task.name,
+            "schema_ref": self._context.schema_ref,
+            "value": normalized_value,
+            "effective_datetime": (
+                self._context.source.datetime if effective_datetime is None else effective_datetime
+            ),
+            "confidence": confidence,
+            "status": "proposed",
+            "provenance": provenance_payload,
+        }
+        inference_payload = {
+            "kind": "inference",
+            "evidence_id": inference_id,
+            "rationale": rationale,
+            "inputs": primary_ids,
+            "trace_id": validated_provenance.trace_id,
+            "span_id": None,
+            "provenance": provenance_payload,
+        }
+        new_edges = [
+            {
+                "claim_id": claim_id,
+                "evidence_id": inference_id,
+                "role": None,
+                "weight": None,
+            }
+        ]
+        for role, role_ids in normalized_roles.items():
+            new_edges.extend(
+                {
+                    "claim_id": claim_id,
+                    "evidence_id": evidence_id,
+                    "role": role,
+                    "weight": None,
+                }
+                for evidence_id in role_ids
+            )
+
+        claims, evidence, edges = self._records()
+        claims.append(claim_payload)
+        evidence.append(inference_payload)
+        edges.extend(new_edges)
+        candidate_state = validate_state(
+            self._context,
+            claims=claims,
+            evidence=evidence,
+            edges=edges,
+        )
+        minted = candidate_state.claims[claim_id].model_copy(deep=True)
+        self._state = candidate_state
+        return minted
 
     def validate(self) -> None:
         """Revalidate and atomically republish the current complete state."""
