@@ -1,7 +1,8 @@
 # M1 evidence-backed claim commits
 
-Status: design for written review, 2026-09-16. The user approved the in-memory claim-commit
-scope; this document does not claim implementation or clinical validation.
+Status: written design approved by the user, 2026-09-16. Implementation follows the
+[checkpoint plan](../plans/2026-09-16-m1-evidence-backed-claim-commits.md); approval does not claim
+implementation or clinical validation.
 
 ## Purpose and authority
 

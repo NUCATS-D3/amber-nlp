@@ -90,7 +90,7 @@ demonstrated.
   `commit_claim`, `CaseOutcome`, `Example`, and provider/destination policy enforcement remain
   unimplemented. Having sensitivity/zone enums does not implement the policy gate.
   The next proposed increment is the [in-memory claim-commit design](superpowers/specs/2026-09-16-m1-evidence-backed-claim-commits-design.md),
-  awaiting written-design review before implementation.
+  approved for implementation under its [checkpoint plan](superpowers/plans/2026-09-16-m1-evidence-backed-claim-commits.md).
 - Persistence, exports, extraction, clinical evaluation, correction, agent/backend integrations,
   and training remain future work. Extraction/annotation routers are empty; no job queue is
   implemented. Distant-future docstring-only modules have been removed; their intended
