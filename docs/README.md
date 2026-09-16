@@ -163,6 +163,8 @@ outcomes. Use invented data until provider/destination policy and clinical integ
 
 ## Background and experiment documentation
 
+- [Progress note — 2026-09-16](notes/2026-09-16-project-progress.md) — dated verification results,
+  assessment, and recommended next work; the status summary above remains authoritative.
 - [State of the art](01-state-of-the-art.md) — background research, not the implementation contract.
 - [Strata scaffold notes](03-strata-scaffold-notes.md) — historical reference only; do not copy its structure.
 - [Experiments](../experiments/README.md) — experiment layout and reproducibility conventions.
