@@ -34,7 +34,7 @@ demonstrated.
   [OncologyCurrentProgressionAnswer](../src/amber/schemas/oncology_current_progression.py), with a
   required strict boolean and exported task/version/scope/evidence-policy constants.
   [Schema tests](../tests/test_answer_schemas.py) cover validation and serialization. The constants
-  declare field-level evidence requirements; they do not implement evidence-policy enforcement.
+  declare field-level evidence requirements, enforced by the graph validator described below.
 - Python facade: `Amber` and `create_client` in [client.py](../src/amber/client.py), environment
   [settings](../src/amber/config.py), and [SystemInfo](../src/amber/services/system.py).
 - CLI: [amber info](../src/amber/cli/main.py), including `--json`, and
@@ -52,6 +52,13 @@ demonstrated.
   provenance prompt versions resist ordinary mutation while preserving JSON shapes. Canonical
   schema references and ULID validation are covered by [schema tests](../tests/test_claim_schemas.py).
   These records alone do not admit claims or implement a commit path.
+- Complete internal [graph validation](../src/amber/_graph_validation.py) with
+  [source-safe diagnostic codes](../src/amber/graph_errors.py): one note/task/sensitivity context,
+  exact inclusion revalidation, exclusions, field citations, complete references, cycles, and
+  source-backed support across every retained component. Only proposed/rejected claims are
+  admitted, and rejected claims cannot support inference. [Synthetic tests](../tests/test_graph_validation.py)
+  include deep iterative chains. Structural validity does not establish semantic support.
+  Public graph lifecycle and the commit tool remain the next checkpoints.
 - [Core interface smoke tests](../tests/test_interfaces.py), separate optional
   [HTTP tests](../tests/test_api.py), [isolated settings tests](../tests/test_config.py), and
   [kernel invariant tests](../tests/test_invariants.py), including source identity/mutation,
@@ -92,8 +99,8 @@ demonstrated.
 - Independent human review and adjudication for the current-progression task have not been
   performed by this implementation, and every clinical gate remains unevaluated. Completing
   protocol/schema/candidate/split preparation does not establish clinical performance or gold.
-- Mentions, accepted claims, structured evidence, graph validation, field-level evidence policies,
-  `commit_claim`, `CaseOutcome`, `Example`, and provider/destination policy enforcement remain
+- Mentions, structured evidence, public graph lifecycle, `commit_claim`, `CaseOutcome`, `Example`,
+  and provider/destination policy enforcement remain
   unimplemented. Having sensitivity/zone enums does not implement the policy gate.
   The next proposed increment is the [in-memory claim-commit design](superpowers/specs/2026-09-16-m1-evidence-backed-claim-commits-design.md),
   approved for implementation under its [checkpoint plan](superpowers/plans/2026-09-16-m1-evidence-backed-claim-commits.md).

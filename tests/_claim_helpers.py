@@ -1,8 +1,9 @@
 """Synthetic constructors shared by claim-kernel tests."""
 
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Any, Literal
 
+from amber.ids import new_ulid, schema_ref
 from amber.schemas import (
     AnswerModel,
     OncologyCurrentProgressionAnswer,
@@ -47,3 +48,36 @@ def make_task(
         instructions="Determine whether current progression or recurrence is documented.",
         evidence_policy=evidence_policy,
     )
+
+
+def make_claim_record(
+    *,
+    source: Source,
+    value: dict[str, Any],
+    task: Task | None = None,
+) -> dict[str, Any]:
+    bound_task = make_task() if task is None else task
+    return {
+        "claim_id": new_ulid(),
+        "source_id": source.source_id,
+        "patient_id": source.patient_id,
+        "task": bound_task.name,
+        "schema_ref": schema_ref(bound_task.answer_model),
+        "value": value,
+        "effective_datetime": source.datetime,
+        "confidence": 0.75,
+        "status": "proposed",
+        "provenance": make_provenance().model_dump(),
+    }
+
+
+def make_inference_record(*, inputs: list[str]) -> dict[str, Any]:
+    return {
+        "kind": "inference",
+        "evidence_id": new_ulid(),
+        "rationale": "The supplied evidence supports this synthetic inference.",
+        "inputs": inputs,
+        "trace_id": None,
+        "span_id": None,
+        "provenance": make_provenance().model_dump(),
+    }

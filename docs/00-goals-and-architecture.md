@@ -30,8 +30,9 @@ coverage, expert minutes per accepted case, and cost. The first task is now defi
 task-specific pilot gates. These are prospective research targets; none has been clinically
 demonstrated. The strict answer value schema, non-authoritative CORAL candidate rules, and
 deterministic split/manifest tooling are implemented. The restricted-data split is frozen locally,
-with input hashes and an unchanged-byte/mtime rerun verified. Evidence-policy enforcement and
-clinical evaluation remain subsequent work.
+with input hashes and an unchanged-byte/mtime rerun verified. The internal evidence-graph validator
+now enforces field citations and source traceability on invented data; clinical evaluation remains
+subsequent work. See the canonical implementation summary for the available public interfaces.
 
 CORAL v1.0 (DOI `10.13026/v69y-xa45`) is the first clinical evaluation dataset. Its 40 expert-labeled
 notes support a pilot, not a broad generalization claim. Consult its documentation and BRAT

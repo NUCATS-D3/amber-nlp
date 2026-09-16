@@ -18,8 +18,8 @@ do not become one large module.
 approved by the user on 2026-09-16. The [v1 contract](../../02-v1-schemas-and-tools.md) and
 [working agreement](../../../CLAUDE.md) remain binding.
 
-**Progress:** Task 1 complete (347 tests on both Python versions; independent review approved).
-Tasks 2–4 remain. Each checkpoint includes tests, review, and a commit.
+**Progress:** Tasks 1–2 complete (421 tests on both Python versions; independent reviews approved).
+Tasks 3–4 remain. Each checkpoint includes tests, review, and a commit.
 Continue the established subagent-driven workflow in the current checkout; no push.
 
 ## Global Constraints
@@ -202,7 +202,7 @@ committing only its source/tests/status changes with subject `M1: add immutable 
 - `_GraphContext.source`, `.task`, `.sensitivity`, `.excluded_spans`, and `.schema_ref` are captured
   from defensively copied/revalidated inputs. Public graph code must not expose their mutable aliases.
 
-- [ ] **Step 1: Write failing graph validation tests with literal synthetic graphs**
+- [x] **Step 1: Write failing graph validation tests with literal synthetic graphs**
 
 Create payload helpers in `tests/_claim_helpers.py` for complete candidate claim fields and
 inference fields; use valid generated IDs as inputs, not as the expected result of an ID test.
@@ -237,7 +237,7 @@ recorded offsets, strict bounds, mismatched IDs, malformed exclusions, touching 
 valid disjoint-fragment gaps. Use self/mixed/disconnected cycles and a valid branch alongside an
 invalid branch. A chain deeper than Python's recursion limit must validate without recursion.
 
-- [ ] **Step 2: Demonstrate RED and implement context and leaf checks**
+- [x] **Step 2: Demonstrate RED and implement context and leaf checks**
 
 Run `uv run pytest tests/test_graph_validation.py -q` before implementation; develop in small
 RED/GREEN groups. Source/Task/provenance inputs must be dumped and revalidated, not trusted because
@@ -263,7 +263,7 @@ values. Require exact alignment score `1.0` (not boolean), `mention_id=None`, an
 Compare the resulting Inclusion with every supplied supported field; unknown metadata is not
 discarded. This wrapper may remain in `_graph_validation.py`; actual minting stays in grounding.
 
-- [ ] **Step 3: Implement full reference and support validation before Claim minting**
+- [x] **Step 3: Implement full reference and support validation before Claim minting**
 
 First validate all local records and build duplicate-checked indexes. Inference/claim provenance
 must match context sensitivity; claims must match Task, schema, source, and patient. Validate the
@@ -292,7 +292,7 @@ candidate and return read-only `_ValidatedState`. Earlier failures return no acc
 The source-free check is a defense in depth: more specific unknown-reference, missing-evidence,
 empty-input, or cycle errors may reject a bad branch first.
 
-- [ ] **Step 4: Freeze safe diagnostics and verify the task**
+- [x] **Step 4: Freeze safe diagnostics and verify the task**
 
 Allowed codes are exactly `invalid_schema`, `invalid_context`, `invalid_span`, `quote_mismatch`,
 `unsupported_evidence`, `unsupported_claim_status`, `duplicate_reference`, `unknown_reference`,
