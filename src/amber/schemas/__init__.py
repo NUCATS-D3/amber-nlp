@@ -5,7 +5,8 @@ Models in this package must not perform I/O or import from higher-level packages
 """
 
 from amber.schemas.answers import AnswerModel
-from amber.schemas.evidence import GroundingFailure, Inclusion
+from amber.schemas.claims import Claim
+from amber.schemas.evidence import EvidenceEdge, GroundingFailure, Inclusion, InferenceEvidence
 from amber.schemas.oncology_current_progression import (
     ONCOLOGY_CURRENT_PROGRESSION_EVIDENCE_POLICY,
     ONCOLOGY_CURRENT_PROGRESSION_PROTOCOL_VERSION,
@@ -15,11 +16,15 @@ from amber.schemas.oncology_current_progression import (
 )
 from amber.schemas.provenance import Provenance, Sensitivity, Zone
 from amber.schemas.sources import Section, Source, SourceKind
+from amber.schemas.tasks import Task
 
 __all__ = [
     "GroundingFailure",
     "Inclusion",
+    "InferenceEvidence",
     "AnswerModel",
+    "Claim",
+    "EvidenceEdge",
     "ONCOLOGY_CURRENT_PROGRESSION_EVIDENCE_POLICY",
     "ONCOLOGY_CURRENT_PROGRESSION_PROTOCOL_VERSION",
     "ONCOLOGY_CURRENT_PROGRESSION_SCOPE",
@@ -30,5 +35,6 @@ __all__ = [
     "Sensitivity",
     "Source",
     "SourceKind",
+    "Task",
     "Zone",
 ]

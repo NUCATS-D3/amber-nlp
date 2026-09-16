@@ -17,7 +17,7 @@ then reconcile the stale document. A plan or module docstring is not evidence of
 
 ## Current implementation
 
-Checked against code and tests on 2026-09-15. This is the canonical implementation-status summary;
+Checked against code and tests on 2026-09-16. This is the canonical implementation-status summary;
 update it when capabilities change rather than copying inventories into other documents.
 
 M0's workspace and interfaces exist, and part of the M1 evidence kernel is implemented. M1 is not
@@ -46,6 +46,12 @@ demonstrated.
 - Exact grounding: [Inclusion and GroundingFailure](../src/amber/schemas/evidence.py),
   [exact_quote](../src/amber/grounding.py), and the deterministic [quote tool](../src/amber/tools/quote.py).
   Repeated text requires an exact hint; returned offsets refer to the unchanged source text.
+- Immutable claim prerequisites: explicit [Task](../src/amber/schemas/tasks.py), guarded
+  [Claim records](../src/amber/schemas/claims.py), and inference/edge records in the
+  [evidence schemas](../src/amber/schemas/evidence.py). Nested values, inference inputs, and
+  provenance prompt versions resist ordinary mutation while preserving JSON shapes. Canonical
+  schema references and ULID validation are covered by [schema tests](../tests/test_claim_schemas.py).
+  These records alone do not admit claims or implement a commit path.
 - [Core interface smoke tests](../tests/test_interfaces.py), separate optional
   [HTTP tests](../tests/test_api.py), [isolated settings tests](../tests/test_config.py), and
   [kernel invariant tests](../tests/test_invariants.py), including source identity/mutation,
@@ -86,7 +92,7 @@ demonstrated.
 - Independent human review and adjudication for the current-progression task have not been
   performed by this implementation, and every clinical gate remains unevaluated. Completing
   protocol/schema/candidate/split preparation does not establish clinical performance or gold.
-- Mentions, claims, structured/inference evidence, graph validation, field-level evidence policies,
+- Mentions, accepted claims, structured evidence, graph validation, field-level evidence policies,
   `commit_claim`, `CaseOutcome`, `Example`, and provider/destination policy enforcement remain
   unimplemented. Having sensitivity/zone enums does not implement the policy gate.
   The next proposed increment is the [in-memory claim-commit design](superpowers/specs/2026-09-16-m1-evidence-backed-claim-commits-design.md),

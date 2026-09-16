@@ -6,13 +6,25 @@ verified evidence. Grounding and, later, the explicit human annotation path own 
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from amber.ids import inclusion_id as make_inclusion_id
+from amber.ids import validate_ulid
+from amber.schemas._immutable import freeze_json
+from amber.schemas.provenance import Provenance
 
 _INCLUSION_MINT_CONTEXT = object()
+_StrictString = Annotated[str, Field(strict=True)]
+_FiniteFloat = Annotated[float, Field(allow_inf_nan=False)]
 
 
 class Inclusion(BaseModel):
@@ -68,3 +80,63 @@ class GroundingFailure(BaseModel):
     ]
     message: str
     match_starts: tuple[int, ...] = ()
+
+
+class InferenceEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["inference"] = "inference"
+    evidence_id: _StrictString
+    rationale: _StrictString
+    inputs: list[_StrictString]
+    trace_id: _StrictString | None
+    span_id: _StrictString | None
+    provenance: Provenance
+
+    @field_validator("evidence_id")
+    @classmethod
+    def require_canonical_evidence_id(cls, value: str) -> str:
+        return validate_ulid(value)
+
+    @field_validator("rationale", "trace_id", "span_id")
+    @classmethod
+    def require_nonblank_text(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("value must not be blank")
+        return value
+
+    @field_validator("inputs")
+    @classmethod
+    def validate_and_freeze_inputs(cls, value: list[str]) -> list[str]:
+        if not value:
+            raise ValueError("inference inputs must not be empty")
+        if any(not item.strip() for item in value):
+            raise ValueError("inference input identifiers must not be blank")
+        if len(value) != len(set(value)):
+            raise ValueError("inference input identifiers must be distinct")
+        return freeze_json(value)
+
+    @field_validator("provenance", mode="before")
+    @classmethod
+    def revalidate_provenance(cls, value: Any) -> Provenance:
+        if isinstance(value, Provenance):
+            value = value.model_dump()
+        return Provenance.model_validate(value)
+
+
+class EvidenceEdge(BaseModel):
+    """A claim-to-evidence relationship with an optional field role."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    claim_id: _StrictString
+    evidence_id: _StrictString
+    role: _StrictString | None = None
+    weight: _FiniteFloat | None = None
+
+    @field_validator("claim_id", "evidence_id", "role")
+    @classmethod
+    def require_nonblank_identifier(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("identifiers must not be blank")
+        return value

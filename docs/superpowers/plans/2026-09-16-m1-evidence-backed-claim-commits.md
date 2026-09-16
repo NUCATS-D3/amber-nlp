@@ -18,7 +18,8 @@ do not become one large module.
 approved by the user on 2026-09-16. The [v1 contract](../../02-v1-schemas-and-tools.md) and
 [working agreement](../../../CLAUDE.md) remain binding.
 
-**Progress:** Planned. Four implementation checkpoints, each with tests, review, and a commit.
+**Progress:** Task 1 complete (347 tests on both Python versions; independent review approved).
+Tasks 2–4 remain. Each checkpoint includes tests, review, and a commit.
 Continue the established subagent-driven workflow in the current checkout; no push.
 
 ## Global Constraints
@@ -93,7 +94,7 @@ with dev/app/tracking, without modifying dependencies. Full checks include pytes
   `make_task(answer_model: type[AnswerModel] = OncologyCurrentProgressionAnswer,
   evidence_policy: Literal["claim", "field"] = "field") -> Task`.
 
-- [ ] **Step 1: Write failing immutable-value and model-contract tests**
+- [x] **Step 1: Write failing immutable-value and model-contract tests**
 
 Use locally constructed synthetic provenance and inference records. Assert mutation cannot change
 validated data, including nested dictionaries/lists and repeated `__init__` calls. Cover all normal
@@ -119,13 +120,13 @@ wait until Task 2 to obtain a real Claim through complete validation. Do not cal
 to manufacture unsupported test Claims. Revalidate provenance from its dumped fields to reject
 unchecked forged nested instances.
 
-- [ ] **Step 2: Demonstrate RED**
+- [x] **Step 2: Demonstrate RED**
 
 Run `uv run pytest tests/test_claim_schemas.py -q` in the documented environment. Initially the new
 imports do not exist. Record this absence, then run incremental behavior tests before implementing
 their corresponding changes; do not rely solely on import failure as evidence for every rule.
 
-- [ ] **Step 3: Implement nested immutability and exact schema references**
+- [x] **Step 3: Implement nested immutability and exact schema references**
 
 Use private dictionary/list subclasses compatible with JSON/Pydantic output. Constructors
 recursively copy/freeze inputs once; reinitialization and mutators raise a fixed `TypeError`.
@@ -144,7 +145,7 @@ with the installed `python-ulid` API and checking that its canonical string is i
 generates or repairs an ID. Test hashing with an independently constructed stdlib canonical JSON
 digest, not by computing the expected answer with `schema_ref` itself.
 
-- [ ] **Step 4: Implement guarded and closed domain records**
+- [x] **Step 4: Implement guarded and closed domain records**
 
 Task fields: `name: str`, `answer_model: type[AnswerModel]`, `instructions: str`,
 `evidence_policy: Literal["claim", "field"] = "claim"`, and
@@ -172,7 +173,7 @@ role is nullable/nonblank and weight nullable/finite. Freeze inference inputs an
 recursively, and freeze `Provenance.prompt_versions` without changing wire types. Test that standard
 `model_dump` and JSON dumps return the original field shapes.
 
-- [ ] **Step 5: Verify, review, and commit prerequisites**
+- [x] **Step 5: Verify, review, and commit prerequisites**
 
 Run focused schema tests and existing answer/invariant tests, then the full checks. Update status
 to describe only implemented guarded records, not a working commit path. Review this task before

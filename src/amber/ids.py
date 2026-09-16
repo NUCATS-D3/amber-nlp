@@ -83,3 +83,17 @@ def structured_evidence_id(*, source_id: str, field: str, value: Any) -> str:
 def new_ulid() -> str:
     """Return a lexicographically sortable identifier for non-deterministic nodes."""
     return str(ULID())
+
+
+def schema_ref(answer_model: type[BaseModel]) -> str:
+    """Return the qualified answer-model name and canonical JSON-schema digest."""
+    digest = canonical_sha256(answer_model.model_json_schema())
+    return f"{answer_model.__module__}:{answer_model.__qualname__}@{digest}"
+
+
+def validate_ulid(value: str) -> str:
+    """Accept a ULID only when its spelling is already canonical."""
+    parsed = ULID.from_str(value)
+    if str(parsed) != value:
+        raise ValueError("ULID must use its canonical string representation")
+    return value

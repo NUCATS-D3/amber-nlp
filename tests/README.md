@@ -5,6 +5,8 @@ Keep the suite flat and grouped by the boundary under test:
 - `test_interfaces.py`: core imports, the Python facade, and CLI.
 - `test_config.py`: environment/dotenv precedence and cached settings.
 - `test_answer_schemas.py`: strict answer validation, serialization, and frozen/closed value objects.
+- `test_claim_schemas.py`: guarded claim prerequisites, task/inference/edge fields, canonical
+  identifiers, nested immutability, and JSON wire shapes.
 - `test_api.py`: optional HTTP health/info routes; requires `app` and HTTPX.
 - `test_tracking.py`: optional MLflow entry point, missing dependencies, and the local launcher.
 - `test_invariants.py`: the implemented source, ID, and exact-grounding invariants.

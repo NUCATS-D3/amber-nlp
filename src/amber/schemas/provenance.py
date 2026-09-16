@@ -3,7 +3,9 @@
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from amber.schemas._immutable import freeze_json
 
 
 class Zone(StrEnum):
@@ -34,3 +36,8 @@ class Provenance(BaseModel):
     sensitivity: Sensitivity
     created_at: datetime
     version: str = Field(min_length=1)
+
+    @field_validator("prompt_versions")
+    @classmethod
+    def freeze_prompt_versions(cls, value: dict[str, str]) -> dict[str, str]:
+        return freeze_json(value)
