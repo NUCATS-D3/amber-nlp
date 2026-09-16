@@ -27,7 +27,7 @@ _Confidence = Annotated[float, Field(allow_inf_nan=False, ge=0.0, le=1.0)]
 
 def _validated_provenance(value: Any) -> Provenance:
     if isinstance(value, Provenance):
-        value = value.model_dump()
+        value = value.model_dump(warnings=False)
     return Provenance.model_validate(value)
 
 

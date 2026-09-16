@@ -9,6 +9,8 @@ Keep the suite flat and grouped by the boundary under test:
   identifiers, nested immutability, and JSON wire shapes.
 - `test_graph_validation.py`: complete graph/context/source validation, field citations, safe
   errors, invalid references, rejected support, all-component cycles, and deep iterative chains.
+- `test_graph.py`: owned graph state, idempotent/atomic registration, support traversal, detached
+  views, strict snapshots, and source-revalidated restore against caller-supplied context.
 - `test_api.py`: optional HTTP health/info routes; requires `app` and HTTPX.
 - `test_tracking.py`: optional MLflow entry point, missing dependencies, and the local launcher.
 - `test_invariants.py`: the implemented source, ID, and exact-grounding invariants.

@@ -120,7 +120,7 @@ class InferenceEvidence(BaseModel):
     @classmethod
     def revalidate_provenance(cls, value: Any) -> Provenance:
         if isinstance(value, Provenance):
-            value = value.model_dump()
+            value = value.model_dump(warnings=False)
         return Provenance.model_validate(value)
 
 

@@ -58,7 +58,13 @@ demonstrated.
   source-backed support across every retained component. Only proposed/rejected claims are
   admitted, and rejected claims cannot support inference. [Synthetic tests](../tests/test_graph_validation.py)
   include deep iterative chains. Structural validity does not establish semantic support.
-  Public graph lifecycle and the commit tool remain the next checkpoints.
+- Public [EvidenceGraph lifecycle](../src/amber/graph.py): validated registration, read-only or
+  detached views, complete support traversal, and deterministic in-memory snapshot/restore.
+  Restore requires the authoritative Source, Task, sensitivity, and exclusions and revalidates
+  all evidence; snapshots contain source quotes and are never printed by the graph. Registration
+  failures leave graph state unchanged. [Lifecycle tests](../tests/test_graph.py) cover forged
+  copies, ownership, idempotency, corrupt payloads, and strict snapshot context/version checks.
+  The claim-commit tool remains the next checkpoint; no file/database persistence is added.
 - [Core interface smoke tests](../tests/test_interfaces.py), separate optional
   [HTTP tests](../tests/test_api.py), [isolated settings tests](../tests/test_config.py), and
   [kernel invariant tests](../tests/test_invariants.py), including source identity/mutation,
@@ -99,7 +105,7 @@ demonstrated.
 - Independent human review and adjudication for the current-progression task have not been
   performed by this implementation, and every clinical gate remains unevaluated. Completing
   protocol/schema/candidate/split preparation does not establish clinical performance or gold.
-- Mentions, structured evidence, public graph lifecycle, `commit_claim`, `CaseOutcome`, `Example`,
+- Mentions, structured evidence, `commit_claim`, `CaseOutcome`, `Example`,
   and provider/destination policy enforcement remain
   unimplemented. Having sensitivity/zone enums does not implement the policy gate.
   The next proposed increment is the [in-memory claim-commit design](superpowers/specs/2026-09-16-m1-evidence-backed-claim-commits-design.md),

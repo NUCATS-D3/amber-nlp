@@ -18,8 +18,8 @@ do not become one large module.
 approved by the user on 2026-09-16. The [v1 contract](../../02-v1-schemas-and-tools.md) and
 [working agreement](../../../CLAUDE.md) remain binding.
 
-**Progress:** Tasks 1–2 complete (421 tests on both Python versions; independent reviews approved).
-Tasks 3–4 remain. Each checkpoint includes tests, review, and a commit.
+**Progress:** Tasks 1–3 complete (464 tests on both Python versions; independent reviews approved).
+Task 4 remains. Each checkpoint includes tests, review, and a commit.
 Continue the established subagent-driven workflow in the current checkout; no push.
 
 ## Global Constraints
@@ -335,7 +335,7 @@ with `M1: validate complete evidence support`. No public commit tool exists at t
 - Keep state publication private. Task 4 adds a graph-owned commit method; do not add a public raw
   state-replacement method or a test-only reset API.
 
-- [ ] **Step 1: Write failing registration, ownership, and restore tests**
+- [x] **Step 1: Write failing registration, ownership, and restore tests**
 
 ```python
 def test_registration_and_payload_are_isolated():
@@ -358,7 +358,7 @@ so valid Claims can be restored before the commit tool exists. Round-trip throug
 Shuffle each record list and verify deterministic output and identical support closure. Corrupt
 one record/header field at a time and assert safe rejection and unchanged existing graph state.
 
-- [ ] **Step 2: Demonstrate RED and implement graph lifecycle**
+- [x] **Step 2: Demonstrate RED and implement graph lifecycle**
 
 Run `uv run pytest tests/test_graph.py -q` before implementing the facade. All mutation candidates
 use fresh record dumps and Task 2 validation; compare an existing evidence ID against the fully
@@ -377,7 +377,7 @@ restore share the same boundary. Views cannot leak internal mutable state; sourc
 produce independently revalidated copies. Iterative traversal uses validated adjacency, returns
 all branches, and raises `unknown_reference` for unknown starting IDs.
 
-- [ ] **Step 3: Implement the strict snapshot envelope and revalidation**
+- [x] **Step 3: Implement the strict snapshot envelope and revalidation**
 
 Use this exact envelope, with all context keys required and unknown keys rejected:
 
@@ -412,7 +412,7 @@ strings are invalid, so this ordering distinguishes real field roles from whole-
 Use model dumps in JSON mode for dates and enums. Return detached containers and never print
 payloads. The actual Source is deliberately caller-supplied, not embedded in this envelope.
 
-- [ ] **Step 4: Verify and commit graph lifecycle**
+- [x] **Step 4: Verify and commit graph lifecycle**
 
 Run focused graph/validation/schema tests, full checks, and review. Commit only intended files
 with `M1: add validated in-memory evidence graphs`. Record that graph support/restore works while

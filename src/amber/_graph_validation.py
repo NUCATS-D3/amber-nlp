@@ -62,8 +62,8 @@ def build_context(
     try:
         if not isinstance(source, Source) or not isinstance(task, Task):
             _raise("invalid_context")
-        copied_source = Source.model_validate(source.model_dump())
-        copied_task = Task.model_validate(task.model_dump())
+        copied_source = Source.model_validate(source.model_dump(warnings=False))
+        copied_task = Task.model_validate(task.model_dump(warnings=False))
     except GraphValidationError:
         raise
     except (AttributeError, TypeError, ValueError, ValidationError):

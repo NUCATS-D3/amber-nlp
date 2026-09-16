@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
@@ -131,6 +132,29 @@ def test_context_revalidates_source_and_task_and_breaks_mutable_aliases() -> Non
     assert context.source.meta == {"nested": {"value": "original"}}
     assert context.excluded_spans == ((0, 2), (2, 4))
     assert context.schema_ref == schema_ref(task.answer_model)
+
+
+@pytest.mark.parametrize("target", ["source", "task"])
+def test_context_revalidation_suppresses_source_bearing_serializer_warnings(target: str) -> None:
+    source = make_source()
+    task = make_task()
+    secret = "private source-bearing value"
+    if target == "source":
+        source = source.model_copy(update={"text": [secret]})
+    else:
+        task = task.model_copy(update={"instructions": [secret]})
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        _assert_error(
+            "invalid_context",
+            build_context,
+            source=source,
+            task=task,
+            sensitivity=Sensitivity.synthetic,
+        )
+
+    assert captured == []
 
 
 @pytest.mark.parametrize(
@@ -405,19 +429,44 @@ def test_claim_and_inference_provenance_must_match_declared_sensitivity() -> Non
 
 def test_forged_nested_provenance_is_revalidated() -> None:
     context, record, leaf, edge = _valid_graph()
-    provenance = make_provenance().model_construct(
-        **{**make_provenance().model_dump(), "producer": ""}
-    )
+    secret = "private provenance value"
+    provenance = make_provenance().model_copy(update={"producer": [secret]})
     record["provenance"] = provenance
 
-    _assert_error(
-        "invalid_schema",
-        validate_state,
-        context,
-        claims=[record],
-        evidence=[leaf.model_dump()],
-        edges=[edge],
-    )
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        _assert_error(
+            "invalid_schema",
+            validate_state,
+            context,
+            claims=[record],
+            evidence=[leaf.model_dump()],
+            edges=[edge],
+        )
+
+    assert captured == []
+
+
+def test_forged_inference_provenance_suppresses_source_bearing_serializer_warnings() -> None:
+    context, record, leaf, edge = _valid_graph()
+    secret = "private inference provenance"
+    provenance = make_provenance().model_copy(update={"producer": [secret]})
+    inference = make_inference_record(inputs=[leaf.evidence_id])
+    inference["provenance"] = provenance
+    edge["evidence_id"] = inference["evidence_id"]
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        _assert_error(
+            "invalid_schema",
+            validate_state,
+            context,
+            claims=[record],
+            evidence=[leaf.model_dump(), inference],
+            edges=[edge],
+        )
+
+    assert captured == []
 
 
 def test_two_field_answer_requires_evidence_for_a_defaulted_field() -> None:
