@@ -15,10 +15,29 @@ Before changing architecture or domain behavior, read:
 safety. If documents disagree, preserve the working agreement's invariants and the v1 contract,
 then reconcile the stale document. A plan or module docstring is not evidence of implementation.
 
+## Design extensions and proposals
+
+- [Terminology and mention detection](05-terminology-and-mention-detection.md) — consolidated
+  conditional design for OMOP vocabulary integration, fragments, detectors, and contextual
+  linking; no new domain fields or detector default are adopted.
+- [Select–decide proposal](select-decide.md) and [evaluation](select-decide-evaluation.md) — an
+  unadopted evidence-restricted execution hypothesis and the requirements for a bounded comparison.
+- [Contextual entity-linking reading guide](context-aware-biomedical-entity-linking.md) — candidate
+  retrieval, disambiguation, and evaluation references, not a mandatory baseline suite.
+- [October 7 review](notes/2026-10-07-documentation-review.md) — consolidation decisions,
+  assessment, next work, and verification limits.
+
+The [October source bundle](amber-docs-2026-10-07/README.md) is retained as history. Its useful
+additions are consolidated above and in the canonical survey; its old roadmap and conflicting
+schema rules are superseded. Maintain current decisions in the canonical docs, rather than
+editing two live versions. Dated plans and notes record their original scope and results.
+
 ## Current implementation
 
-Checked against code and tests on 2026-09-16. This is the canonical implementation-status summary;
-update it when capabilities change rather than copying inventories into other documents.
+Checked against code and tests on 2026-09-16; source and test-file inventory rechecked on
+2026-10-07, followed by synthetic verification of the case-outcome/result increment. Restricted
+data was not inspected. This is the canonical implementation-status summary; update it when
+capabilities change rather than copying inventories into other documents.
 
 M0's workspace and interfaces exist, and part of the M1 evidence kernel is implemented. M1 is not
 complete. No extraction quality, clinical acceptance, or reduction in expert effort has been
@@ -71,6 +90,24 @@ demonstrated.
   datetime defaults are retained; rejected operations leave no partial state.
   [End-to-end tests](../tests/test_commit.py) distinguish structural validity from semantic support
   and exercise atomic failures, supporting-claim chains, and snapshot round-trips.
+- Immutable [Case, CaseOutcome, and guarded CaseResult](../src/amber/schemas/cases.py), with
+  exactly one note/task context, distinct clinical non-answers and failures, required non-answer
+  reasons, and failure categories only for failures. The
+  [case-result boundary](../src/amber/cases.py) builds detached results and loads serialized
+  results against authoritative caller-supplied Source/Task/Case context. It revalidates every
+  retained graph component, scope, sensitivity, outcome citations, and explicit final-claim IDs.
+  Answered outcomes require known non-rejected final claims; other outcomes retain supporting
+  claims without promoting them to answers. Only the graph's proposed/rejected statuses and
+  exact Inclusion/InferenceEvidence records are admitted; mentions remain an empty list.
+- The deterministic [no_claim tool](../src/amber/tools/outcomes.py) validates not-mentioned,
+  conflict, and insufficient-evidence outcomes without changing graph state or minting a null
+  Claim. Not-mentioned requires declared complete review of the case note; conflict requires
+  known source-backed citations. Runtime callers construct failures with a stable failure kind.
+  [Schema](../tests/test_case_schemas.py), [result](../tests/test_cases.py), and
+  [outcome-tool](../tests/test_outcomes.py) tests cover exact Unicode/CRLF quotes, forged copies,
+  mutation, full support closure, safe load failures, and answer/abstention/failure consistency.
+  Review declarations and structurally valid conflict citations do not establish clinical
+  completeness, disagreement, or semantic support. No execution audit or gold path is added.
 - [Core interface smoke tests](../tests/test_interfaces.py), separate optional
   [HTTP tests](../tests/test_api.py), [isolated settings tests](../tests/test_config.py), and
   [kernel invariant tests](../tests/test_invariants.py), including source identity/mutation,
@@ -99,7 +136,7 @@ demonstrated.
   ignored restricted data. The [preparation plan](superpowers/plans/2026-09-15-m1-current-progression-task-protocol.md)
   is complete; the [operator workflow](../experiments/coral/README.md#local-preparation-workflow)
   documents safe creation and verification.
-- A four-dependency core, with storage, evaluation, and tracking dependencies selected through
+- A lightweight core, with storage, evaluation, and tracking dependencies selected through
   extras. See the [installation guide](../README.md#toolchain); selecting an extra does not
   implement the corresponding planned workflow.
 - [CI checks](../.github/workflows/ci.yml) for core-only installation and the full synthetic suite
@@ -111,7 +148,7 @@ demonstrated.
 - Independent human review and adjudication for the current-progression task have not been
   performed by this implementation, and every clinical gate remains unevaluated. Completing
   protocol/schema/candidate/split preparation does not establish clinical performance or gold.
-- Mentions, structured evidence, `CaseOutcome`, `Example`, human status review, and
+- Mentions, structured evidence, `Example`, human status review, and
   provider/destination policy enforcement remain unimplemented. Having sensitivity/zone enums
   or checking provenance sensitivity does not implement the policy gate. The
   [in-memory claim-commit design](superpowers/specs/2026-09-16-m1-evidence-backed-claim-commits-design.md)
@@ -125,6 +162,9 @@ demonstrated.
   do not exist yet; it is not a working domain integration or a gold-generation path.
 - [Prompt seeds](../prompts/README.md) are documented but no YAML seeds or `amber register-prompts`
   command exist. MLflow prompt helpers remain placeholders; model packaging remains deferred.
+- Terminology stores/fragments, mention detectors, contextual linking, and select–decide are
+  design proposals without implementations or accepted schema migrations. The October
+  documentation consolidation does not complete these capabilities or alter M1–M3's scope.
 
 Use the [M1–M3 roadmap](04-roadmap.md) for remaining delivery requirements. Check code and tests
 before claiming a feature or milestone is complete; synthetic tests cannot establish clinical
@@ -157,14 +197,75 @@ field in their serialized record; the tool fills it with `None` when the caller 
 snapshots. Restore with `EvidenceGraph.from_payload(...)` and the same authoritative source, task,
 sensitivity, and exclusions. Failed registration or commit leaves the graph unchanged.
 
-This path proves structural validity and source traceability, not clinical correctness. It does
-not certify complete note review, authorize transfers, assign gold status, or create clinical
-outcomes. Use invented data until provider/destination policy and clinical integration are designed.
+The quote/commit path proves structural validity and source traceability, not clinical correctness.
+Case outcomes are recorded separately below. It does not certify complete note review, authorize
+transfers, or assign gold status. Use invented data until provider/destination policy and clinical
+integration are designed.
+
+### Synthetic case outcomes and results
+
+After committing the invented claim above, record final-answer identity explicitly:
+
+```python
+from amber.cases import create_case_result, load_case_result
+from amber.schemas import Case, CaseOutcome
+from amber.tools.outcomes import no_claim
+
+case = Case(
+    case_id="synthetic-case-1",
+    task=task.name,
+    patient_id=graph.source.patient_id,
+    source_ids=[graph.source.source_id],
+    sensitivity=graph.sensitivity,
+)
+result = create_case_result(
+    case,
+    graph=graph,
+    outcome=CaseOutcome(status="answered", provenance=provenance),
+    final_claim_ids=[claim.claim_id],
+)
+restored = load_case_result(
+    result.model_dump(mode="json"),
+    case=case,
+    source=graph.source,
+    task=task,
+    excluded_spans=graph.excluded_spans,
+)
+assert restored.final_claim_ids == [claim.claim_id]
+
+outcome = no_claim(
+    "insufficient_evidence",
+    "The invented review stopped before the complete task scope was examined.",
+    [],
+    [],
+    case=case,
+    graph=graph,
+    provenance=provenance,
+)
+diagnostic = create_case_result(case, graph=graph, outcome=outcome, final_claim_ids=[])
+assert diagnostic.claims  # supporting claims may remain
+assert diagnostic.final_claim_ids == []
+```
+
+`reviewed_source_ids` names only notes whose complete task-defined scope the caller declares
+reviewed; it is required to cover the case note for `not_mentioned`. Partial review stays
+unlisted. The boundary checks this declaration's scope consistency, not whether a human or model
+actually reviewed every relevant statement. Do not infer clinical absence from a non-answer.
+
+The result is an immutable, source-bearing in-memory record. `model_dump(mode="json")` performs
+no I/O; keep real payloads out of logs and commits. Use `load_case_result` to deserialize, rather
+than standalone `CaseResult.model_validate`. Supply the authoritative case, source, task, and
+exclusions again; payloads cannot select an answer model or relax source scope. Ordinary copies
+are not a substitute for revalidation. Case errors and graph errors expose stable diagnostic
+codes without source text. Provider policy, persistence, execution audits, `Example` creation,
+human verification/gold status, and clinical scoring remain subsequent work.
 
 ## Background and experiment documentation
 
 - [Progress note — 2026-09-16](notes/2026-09-16-project-progress.md) — dated verification results,
   assessment, and recommended next work; the status summary above remains authoritative.
+- [Documentation review — 2026-10-07](notes/2026-10-07-documentation-review.md) — consolidation
+  rationale, terminology/detection critique, and recommended next increment.
 - [State of the art](01-state-of-the-art.md) — background research, not the implementation contract.
 - [Strata scaffold notes](03-strata-scaffold-notes.md) — historical reference only; do not copy its structure.
 - [Experiments](../experiments/README.md) — experiment layout and reproducibility conventions.

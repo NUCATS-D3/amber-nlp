@@ -15,9 +15,12 @@ from tempfile import TemporaryDirectory
 
 import amber
 from amber import create_client
+from amber.cases import create_case_result, load_case_result
 from amber.config import Settings
 from amber.graph import EvidenceGraph
 from amber.schemas import (
+    Case,
+    CaseOutcome,
     Inclusion,
     OncologyCurrentProgressionAnswer,
     Provenance,
@@ -28,6 +31,7 @@ from amber.schemas import (
     Zone,
 )
 from amber.tools.commit import commit_claim
+from amber.tools.outcomes import no_claim
 from amber.tools.quote import quote
 
 
@@ -106,6 +110,40 @@ def main() -> None:
     restored.validate()
     assert restored.to_payload() == graph.to_payload()
 
+    case = Case(
+        case_id="synthetic-core-case",
+        task=task.name,
+        patient_id=source.patient_id,
+        source_ids=[source.source_id],
+        sensitivity=Sensitivity.synthetic,
+    )
+    result = create_case_result(
+        case,
+        graph=graph,
+        final_claim_ids=[claim.claim_id],
+        outcome=CaseOutcome(status="answered", provenance=provenance),
+    )
+    loaded_result = load_case_result(
+        json.loads(result.model_dump_json()),
+        case=case,
+        source=source,
+        task=task,
+    )
+    assert loaded_result == result
+    assert loaded_result.final_claim_ids == [claim.claim_id]
+    unanswered = no_claim(
+        "insufficient_evidence",
+        "Invented partial review only.",
+        [],
+        [],
+        case=case,
+        graph=graph,
+        provenance=provenance,
+    )
+    diagnostic = create_case_result(case, graph=graph, outcome=unanswered, final_claim_ids=[])
+    assert diagnostic.final_claim_ids == []
+    assert diagnostic.claims[0].value["progression_or_recurrence"] is False
+
     with TemporaryDirectory(prefix="amber-core-smoke-") as cwd:
         output = subprocess.check_output(
             [str(Path(sys.executable).parent / "amber"), "info", "--json"],
@@ -115,7 +153,7 @@ def main() -> None:
     info = json.loads(output)
     assert info["name"] == "amber"
     assert info["environment"] == "development"
-    print("Core-only installed facade, claim commit, restore, and CLI checks passed.")
+    print("Core-only installed facade, claim commit, case results, restore, and CLI checks passed.")
 
 
 if __name__ == "__main__":

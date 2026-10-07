@@ -5,6 +5,7 @@ Models in this package must not perform I/O or import from higher-level packages
 """
 
 from amber.schemas.answers import AnswerModel
+from amber.schemas.cases import Case, CaseOutcome, CaseResult
 from amber.schemas.claims import Claim
 from amber.schemas.evidence import EvidenceEdge, GroundingFailure, Inclusion, InferenceEvidence
 from amber.schemas.oncology_current_progression import (
@@ -19,6 +20,9 @@ from amber.schemas.sources import Section, Source, SourceKind
 from amber.schemas.tasks import Task
 
 __all__ = [
+    "Case",
+    "CaseOutcome",
+    "CaseResult",
     "GroundingFailure",
     "Inclusion",
     "InferenceEvidence",

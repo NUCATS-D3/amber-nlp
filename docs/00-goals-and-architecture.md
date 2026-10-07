@@ -2,7 +2,7 @@
 
 Name: **amber** — messy text hardened into structured, durable data with the evidence still visible inside. A verified span of source text preserved in a claim is an **inclusion** (the gemological term for what is trapped in amber). Structured-source evidence and inference steps keep their descriptive names.
 
-Status: revised plan, 2026-09-04. Supersedes the Strata-anchored framing in
+Status: revised plan, consolidated 2026-10-07. Supersedes the Strata-anchored framing in
 `03-strata-scaffold-notes.md`. This document describes the intended architecture; see
 [Current implementation](README.md#current-implementation) for what exists on disk and what
 remains planned.
@@ -28,11 +28,9 @@ Set numeric acceptance thresholds for correctness, unsupported claims, omissions
 coverage, expert minutes per accepted case, and cost. The first task is now defined in the
 [current progression protocol v1.0.0](protocols/oncology_current_progression-v1.md), including
 task-specific pilot gates. These are prospective research targets; none has been clinically
-demonstrated. The strict answer value schema, non-authoritative CORAL candidate rules, and
-deterministic split/manifest tooling are implemented. The restricted-data split is frozen locally,
-with input hashes and an unchanged-byte/mtime rerun verified. The internal evidence-graph validator
-now enforces field citations and source traceability on invented data; clinical evaluation remains
-subsequent work. See the canonical implementation summary for the available public interfaces.
+demonstrated. See the canonical implementation summary for protocol preparation, the recorded
+local split, the tested evidence kernel, and remaining clinical work. That inventory is the only
+live implementation-status record.
 
 CORAL v1.0 (DOI `10.13026/v69y-xa45`) is the first clinical evaluation dataset. Its 40 expert-labeled
 notes support a pilot, not a broad generalization claim. Consult its documentation and BRAT
@@ -90,6 +88,24 @@ two are enforced by the kernel; semantic support is evaluated against task guida
 judgment. Explicit absence is an evidence-backed answer. Not mentioned, conflicting evidence,
 insufficient evidence, and execution failure are separate case outcomes, never fabricated null
 claims. A not-mentioned outcome records complete review of the declared task scope.
+
+## Terminology and mention detection (2026-10-07)
+
+Keep terminology assets model-independent and mention detection interchangeable when a task
+needs them. OMOP Standardized Vocabularies are the preferred future integration target for
+OMOP-backed workflows, retaining native vocabulary codes as well as standard concept IDs.
+The current boolean progression baseline does not require terminology infrastructure.
+
+Candidate detectors include dictionaries, GLiNER-BioMed, OpenMed, Fastino GLiNER2/2.5, and grounded
+LLM extraction. No detector or attribute extractor is an adopted default. Compare medspaCy
+ConText with model attributes where relevant. Separate detection, candidate retrieval, contextual
+disambiguation, and final clinical correctness; a terminology match is not patient evidence.
+
+The [conditional terminology/detection design](05-terminology-and-mention-detection.md) consolidates
+the October additions, including vocabulary identity, fragment/label ambiguity, context and
+offset validation, migration, licensing, and adoption evidence. Its proposed schemas remain
+outside the binding v1 fields until an explicit contract change with tests and migration rules.
+Do not use hierarchy checks, ancestor back-off, or template flags to certify clinical support.
 
 ## Execution architecture and agent experiments
 
@@ -211,6 +227,18 @@ is an experiment result, not a reason to silently relax the acceptance target.
 4. PHI boundary: undecided (Databricks or Azure both possible; EDW access pending). Abstract it as a policy gate — see "Provider zones and data sensitivity" below.
 5. Annotation: a minimal correction interface accompanies the first clinical experiment. The full evidence-DAG application follows measured workflow needs.
 
+### Consolidation decisions (2026-10-07)
+
+6. Terminology and swappable mention detectors are conditional extensions. Prefer shared,
+   versioned terminology assets for tasks needing concepts; preserve the current answer and
+   evidence schemas until the extension is designed and tested.
+7. Preserve M1–M3's task, policy, evidence, persistence, fixed baseline, and correction sequence.
+   The October bundle's vocabulary-first roadmap and mandatory agent/cascade assumptions are
+   superseded. Local encoders are providers; source-bearing sinks need independent policy checks.
+8. Select–decide remains an experimental hypothesis. Restricted request context must be enforced
+   and audited; it does not prove semantic support or complete evidence selection. See the
+   [proposal evaluation](select-decide-evaluation.md) before planning a comparison.
+
 ## Provider zones and data sensitivity
 
 Two labels and one gate, so the PHI decision can be made later per deployment without touching pipeline code.
@@ -260,7 +288,9 @@ the first experiment; keep source text and evidence round-trippable through the 
 - Limited supervision: measure unsupported claims and omissions at each supervision level; valid
   offsets alone cannot establish that zero-shot extraction meets the task's clinical needs.
 - Long notes and multi-note records: chunk → extract mentions → claims per note → aggregate. Evidence must survive aggregation (PatientFact edges point at the note-level claims and their spans).
-- Normalization (SapBERT → SNOMED/UMLS) is its own stage with its own evidence (the lexical variant) and its own error rate; keep it separable.
+- Normalization is a separate inference stage with its own candidate and context records, vocabulary
+  versions, and error rate. SapBERT retrieval and contextual reranking are hypotheses to compare;
+  neither a matched concept nor a valid hierarchy edge establishes a patient's clinical state.
 - Expert effort: a span-aware correction loop must demonstrate a time saving at matched quality;
   a small demonstration set can still require substantial prompt work and adjudication.
 
@@ -273,12 +303,15 @@ the first experiment; keep source text and evidence round-trippable through the 
 3. Which permitted provider and tracking/artifact destinations are available under the dataset's terms.
 4. Whether measured errors justify an agent, reviewer, targeted NLP/normalization, or additional training after the fixed baseline.
 5. Later: which EDW tables and deployment/storage requirements justify expanding the first implementation.
+6. If a task needs terminology: which authorized vocabulary snapshot, label/mapping policies,
+   clinical annotation coverage, and migration rules make the extension reproducible and useful.
 
 ## Sources
 
 - LangExtract: https://github.com/google/langextract
 - PydanticAI: https://ai.pydantic.dev ; MLflow PydanticAI tracing: mlflow.pydantic_ai.autolog (MLflow 3.x)
 - medspaCy: https://github.com/medspacy/medspacy ; GLiNER-BioMed: https://arxiv.org/abs/2504.00676 ; OpenMed: https://github.com/maziyarpanahi/openmed ; TRACE: https://arxiv.org/html/2604.16364
+- Fastino GLiNER2/2.5: https://github.com/fastino-ai/GLiNER2 — conditional candidate; verify pinned upstream capabilities before adoption.
 - OMOP CDM v5.4 NOTE_NLP: https://ohdsi.github.io/CommonDataModel/cdm54.html ; OHDSI NLP WG schema: https://www.ohdsi.org/wp-content/uploads/2016/09/NLPrepresentationschemaforOMOP.docx.pdf
 - mlx-lm LoRA: https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md
 - Outlines mlx-lm: https://dottxt-ai.github.io/outlines/latest/features/models/mlxlm/
@@ -289,3 +322,7 @@ the first experiment; keep source text and evidence round-trippable through the 
 - Reasoning LLMs for SDOH (self-consistency): https://arxiv.org/html/2604.13502v2
 - Synthetic data distillation: https://www.nature.com/articles/s41746-025-01681-4
 - Fine-tuned LMs, human-level IE (Strata): https://www.nature.com/articles/s41598-025-28767-z
+
+Research claims are leads from the [survey](01-state-of-the-art.md), not newly verified results.
+The [October review](notes/2026-10-07-documentation-review.md) records consolidation decisions and
+the limits of upstream verification.

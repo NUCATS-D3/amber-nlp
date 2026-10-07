@@ -1,6 +1,12 @@
 # v1 specification: data model, tools, agents, tables
 
-Status: spec, 2026-09-04. This is the contract the implementation is built against. Code blocks are specification, not implementation — field names, types, and invariants are binding; method bodies are illustrative. Read `00-goals-and-architecture.md` first.
+Status: spec, consolidated 2026-10-07 without adopting new domain fields. This is the contract the
+implementation is built against. Code blocks are specification, not implementation — field names,
+types, and invariants are binding; method bodies are illustrative. Read `00-goals-and-architecture.md`
+first.
+
+The in-memory case-outcome/result increment implements existing fields on 2026-10-07, with the
+bounded constraints described in §9 and the [implementation inventory](README.md#current-implementation).
 
 Scope of v1: note-level extraction with verified evidence, explicit outcomes, a provider/destination
 policy gate, durable tables, and a minimal correction workflow. Establish a fixed pipeline before
@@ -12,6 +18,12 @@ value objects are frozen. Cross-object validation uses the exact source and evid
 construction, commit, and load boundaries. The blocks below abbreviate that validation machinery.
 See [Current implementation](README.md#current-implementation) for the implemented subset and
 remaining work. Specification blocks do not establish that a model or runtime migration exists.
+
+The [terminology/detection extension](05-terminology-and-mention-detection.md) is conditional design.
+It consolidates October proposals without replacing `Concept`, adding fragment/provenance fields,
+or dropping `CaseOutcome` and final-claim IDs. The
+[dated bundle](amber-docs-2026-10-07/README.md) is historical, not a second contract. An extension
+must define explicit schema identity, serialization, migration, and validation before adoption.
 
 ## 1. Identifiers and provenance
 
@@ -87,6 +99,12 @@ class Mention(BaseModel):
 ```
 
 Invariant: `quote == source.text[start:end]` is checked at construction; a Mention cannot exist for text that is not in the source.
+
+Detection and linking are distinct from evidence minting. A detector's proposed offsets must be
+validated against the authoritative Source, and supporting spans enter through quote/grounding
+or the explicit human path. Normalized concepts remain optional. The conditional extension
+describes vocabulary references, contextual candidates, overlap policies, and OMOP identifiers;
+its proposed fields are not part of this model yet.
 
 ## 4. Claims and answer schemas
 
@@ -250,6 +268,10 @@ Split at the patient/document level before deriving Examples. Demonstrations, op
 training use only their assigned partitions. Corpus adapters must separately declare annotation
 coverage and mapping policies; template flags do not define the gold-scoring scope.
 
+A future mention-annotation extension must specify gold spans, attributes, concepts, and their
+coverage without losing outcomes, final IDs, support closure, or split membership. The October
+proposal's `Example.mentions` is not yet an adopted field or an existing detector-training export.
+
 ## 7. Provider zones and sensitivity
 
 ```python
@@ -274,6 +296,9 @@ Datasets carry `sensitivity` in their manifest; it is never inferred. Start with
 provider and validate capabilities at its boundary, including structured output and tool use
 where required.
 
+Local encoder detectors and linkers are also model providers. Their runtime integration remains
+optional; declarations of zone or sensitivity alone do not establish policy enforcement.
+
 Tracking/tracing servers, judges, artifact stores, and annotation services also declare their
 destination zone and allowed payloads in deployment configuration. Check each source-bearing
 transfer before sending; keep sink policy separate from model-specific Provider fields. Preserve
@@ -286,11 +311,14 @@ All tools are plain Python functions with Pydantic-typed arguments and returns, 
 fixed pipeline, task rules, and optional agents. Register them with the agent runtime only at that
 boundary. Each returns provenance-stamped nodes or explicit outcomes. The initial tool subset is
 quote, commit, and outcome recording; additional NLP tools are conditional on task evidence.
+Detector-specific configuration and label translation belong at optional boundaries. See the
+conditional extension before introducing fragments, unions, hierarchy filtering, or normalization
+back-off; no detector or context method is selected by this contract.
 
 ```python
 def sections(source_id) -> list[Section]                      # medspaCy sectionizer (+ MedSlice-style model later)
 def dedupe(source_id) -> list[Section]                        # marks template/copy-forward spans (TRACE-style)
-def find_mentions(source_id, types: list[str]) -> list[Mention]   # GLiNER-BioMed | OpenMed | medspaCy rules; backend configurable
+def find_mentions(source_id, types: list[str]) -> list[Mention]   # optional dictionaries | GLiNER family | OpenMed | grounded LLM; backend configurable
 def context(mention_id) -> Mention                            # ConText/negspacy attributes filled in
 def normalize(mention_id, systems: list[str]) -> list[Concept]   # SapBERT candidates
 def quote(source_id, text: str, hint_start: int | None = None) -> Inclusion | GroundingFailure   # exact first; optional validated fuzzy policy; human annotation uses the same grounding checks
@@ -335,6 +363,35 @@ runtime records failed outcomes and their causes rather than turning execution e
 not-mentioned results. Claimed complete review is auditable from the execution record; its
 semantic completeness is tested on gold answerable cases.
 
+### Current in-memory boundary
+
+`amber.schemas.Case`, `CaseOutcome`, and `CaseResult` implement the note-scoped subset. `Case`
+requires exactly one source ID. Results contain the complete retained graph and immutable list
+shapes, and the graph's current proposed/rejected claim statuses remain the only supported
+statuses. `mentions` must be empty; Mention, StructuredEvidence, human status transitions, and
+Example are not introduced by this increment.
+
+Use `amber.cases.create_case_result(case, graph=..., outcome=..., final_claim_ids=...)` after the
+existing commit path. An answered result may contain a proposed final Claim; the outcome denotes
+execution completion, not human approval or clinical acceptance. Unanswered/failed results may
+retain valid supporting claims but have no final IDs. Runtime callers record failed outcomes
+with their required reason and failure kind; the `no_claim` tool accepts only the three clinical
+non-answer states and never changes claims or graph state.
+
+Load using `amber.cases.load_case_result(payload, case=..., source=..., task=...,
+excluded_spans=...)`. Caller-supplied context is authoritative; every retained graph component
+and outcome reference is revalidated. The wire payload requires all CaseResult fields, including
+explicit `final_claim_ids` and nullable `trace_id`. Ordinary construction/deserialization is
+guarded; unvalidated copies must go through the same load boundary before use. Case diagnostics
+and graph diagnostics expose source-safe codes. Serialization is in-memory and source-bearing,
+not persistence or authorization to transfer data.
+
+Review IDs are declarations of full task-scope review, validated for membership and required
+coverage when not mentioned. This increment does not provide the execution audit that proves
+what context was examined, semantic completeness, clinical conflict detection, or an Example/gold
+conversion path. Those remain distinct later responsibilities. No clinical absence is inferred
+from annotation absence or partial review.
+
 - Fixed baseline: one source/task, versioned prompt, structured candidate values and quotes,
   shared quote/commit validation, bounded retries, and explicit outcomes. No planning loop.
 - Extractor experiment: same task/model/split and evidence rules, with bounded adaptive tool use.
@@ -369,7 +426,18 @@ workflow state separately from the clinical/execution `outcome`. Retain immutabl
 records in permitted storage keyed by source_id; source hashes alone cannot revalidate offsets.
 Exports include the required support closure and a manifest linking the exact source versions.
 
-OMOP `NOTE_NLP` view over `mentions`: `note_nlp_id ← mention_id`, `note_id ← source.external_id`, `section_concept_id ← map(section_category)`, `snippet ← quote (± context window)`, `offset ← start`, `lexical_variant ← quote`, `note_nlp_concept_id ← concept (standard)`, `note_nlp_source_concept_id ← concept (source)`, `nlp_system ← provenance.producer`, `nlp_date/datetime ← provenance.created_at`, `term_exists ← polarity != negated`, `term_temporal ← temporality`, `term_modifiers ← "experiencer=…;certainty=…;value=…;unit=…"`.
+Planned OMOP `NOTE_NLP` mapping requires conformance checks before implementation. Amber's
+content-addressed string `mention_id` is not a direct OMOP integer `note_nlp_id`: retain a stable
+identifier mapping. Validate or map `Source.external_id` to the destination's `note_id`; preserve
+the source link. Map normalized concepts to valid standard and source concept IDs against the
+declared vocabulary snapshot rather than writing native codes into OMOP concept columns.
+
+Candidate mappings include section category to `section_concept_id`, source quote to
+`lexical_variant`, a declared context slice to `snippet`, and source offsets to the destination's
+offset representation. Record producer/time, temporality, experiencer, certainty, and value/unit.
+Define negated and uncertain assertion handling, unmapped concepts, discontinuous spans, and
+any representational loss explicitly. A view alone cannot establish interoperability or clinical
+equivalence. This export remains conditional on the task's downstream need.
 
 ## 11. Evaluation
 
@@ -399,6 +467,12 @@ Clinical reports identify dataset/version/hash, patient/document split, task/sch
 coverage policies, prompt/model/backend versions, budgets, thresholds, and sample counts. Bootstrap
 at the patient/document level; keep CORAL pseudo-labels separate from its 40-note expert gold set.
 Do not tune on held-out cases or use their corrected Examples in the evaluated training workflow.
+
+Conditional mention/linking experiments additionally measure exact/overlap mention F1, attributes
+on gold versus detected spans, candidate recall at k, exact linking accuracy, unresolved/back-off
+rates, and end-to-end task quality. Keep hierarchical credit separate from exact clinical
+correctness. Retain task-level omissions, coverage, and total expert effort as adoption criteria;
+resample patients/documents even when the outputs being scored are mentions.
 
 ## 12. MLflow mapping
 

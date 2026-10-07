@@ -1,7 +1,8 @@
 # Roadmap and milestones
 
-Revised 2026-09-04. The first delivery spans M1–M3: one clinically useful note-level task with
-validated evidence, a reproducible baseline, and a minimal correction workflow. Its purpose is
+Consolidated 2026-10-07, preserving the 2026-09-04 delivery sequence. The first delivery spans M1–M3:
+one clinically useful note-level task with validated evidence, a reproducible baseline, and a
+minimal correction workflow. Its purpose is
 to test whether Amber reduces total expert effort at a declared quality target.
 
 M4–M8 are conditional expansions. A runnable prototype or a failed clinical experiment is useful
@@ -16,6 +17,13 @@ for a confirmatory claim or label the repeated comparison exploratory.
 For implemented capabilities and outstanding work, see the canonical
 [Current implementation](README.md#current-implementation) summary. Milestone requirements below
 describe delivery scope, not a claim that every listed component exists.
+
+The [October bundle](amber-docs-2026-10-07/README.md) is a historical proposal. Its vocabulary-first
+M1 and broad detector-cascade M2 do not replace this sequence. The
+[terminology/detection extension](05-terminology-and-mention-detection.md) is conditional on a
+named task need or baseline error; select–decide is a separately
+[evaluated proposal](select-decide-evaluation.md). Neither is a prerequisite for the current
+progression baseline, and provider/destination policy precedes every source-bearing call.
 
 ## M0 — Workspace and interface scaffold
 
@@ -109,6 +117,14 @@ for measured errors or cost. Template detection is not an annotation-coverage or
 Choose escalation thresholds from development error/coverage curves; audit non-escalated cases
 for confident omissions. Self-reported confidence alone is not an acceptance rule.
 
+Targeted NLP need not wait for a reviewer agent if the fixed baseline reveals a specific need.
+If normalized concepts or span recall are relevant, use the conditional terminology/detection
+design to scope one comparison. Compare lexical retrieval with one plausible detector/linker
+before expanding the benchmark. A gold-span linking experiment separates retrieval and
+disambiguation from detection; then measure the final task end to end. No GLiNER variant,
+dictionary union, or ConText attribute policy is an adopted default. Include additional annotation
+and terminology/index setup in the expert-effort measurement.
+
 Exit evidence: incremental gains, conflict resolution errors, automation coverage, non-escalated
 error/omission rates, and total cost. Ship only justified components. Add OMOP `NOTE_NLP` when the
 downstream task needs it, with explicit identifier/concept mapping and conformance checks.
@@ -168,6 +184,11 @@ scaffolding does not remove the capability from the roadmap or change its eviden
   extraction, concept normalization, within-note search, dates/calculation, and provider-gated
   structured lookups. Add only what the selected task or measured errors require; search hits
   remain candidates until grounded, and template flags do not define annotation coverage.
+- Terminology fragments and vocabulary adapters: only for a task needing concepts or a justified
+  mention/linking experiment. Keep immutable references and pure rules inward, and database,
+  EDW, detector, and embedding integrations outward behind protocols. Bind snapshots and indexes
+  to manifests and policy versions; preserve original assertions through reviewed migration
+  events. Adopt public fields through an explicit contract change, not the dated bundle's schema.
 - `export/omop.py`: the validated mention-to-`NOTE_NLP` mapping when the downstream workflow needs
   it. M1's native persistence/export path remains first; patient-level tables and FHIR stay deferred.
 - `mlflow_ext/model.py`: pyfunc packaging of model/adapter/task references with evidence-linked

@@ -4,6 +4,11 @@ This note summarizes useful literature and evaluation criteria for building a co
 biomedical entity-linking pipeline beyond a surface-form embedding baseline such as SapBERT.
 It reflects literature checked through September 2026.
 
+Research reference, not an adopted implementation plan. The
+[conditional terminology/detection design](05-terminology-and-mention-detection.md) consolidates
+its implications for Amber and preserves task-first delivery. The comparisons below are a menu;
+choose a bounded subset based on the task's measured errors.
+
 ## Recommended reading order
 
 1. **Kartchner et al. (2023), [A Comprehensive Evaluation of Biomedical Entity Linking

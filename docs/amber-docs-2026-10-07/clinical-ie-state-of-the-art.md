@@ -1,48 +1,30 @@
 # Clinical Information Extraction: State of the Art (living doc)
 
-Last consolidated: 2026-10-07, including terminology/detector additions from the
-[dated bundle](amber-docs-2026-10-07/README.md). Primary studies and current upstream APIs were not
-independently reverified in this revision. Ongoing — update as new results land. Later sessions:
-read this before re-researching, and append rather than rewrite.
+> Historical source snapshot, consolidated 2026-10-07. Maintain research updates in the
+> [canonical survey](../01-state-of-the-art.md), which retains comparator and supervision
+> qualifications. Numerical and upstream capability claims below were not newly verified.
+> See the [bundle index](README.md).
+
+Last updated: 2026-10-07. Ongoing — update as new results land. Later sessions: read this before re-researching, and append rather than rewrite.
 
 ## Summary
 
-The cited work motivates different baselines for span-level NER and document-level schema
-extraction. Encoder models are strong candidates for exact spans; generative extraction, task
-fine-tuning, distillation, and decomposed pipelines are candidates for note-level answers. Results
-depend on the task, annotation coverage, supervision, metric, and compute budget. These studies do
-not establish that Amber needs an agent loop or a broad NLP stack before testing a fixed baseline.
-
-Use the numerical summaries below as research leads. Before adopting a recipe, verify its primary
-study's dataset/split, comparator ordering, supervision, uncertainty, and cost assumptions. Report
-zero-shot, few-shot, prompt optimization, and fine-tuning separately. No result here establishes
-Amber's expected clinical accuracy, annotation budget, or reduction in expert effort.
+The field has split into two regimes. For classic span-level NER on established corpora, encoder-style models (GLiNER family, fine-tuned BERT/GatorTron) still lead, by 15–30 F1 over decoder LLMs. For document-level, schema-driven extraction (registry curation, trial eligibility, pathology/radiology report structuring, SDOH), generative models now lead, but the winning recipe is fine-tuned or distilled small open models and decomposed pipelines, not single-prompt frontier models.
 
 ## Regime 1: span-level NER — encoders still win
 
-- Clinical NER Benchmark (arXiv 2410.05046; entities mapped to OMOP classes; token- and span-level scoring): GLiNER multitask-large ~65.7 avg F1 zero-shot, UniNER-7B 62.3, GLiNER large v2.5 59.8. GPT-4o and Llama-3-70B 15–30 points lower. These reported differences motivate an encoder baseline for exact spans, not a universal ranking. The original `gliner_large-v2.5` checkpoint is distinct from Fastino GLiNER2.5 below.
+- Clinical NER Benchmark (arXiv 2410.05046; entities mapped to OMOP classes; token- and span-level scoring): GLiNER multitask-large ~65.7 avg F1 zero-shot, UniNER-7B 62.3, GLiNER large v2.5 59.8. GPT-4o and Llama-3-70B 15–30 points lower. Autoregressive generation is a poor fit for boundary-exact extraction. (Note: "GLiNER large v2.5" here is urchade's `gliner_large-v2.5`, a uni-encoder — not fastino's GLiNER2.5, below.)
 - JAMIA 2025/26 "Are we ready to switch to LLMs?" (UTHealth; ~1,600 notes from UT Physicians, MTSamples, MIMIC-III, i2b2): instruction-tuned Llama-2/3 vs BERT. With abundant training data, LLMs gain only ~1% NER and 1.5–3.7% RE, at up to 28× slower. Out-of-distribution (unseen i2b2) LLMs gain +7% NER / +4% RE. Conclusion: task-specific choice, not wholesale switch.
 - GLiNER-BioMed (Bioinformatics 2026 / arXiv 2504.00676): uni- and bi-encoder variants; LLM-distilled synthetic biomedical NER pretraining + general-domain fine-tuning; +6 F1 over strongest prior GLiNER baseline zero/few-shot; CPU-deployable.
 - OpenMed (Hugging Face / GitHub, Apache-2.0): 2,000+ open clinical NER and PHI de-id encoder models, local-first, 21 languages.
-- GLiNER bi-encoder / GLiNKER (added 2026-10-07): the bundle cites Knowledgator's
-  [Million-Label NER](https://arxiv.org/abs/2602.18487), separate text/label encoders, cached label
-  embeddings, a reported throughput advantage at large label counts, and joint linking work.
-  Verify checkpoint/API, task metrics, and speed conditions before reuse. Large-label detection
-  is a candidate architecture, not evidence that a clinical task needs a full terminology as labels.
-- Fastino GLiNER2 / GLiNER2.5 (added 2026-10-07): the bundle reports `span` and `boundary`
-  architectures, character spans, long-document offset remapping, entity descriptions, span
-  attributes, relation extraction, and LoRA adapters. Verify these against pinned upstream
-  packages/checkpoints before implementation. Boundary-exact outputs still require authoritative
-  source validation. The bundle did not identify a clinical benchmark for the proposed 2.5
-  checkpoint. Check occurrence-specific training offsets and test clinical shorthand/tokenization;
-  string-only annotation cannot represent differing labels on repeated surface forms. Keep
-  detector, attribute, and final clinical-task comparisons separate.
+- GLiNER bi-encoder (Knowledgator; arXiv 2602.18487, Feb 2026, "The Million-Label NER"): separate label encoder (BGE/MiniLM-style sentence transformers) and text encoder; label embeddings precomputed and cached; up to 130× throughput at 1,024 labels vs uni-encoder; 61.5 micro-F1 zero-shot on CrossNER (large, 530M). Companion GLiNKER framework for entity linking over large KBs. Relevant when the label set is a terminology (thousands of concepts as labels), i.e. joint detection + linking. Models: `knowledgator/gliner-bi-{edge,small,base,large}-v2.0`; API `encode_labels` + `predict_with_embeds`. (added 2026-10-07)
+- GLiNER2 / GLiNER2.5 (Fastino; github.com/fastino-ai/GLiNER2; GLiNER2 paper EMNLP 2025 demos, arXiv 2507.18546; Apache-2.0). Schema-conditioned encoder family: entities (with natural-language descriptions), text classification, structured JSON extraction, relations, and (2.5) span attributes in one forward pass; CPU-first. Two architectures behind `AutoExtractor`: `span` (GLiNER2, fixed-width span grid; 205M base / 340M large) and `boundary` (GLiNER2.5, sparse start/end pairing, any span length within the window; `gliner2.5-small-v1` 74M DeBERTa-v3-xsmall, `gliner2.5-base-v1` 194M DeBERTa-v3-base, `gliner2.5-multi-v1` 287M mDeBERTa-v3-base). `GLiNER2.from_pretrained` does not load boundary checkpoints. Useful features: `include_spans` character offsets; `extract_entities_long` remaps chunk spans to global offsets; span attributes via `AttributeGroup(applies_to=...)`; `Classifier` with cross-task constraints (`implies`); `JointIE` typed entity–relation graphs; LoRA adapters (~2–10 MB, runtime switching). Caveats for clinical use (2026-10-07 assessment): no clinical benchmark seen; general-domain training; default whitespace word splitter (clinical shorthand like "s/p", "SOB/DOE" stays single tokens; custom splitters may hurt pretrained checkpoints); README training JSONL lists entity strings rather than offsets (check the training-data tutorial before relying on it for mention-level labels). Schema is still encoded jointly with text, so not a substitute for a separate linker when the target is a full terminology. (added 2026-10-07)
 
 ## Regime 2: document-level schema extraction — generative, but fine-tuned/distilled
 
-1. Task-specific fine-tuning is a candidate. Sci Rep 2025 (Berkeley/UCSF): the prior survey records LoRA-tuned Llama-3.1-8B on ≤100 reports per task (breast/kidney/bone-marrow pathology, prostate MRI) at 87–92% exact match, non-inferior to a second annotator under the study's comparison, ahead of GPT-4 (86%). Zero-shot open models were 17–57%; the tested medical-pretrained models performed poorly. These findings concern those tasks and comparisons, not a general sample-size guarantee or evidence against all domain pretraining.
-2. Distillation results vary by metric. npj Digit Med 2025: Llama-3.1-70B generates QA pairs with source spans, difficulty, and explanations for QLoRA students. The prior survey lists 8B student versus 70B teacher balanced accuracy of 0.93 vs 0.89, but i2b2 2018 micro-F1 of 0.89 vs 0.93, and estimated costs of $929 vs $4,066 for 10k patients × 23 criteria. The listed accuracy and F1 comparisons favor different models; verify the primary study's task/comparator mapping before reuse. Do not summarize this as the student winning every metric.
-3. Few-shot reasoning with additional inference budget. SDOH on n2c2/UW SHAC (arXiv 2604.13502): the prior survey records o4-mini micro-F1 0.866 and precision 0.902 with task guidelines, 50 demonstrations, voting across three runs, and post-hoc validation. This is a few-shot, multi-call configuration. The listed Gemini 2.5 Flash result (0.825) and Llama-3.1-8B zero-shot result (0.591) require their own supervision/budget context before comparison.
+1. Small fine-tuned open models reach human level. Sci Rep 2025 (Berkeley/UCSF): LoRA-tuned Llama-3.1-8B on ≤100 reports per task (breast/kidney/bone-marrow pathology, prostate MRI) → 87–92% exact match, non-inferior to a second human annotator, ahead of GPT-4 (86%). Zero-shot open models 17–57%; "medical" pretrained models (PMC-LLaMA, UltraMedical) were worst. Domain pretraining bought nothing; task fine-tuning bought everything.
+2. Distillation beats the teacher. npj Digit Med 2025: Llama-3.1-70B generates QA pairs with source spans, difficulty, explanations → QLoRA students 1B/3B/8B. 8B student beat 70B teacher on trial-criteria extraction (balanced acc 0.93 vs 0.89; i2b2 2018 micro-F1 0.89 vs 0.93) at ~¼ cost ($929 vs $4,066 for 10k patients × 23 criteria).
+3. Reasoning models close the gap zero-shot with engineering. SDOH on n2c2/UW SHAC (arXiv 2604.13502): o4-mini micro-F1 0.866 (top-tier for the shared task, precision 0.902) using official guidelines in prompt + 50-shot + self-consistency voting across 3 runs (+0.063 alone) + post-hoc validation. Gemini 2.5 Flash 0.825; Llama-3.1-8B zero-shot 0.591.
 
 ## Pipelines over single prompts
 
@@ -54,27 +36,8 @@ Amber's expected clinical accuracy, annotation budget, or reduction in expert ef
 
 - Canonical citation: Liu, Shareghi, Meng, Basaldella, Collier. "Self-Alignment Pretraining for Biomedical Entity Representations." NAACL 2021, pp. 4228–4238. doi:10.18653/v1/2021.naacl-main.334; arXiv:2010.11784. Multilingual companion: Liu et al., "Learning Domain-Specialised Representations for Cross-Lingual Biomedical Entity Linking" (ACL 2021, XL-BEL). Code: github.com/cambridgeltl/sapbert; default checkpoint `cambridgeltl/SapBERT-from-PubMedBERT-fulltext`.
 - Status 2025–26: still the default bi-encoder candidate retriever. Newer work layers re-rankers on top (BioNNE-L 2025 hybrid re-ranking; accelerated cross-encoders, BioNLP 2025; neighborhood-aware dual linking, arXiv 2608.04144) rather than replacing the representation. Comparison paper: Kartchner et al., "A Comprehensive Evaluation of Biomedical Entity Linking Models" (EMNLP 2023).
-
-### Terminology and contextual linking (2026-10-07)
-
-Coarse detection labels, candidate retrieval, and contextual disambiguation are distinct stages.
-SapBERT is a useful lexical/dense retrieval baseline; the
-[contextual linking guide](context-aware-biomedical-entity-linking.md) adds KRISSBERT, BELHD, and
-constrained reranking as research candidates. Measure candidate recall before final top-1
-accuracy; compare context windows, ambiguity, unresolved cases, latency, and expert correction.
-Hard detector-type filtering can exclude the correct concept, and ancestor back-off must not
-conceal linking failures or substitute for exact clinical correctness.
-
-OMOP Standardized Vocabularies can provide a shared concept identifier space for SNOMED, RxNorm,
-LOINC, and structured EHR data. Locally authorized `CONCEPT_ANCESTOR` and mapping/synonym tables
-can support terminology subsets and lexicons. Verify available relationships, mapping ambiguity,
-validity dates, snapshot versions, and vocabulary-specific rights. OMOP domains do not directly
-define detector labels, and hierarchy/mapping consistency does not establish patient-level facts.
-
-For Amber, these ideas are consolidated in the
-[conditional terminology/detection design](05-terminology-and-mention-detection.md). No fragment
-store, linker, detector default, or new domain fields are implemented or adopted. The current
-boolean progression task can test the fixed clinical baseline before investing in this extension.
+- Integrating a target terminology with a span detector (2026-10-07 synthesis): keep detection labels coarse and linking separate. Terminology roles: (1) source of a small label set and descriptions; (2) linking target — SapBERT index over concept names + synonyms, candidates restricted by detector type, ancestor back-off when no confident leaf; (3) weak supervision — dictionary matches + grounded LLM spans to adapt an encoder, with concepts held out to test generalization beyond the lexicon; (4) inference-time gazetteer fusion and hierarchy consistency checks. SNOMED is a polyhierarchy with uneven depth, so hierarchy-based subtype narrowing should be a soft re-ranking signal over curated groupings, not a hard filter.
+- OMOP Standardized Vocabularies as the terminology layer (2026-10-07): SNOMED (conditions, most procedures/observations), RxNorm (drugs), LOINC (measurements) under one `concept_id` space; CONCEPT_ANCESTOR gives the transitive closure (polyhierarchy, min/max separation) so fragments are SQL; non-standard vocabularies (ICD-10-CM etc.) linked via "Maps to" extend the lexicon. Gains: one concept space for NLP output and structured EHR data; direct fit to `NOTE_NLP` standard/source concept columns. Costs: `domain_id` splits SNOMED findings across Condition/Observation/Measurement (table routing, not a semantic type); no ECL/refsets/post-coordination/text definitions; concept churn across Athena releases. Licensing unchanged (SNOMED affiliate license, UMLS key for CPT4).
 
 ## Note structure: sections, headers, layout
 
@@ -85,36 +48,23 @@ Status: section boundaries reasonably mature for clean notes; header semantics h
 - CNSight (arXiv 2512.22795, Dec 2025; 1,000 MIMIC-IV notes): medspaCy won on free-text notes (88 F1); API LLMs (GPT-5-mini, Gemini 2.5 Flash, Claude 4.5 Haiku) won on sentence-segmented input (~80 F1); 7B "medical" LLMs poor.
 - LREC 2026 obstetrics paper (arXiv 2602.17513): fine-tuned BERT/GatorTron+CRF 0.68 macro-F1 in-domain on MedSecId, 0.40–0.50 on new subdomain; zero-shot Llama-3.3-70B 0.67 out-of-domain after mapping hallucinated header labels to the taxonomy (+9–33 F1 from that step).
 - Bhattacharya et al. 2024 (arXiv 2404.16294): GPT-4 97% on MedSecId, 38% on real faxed/OCR'd prior-auth documents; header creativity + exact-match evaluation are the culprits.
-- MedSlice (arXiv 2501.14105, Jan 2025): candidate sectioning pattern. LoRA-tuned Llama-3.1-8B on ~500 annotated notes; model emits first/last five words of each section, fuzzy-matched (Levenshtein >80%) back to source for exact offsets. The survey reports 0.89/0.94 F1 (HPI-like / A&P) vs GPT-4o 0.78/0.79 and SecTag/medspaCy 0.19–0.30. These study-specific results do not establish a production choice or a safe generic fuzzy policy for Amber.
+- MedSlice (arXiv 2501.14105, Jan 2025): best production pattern. LoRA-tuned Llama-3.1-8B on ~500 annotated notes; model emits first/last five words of each section, fuzzy-matched (Levenshtein >80%) back to source for exact offsets. 0.89/0.94 F1 (HPI-like / A&P) vs GPT-4o 0.78/0.79 and SecTag/medspaCy 0.19–0.30.
 - JAMIA Open 2024 (ooae075): sectioning as QA with section definitions in prompt; 27 types; GPT-4 F1 0.77; modest domain-specific fine-tuning beats large general instruction data.
 - Layout / name-value / embedded tables: no recommended library. Document-AI layout models (LayoutLM, Donut) don't apply to plain text; PDF parsers (LlamaParse, Docling, Unstructured) don't help on EHR text exports. Practice is bespoke line-level classification (header / key:value / table row / list / prose via indentation, colon position, delimiter repetition, column alignment, numeric density) + regex, or grounded LLM-to-JSON (LangExtract style) for vitals/labs/med blocks.
 - Template / copy-forward detection: TRACE (Stanford, arXiv 2604.16364, Apr 2026). Reference module aligns Epic Clarity attribution metadata against final notes (Ratcliff-Obershelp; 97% precision / 84% recall on template spans); frequency-based fallback without attribution data. Removed 47% of chart text with negligible downstream IE loss (<0.002 F1). Templated blocks are where flowsheet dumps and SmartPhrase tables live, so this pairs with sectioning.
 - Suggested stack: medspaCy or MedSlice-style fine-tuned sectionizer for boundaries → LLM or SapBERT-style embedding normalization of headers onto a SecTag/LOINC-DO-derived category set → TRACE-style template detection → line-level heuristics + grounded LLM extraction inside structured blocks.
-
-Treat this stack as a research hypothesis. Template or copied text can contain current clinical
-evidence; marking it does not authorize excluding it from review, grounding, or gold coverage.
-Any section/deduplication policy must preserve original offsets and measure omitted or
-contradictory evidence as well as downstream accuracy and review effort.
 
 ## Where it still fails
 
 - medRxiv Jan 2026 benchmark of extraction tools on 1,000 synthetic molecular test reports (7 layouts, clean vs fax-distorted): GPT-4.1-mini best at 55.6 F1 clean / 37.3 distorted; Gemma-3-27B best open at 41.3 (image input); NuExtract 2.0 4B promising for constrained settings. Nothing cleared 65 F1. Prompting strategy (zero- vs one-shot) had minimal effect.
 - Open problems: layout-heavy and OCR-degraded documents; token-level boundary fidelity from decoders; long tail of rare entities; gold-standard quality (annotation gaps masquerading as hallucinations).
 
-## Experimental candidates for Amber
+## Practical recipe (for I.AIM-style work)
 
-- Establish one fixed structured-extraction baseline with verified source evidence and explicit
-  unanswered outcomes; compare bounded agents only after observing baseline errors.
-- Trial GLiNER-BioMed/OpenMed, sectioning, or normalization when the task needs their outputs and
-  a controlled comparison shows benefit. Normalized concepts are optional in Amber's Mention.
-- Consider Fastino GLiNER2.5, dictionary/model unions, and contextual linking under the same gate.
-  No winner or attribute default is selected by this survey. Add annotation and terminology/index
-  setup costs to the experiment rather than assuming a generic detector bake-off is required in M2.
-- Separate zero-shot instructions from few-shot demonstrations and multi-call voting; count expert
-  prompt work and all calls. Compare them on the same task and split under declared budgets.
-- Consider fine-tuning or distillation once Examples and a stable evaluation protocol exist.
-  Choose the annotation budget from learning curves and total expert effort, not a universal
-  100-document rule. Keep pseudo-labels separate from held-out expert gold.
+- Annotate ~100 docs per schema and LoRA-tune an 8B open model, or distill from a larger one with span-grounded synthetic QA.
+- Use GLiNER-BioMed / OpenMed encoders for span NER and PHI de-id; treat GLiNER2.5 as a candidate to benchmark, not a default, until it has clinical numbers.
+- Reserve reasoning-model zero-shot (with guidelines-in-prompt, few-shot, self-consistency) for low-volume or rapidly changing schemas.
+- Treat span grounding + normalization (SapBERT → UMLS/SNOMED/OMOP) as non-negotiable; that's the common thread across leading systems.
 
 ## Gaps / to watch
 
@@ -123,10 +73,7 @@ contradictory evidence as well as downstream accuracy and review effort.
 - Temporal relation extraction with long-context transformers (Frontiers Digit Health 2026, MIMIC-III/IV robustness) — not yet read closely.
 - Structured-output robustness of small LMs for open attribute-value extraction (arXiv 2507.01810) — not yet read closely.
 - Layout/name-value parsing of plain-text notes: no benchmark or standard tool found; candidate for original work.
-- Fastino GLiNER2.5 clinical NER/attributes and occurrence-specific training format: unresolved
-  in the October bundle; verify against pinned upstream documentation and a task-level comparison.
-- OMOP vocabulary integration: verify the actual snapshot's hierarchy/attribute relationships,
-  version identity, mapping multiplicity, and license terms before designing a fragment adapter.
+- GLiNER2.5 (fastino boundary) on clinical NER and assertion: no published clinical results found as of 2026-10-07; amber M2 bake-off will produce internal numbers. Also unread: GLiNER2 training-data tutorial (offset support) and the boundary-architecture design notes.
 
 ## Sources
 
@@ -134,7 +81,7 @@ contradictory evidence as well as downstream accuracy and review effort.
 - Clinical NER Benchmark: https://arxiv.org/pdf/2410.05046
 - GLiNER-BioMed: https://academic.oup.com/bioinformatics/article/42/6/btag322/8690923 (arXiv 2504.00676)
 - GLiNER bi-encoder: https://arxiv.org/abs/2602.18487 ; https://huggingface.co/knowledgator/gliner-bi-base-v2.0
-- Fastino GLiNER2/2.5: https://github.com/fastino-ai/GLiNER2 ; https://arxiv.org/abs/2507.18546
+- GLiNER2 / GLiNER2.5: https://github.com/fastino-ai/GLiNER2 ; paper https://arxiv.org/abs/2507.18546
 - Fine-tuned LMs, human-level IE: https://www.nature.com/articles/s41598-025-28767-z
 - Synthetic data distillation: https://www.nature.com/articles/s41746-025-01681-4
 - Reasoning LLMs for SDOH: https://arxiv.org/html/2604.13502v2
@@ -148,7 +95,7 @@ contradictory evidence as well as downstream accuracy and review effort.
 - n2c2: https://n2c2.dbmi.hms.harvard.edu/
 - SapBERT: https://aclanthology.org/2021.naacl-main.334/ ; https://github.com/cambridgeltl/sapbert
 - Biomedical entity linking evaluation: https://pmc.ncbi.nlm.nih.gov/articles/PMC11097978/
-- OMOP vocabulary tables: https://ohdsi.github.io/CommonDataModel/cdm54.html ; https://athena.ohdsi.org
+- OMOP CDM v5.4 vocabulary tables: https://ohdsi.github.io/CommonDataModel/cdm54.html ; Athena: https://athena.ohdsi.org
 - medspaCy: https://github.com/medspacy/medspacy
 - SecTag: https://www.sciencedirect.com/science/article/abs/pii/S1067502709001583
 - MedSecId: https://aclanthology.org/2022.coling-1.326/

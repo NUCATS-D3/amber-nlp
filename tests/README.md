@@ -13,6 +13,13 @@ Keep the suite flat and grouped by the boundary under test:
   views, strict snapshots, and source-revalidated restore against caller-supplied context.
 - `test_commit.py`: proposed positive/negative answers, field citations, rationale/provenance,
   atomic failure, supporting-claim chains, and structural-versus-semantic support boundaries.
+- `test_case_schemas.py`: strict note case membership, clinical/execution outcome consistency,
+  required reasons/failure kinds, frozen ID lists (including defaults), and provenance validation.
+- `test_cases.py`: final versus supporting claims, full graph/source/context revalidation on
+  result creation/load, citations, declared review coverage, immutable results, guarded
+  construction, strict counters, and source-safe diagnostics.
+- `test_outcomes.py`: validated `no_claim`, immutable graph state, partial-review handling,
+  and rejection of runtime-failure/answered outcomes or unknown citations.
 - `test_api.py`: optional HTTP health/info routes; requires `app` and HTTPX.
 - `test_tracking.py`: optional MLflow entry point, missing dependencies, and the local launcher.
 - `test_invariants.py`: the implemented source, ID, and exact-grounding invariants.
@@ -57,6 +64,7 @@ and 3.12 on Linux. Jobs install from `uv.lock`, with no dataset credentials or e
   [check_core_install.py](../scripts/check_core_install.py) with `python -I`. This checks the
   installed package location, absence of optional stacks, facade, Unicode/CRLF grounding,
   evidence-backed proposed commits, validated graph restore, and CLI.
+  It also checks case result round-trips and supporting claims retained on an unanswered outcome.
 - Full suite: install `dev`, `app`, and `tracking` plus the default dev group. Explicitly import
   the optional interfaces before testing so a missing dependency fails the job rather than
   skipping its tests. Run the synthetic CPU suite on both Python versions; run Ruff, formatting,
