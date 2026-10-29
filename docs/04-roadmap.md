@@ -5,6 +5,10 @@ one clinically useful note-level task with validated evidence, a reproducible ba
 minimal correction workflow. Its purpose is
 to test whether Amber reduces total expert effort at a declared quality target.
 
+The CORAL current-progression pilot is a rehearsal of this loop on credentialed, deidentified
+data. An IRB-approved institutional task over a much larger corpus will follow; its protocol,
+data path, and scale requirements are added when that corpus is ready (tracked in Beads).
+
 M4–M8 are conditional expansions. A runnable prototype or a failed clinical experiment is useful
 progress, but neither demonstrates clinical acceptance. Record results and limitations without
 lowering thresholds after seeing held-out outcomes. Model experiments produce an OSS-compatible
@@ -15,7 +19,8 @@ exposure across milestones; if test findings guide a change, use a fresh indepen
 for a confirmatory claim or label the repeated comparison exploratory.
 
 For implemented capabilities and outstanding work, see the canonical
-[Current implementation](README.md#current-implementation) summary. Milestone requirements below
+[Current implementation](README.md#current-implementation) summary. Milestones map to Beads epics;
+track concrete tasks, blockers, and decisions there (`bd ready`) rather than in this document. Milestone requirements below
 describe delivery scope, not a claim that every listed component exists.
 
 The [October bundle](amber-docs-2026-10-07/README.md) is a historical proposal. Its vocabulary-first
@@ -78,6 +83,7 @@ Do not tune prompts, adapter rules, or thresholds against held-out cases.
 
 ## M3 — Minimal correction workflow and first delivery decision
 
+Human review uses `mlflow-span-review` with an Amber adapter; see the [human-review design](06-annotation-app.md).
 Add source viewing, quote/evidence selection, value and outcome editing, accept/correct/reject,
 append-only annotation events, and canonical Example export over the existing local store. Keep
 the interface small; multi-user deployment, a general evidence-DAG viewer, and active-learning

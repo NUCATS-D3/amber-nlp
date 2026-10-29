@@ -2,6 +2,9 @@
 
 Start here to distinguish the implementation on disk from the planned clinical workflow.
 
+See the [architecture diagrams with implementation status](architecture-status.md) for the
+component boundaries and the current in-memory evidence workflow, annotated as of 2026-10-07.
+
 ## Reading order and authority
 
 Before changing architecture or domain behavior, read:
@@ -14,6 +17,20 @@ Before changing architecture or domain behavior, read:
 [Repository guidelines](../AGENTS.md) cover development commands, dependency boundaries, and data
 safety. If documents disagree, preserve the working agreement's invariants and the v1 contract,
 then reconcile the stale document. A plan or module docstring is not evidence of implementation.
+
+## Planning and task tracking
+
+Documents hold goals, contracts, protocols, and designs. Actionable work, its owners, blockers,
+and status live in the repository's [Beads](https://github.com/steveyegge/beads) store (`bd ready`,
+`bd show <id>`); do not keep task lists or "next work" checklists in Markdown. Dated notes and
+completed `superpowers/` plans are historical records. The
+[2026-10-28 planning review](notes/2026-10-28-planning-review.md) explains how the initial Beads
+issues were derived from these documents.
+
+## Delivery designs
+
+- [Human review](06-annotation-app.md) — gold capture, correction, and adjudication through the
+  `mlflow-span-review` MLflow app with an Amber adapter; replaces the 2026-10-07 loupe plan.
 
 ## Design extensions and proposals
 
@@ -45,7 +62,7 @@ demonstrated.
 
 ### Implemented
 
-- [Current progression protocol v1.0.0](protocols/oncology_current_progression-v1.md): the
+- [Current progression protocol v1.1.0](protocols/oncology_current_progression-v1.md): the
   note-level question, evidence and outcome rules, independent adjudication, fixed split policy,
   and prospective pilot gates. This is a research protocol document, not a clinical validation
   result, generated split manifest, or adjudicated gold dataset.
@@ -262,6 +279,8 @@ human verification/gold status, and clinical scoring remain subsequent work.
 
 ## Background and experiment documentation
 
+- [Planning review — 2026-10-28](notes/2026-10-28-planning-review.md) — re-evaluation of all plans,
+  document dispositions, and derivation of the initial Beads issues.
 - [Progress note — 2026-09-16](notes/2026-09-16-project-progress.md) — dated verification results,
   assessment, and recommended next work; the status summary above remains authoritative.
 - [Documentation review — 2026-10-07](notes/2026-10-07-documentation-review.md) — consolidation

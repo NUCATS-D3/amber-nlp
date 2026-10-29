@@ -73,3 +73,5 @@
 
 sync:
     remote: "git+https://github.com/NUCATS-D3/amber-nlp.git"
+export:
+    auto: true

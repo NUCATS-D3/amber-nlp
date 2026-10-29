@@ -1,5 +1,8 @@
 # Evidence-Backed Claim Commits Implementation Plan
 
+> **Status: completed 2026-09-16; historical record.** All checkpoints were implemented and verified.
+> Do not execute this plan again; current work is tracked in Beads (`bd ready`).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use
 > checkbox (`- [ ]`) syntax for tracking.

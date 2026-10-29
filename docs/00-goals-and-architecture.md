@@ -26,13 +26,14 @@ Before model or prompt selection, version a task protocol describing the answer 
 negative answers, abstention rules, annotation coverage, intended workflow, and gold derivation.
 Set numeric acceptance thresholds for correctness, unsupported claims, omissions, automation
 coverage, expert minutes per accepted case, and cost. The first task is now defined in the
-[current progression protocol v1.0.0](protocols/oncology_current_progression-v1.md), including
+[current progression protocol v1.1.0](protocols/oncology_current_progression-v1.md), including
 task-specific pilot gates. These are prospective research targets; none has been clinically
 demonstrated. See the canonical implementation summary for protocol preparation, the recorded
 local split, the tested evidence kernel, and remaining clinical work. That inventory is the only
 live implementation-status record.
 
-CORAL v1.0 (DOI `10.13026/v69y-xa45`) is the first clinical evaluation dataset. Its 40 expert-labeled
+CORAL v1.0 (DOI `10.13026/v69y-xa45`) is the first clinical evaluation dataset and a rehearsal for
+a later IRB-approved institutional task. Its 40 expert-labeled
 notes support a pilot, not a broad generalization claim. Consult its documentation and BRAT
 configuration before selecting labels; confirm that the selected annotations support the chosen
 note-level answers. Any additional expert adjudication counts toward annotation effort. The 200
@@ -260,6 +261,7 @@ authorize lowering a dataset's declared sensitivity.
 
 Purpose: the human is a tool in the loop. The app is where the annotation assistant's proposals are corrected into examples, where the verifier's disagreements are adjudicated, and where gold spans and gold claims for evaluation are minted — one app, one data model, three queues.
 
+Review is implemented through `mlflow-span-review` with an Amber adapter; see the [human-review design](06-annotation-app.md).
 Start in M3 with source viewing, evidence selection, value/outcome editing, accept/correct/reject,
 append-only events, and export to Example. Measure authoring and correction time plus adjudicated
 quality. A general graph viewer, active-learning queues, multi-user deployment, and additional

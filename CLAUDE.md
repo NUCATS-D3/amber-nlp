@@ -21,6 +21,8 @@ effort against manual authoring. M4/M5 agent and reviewer adoption requires comp
 Broad NLP, additional backends/training, and the expanded app follow measured needs. Define
 acceptance targets and patient/document splits before selection; never tune on held-out cases.
 
+Concrete tasks and blockers are tracked in Beads (`bd ready`, `bd show <id>`); see AGENTS.md.
+
 ## Conventions
 
 - Python 3.11+, `uv` for everything (`uv sync --extra dev`, `uv run pytest`, `uv run ruff check`). Add dependencies to the right extra in `pyproject.toml`; core stays model- and GPU-free.

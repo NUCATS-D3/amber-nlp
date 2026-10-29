@@ -264,6 +264,13 @@ not annotated Examples. Final IDs distinguish answers from intermediate claims f
 export; validate the distinction on load. Exporters preserve outcome labels and never translate
 abstention to a negative clinical answer.
 
+Reference tiers: a task protocol may permit references weaker than adjudicated gold so work can
+move on under resource limits (see the current-progression protocol's move-on rule). The
+annotated-data contract will add an explicit per-Example tier (`adjudicated`, `single_review`,
+`silver`) with its provenance; only `adjudicated` Examples support confirmatory evaluation, and
+silver Examples are never relabeled gold without new review events. Label-only silver references
+without evidence are evaluation records, not Examples.
+
 Split at the patient/document level before deriving Examples. Demonstrations, optimization, and
 training use only their assigned partitions. Corpus adapters must separately declare annotation
 coverage and mapping policies; template flags do not define the gold-scoring scope.

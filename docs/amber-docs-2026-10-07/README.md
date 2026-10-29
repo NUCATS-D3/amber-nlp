@@ -11,6 +11,7 @@ take precedence. Consolidation and assessment were completed on 2026-10-07.
 | [Schemas and tools](amber-v1-schemas-and-tools.md) | [Binding v1 contract](../02-v1-schemas-and-tools.md); proposed terminology fields remain in the conditional design |
 | [Roadmap](amber-roadmap.md) | [Canonical roadmap](../04-roadmap.md), preserving the task-first M1–M3 sequence |
 | [Clinical IE research](clinical-ie-state-of-the-art.md) | [Canonical survey](../01-state-of-the-art.md), retaining study/supervision qualifications |
+| [loupe implementation plan](loupe-implementation-plan.md) (added 2026-10-28) | [Human-review design](../06-annotation-app.md): review through `mlflow-span-review` with an Amber adapter |
 
 The bundle restores older assumptions: an empty scaffold, vocabulary/detector work before a
 clinical baseline, policy enforcement in M3, mandatory agents and fuzzy alignment, null-valued

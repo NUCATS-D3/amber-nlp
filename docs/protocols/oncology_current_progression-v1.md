@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Task | `oncology_current_progression` |
-| Protocol version | `1.0.0` |
+| Protocol version | `1.1.0` (split frozen under `1.0.0`; see [changes](#version-history)) |
 | Answer schema | `OncologyCurrentProgressionAnswer` |
 | Unit of review | One CORAL progress note |
 | Scope | Whole immutable note excluding explicit `SectionSkip` intervals |
@@ -137,6 +137,8 @@ incomplete inventory can never propose `not_mentioned`.
 
 > Candidate labels are non-authoritative stratification and review aids. They never create gold
 > Claims or Examples. Gold requires independent human review and adjudication under this protocol.
+> Under the [move-on rule](#reference-tiers-and-the-move-on-rule), candidates may serve only as
+> label-only silver references, identified as such in every report.
 
 ### Required behavior examples
 
@@ -186,6 +188,39 @@ manifest artifact, and preserve the test-exposure history.
 Do not tune on test documents. Held-out corrections cannot be used as demonstrations, optimizer
 data, training data, or otherwise enter the evaluated training workflow. Split membership remains
 attached to accepted Examples and every derived export.
+
+### Reference tiers and the move-on rule
+
+The default and only confirmatory reference is **`adjudicated`**: two independent reviews plus
+third-reviewer adjudication, as above. Resource limits must not stall the project, so the owner may
+**move on** at any point with a weaker reference for some or all notes. Each note's reference
+records exactly one tier:
+
+| Tier | How it is produced | Permitted use |
+|---|---|---|
+| `adjudicated` | Two independent reviews and adjudication under this protocol | All uses; required for confirmatory gate results |
+| `single_review` | One qualified reviewer assigns the answer or outcome with exact evidence | Development, provisional scoring, training within its partition |
+| `silver` | No human review of that note. Either a structurally valid teacher-model `CaseResult` (an Example with evidence), or a CORAL candidate proposal (label-only, no evidence) | Provisional label scoring and training within its partition. Never a source of semantic-support or evidence-localization measurements |
+
+Move-on rules:
+
+- **Record before use.** A move-on decision is a dated record naming the partition(s), the tier of
+  every note, the reason (resources, schedule, or first-cut need), and the decision maker. Record
+  it before any scoring that uses that reference. Choosing or changing a tier after seeing results
+  on that partition is not permitted.
+- **Provisional status.** Gate results against any non-`adjudicated` reference are labeled
+  `provisional`. A provisional pass is never reported as `met`; `unmet` and `inconclusive` keep
+  their meaning but also carry the label. Report the tier mix next to every gate.
+- **Silver limits.** Label-only silver supports label correctness, coverage, omissions, and cost.
+  Evidence, semantic-support, and unsupported-claim measurements require human-reviewed tiers and
+  are otherwise `inconclusive`. Teacher silver must come from a frozen configuration other than
+  the one being evaluated; a system is never scored against its own outputs.
+- **Upgrades.** Later review can raise a note's tier. Prior provisional results are retained, not
+  overwritten. Re-scoring a test partition after an upgrade is another test exposure and must be
+  logged. Reviewers who upgrade test references are blind to model outputs for those notes.
+- **Unchanged rules.** Split membership, leakage controls, and the exclusion of CORAL's 200
+  pseudo-labeled notes are unchanged. Expert effort spent on any tier counts toward the effort
+  measures.
 
 ## Pilot acceptance gates
 
@@ -279,6 +314,9 @@ is an observed pilot result, never evidence that the population meets that thres
   is assessable and met, and `inconclusive` otherwise. Report every unmet or inconclusive gate.
   Missing gold, an unattempted eligible case, or incomplete required measurements prohibits an
   overall `met` result; report any other observed violations as well.
+- Any gate scored against a non-`adjudicated` reference is `provisional` under the
+  [move-on rule](#reference-tiers-and-the-move-on-rule); an overall `met` requires adjudicated
+  references for every scored test note.
 - M1 software completion cannot establish clinical acceptance. All performance gates remain
   unevaluated until the required M2/M3 measurements exist.
 
@@ -314,8 +352,8 @@ fill in that missing measurement, and the frozen partition must be retained.
 ## Reporting and limitations
 
 Every report identifies the dataset version, immutable manifest hash, split, protocol version,
-adapter-policy version, sample counts, exclusions, provider and destination policy, and expert
-effort. Report every gate with its numerator, denominator, point estimate or count, status, and
+adapter-policy version, sample counts, exclusions, provider and destination policy, reference-tier mix and any
+move-on decisions, and expert effort. Report every gate with its numerator, denominator, point estimate or count, status, and
 uncertainty where defined. Report train, development, and frozen-test findings separately.
 
 The CORAL documentation states that patients were selected for documented disease progression,
@@ -341,3 +379,10 @@ yet been met.
   [`annotation.conf`](../../experiments/coral/data/raw/annotated/annotation.conf), consulted for
   entity, attribute, and relation declarations; no clinical records are redistributed here.
 - [Amber v1 task, evidence, outcome, and evaluation contract](../02-v1-schemas-and-tools.md).
+
+## Version history
+
+- `1.1.0` (2026-10-28): added reference tiers and the move-on rule. The task, answer schema,
+  outcomes, evidence rules, split policy, and gates are unchanged. The frozen split manifest
+  continues to record `1.0.0`, the version under which its split policy was frozen.
+- `1.0.0` (2026-09-15): initial protocol.

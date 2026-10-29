@@ -35,7 +35,7 @@ def test_current_progression_answer_is_frozen_and_forbids_extras() -> None:
 
 def test_current_progression_task_metadata_is_frozen_in_code() -> None:
     assert ONCOLOGY_CURRENT_PROGRESSION_TASK == "oncology_current_progression"
-    assert ONCOLOGY_CURRENT_PROGRESSION_PROTOCOL_VERSION == "1.0.0"
+    assert ONCOLOGY_CURRENT_PROGRESSION_PROTOCOL_VERSION == "1.1.0"
     assert ONCOLOGY_CURRENT_PROGRESSION_SCOPE == "note"
     assert ONCOLOGY_CURRENT_PROGRESSION_EVIDENCE_POLICY == "field"
 

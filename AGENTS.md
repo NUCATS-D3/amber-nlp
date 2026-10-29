@@ -14,6 +14,15 @@ Before changing architecture or domain behavior, read these sources in order:
 When documents disagree, preserve the invariants in `CLAUDE.md` and the contract in
 `docs/02-v1-schemas-and-tools.md`, then reconcile the stale document in the same change.
 
+## Task Tracking
+
+Project tasks, blockers, and decisions live in Beads (`.beads/`, prefix `amber-`). Run `bd ready`
+to find unblocked work, `bd show <id>` before starting, `bd update <id> --claim` to take it, and
+`bd close <id> --reason=...` when done. File discovered follow-up work with `bd create` instead
+of Markdown TODO lists. Never use `bd edit` (interactive). Keep issue text free of clinical source
+text, quotes, or offsets. Documents hold designs and contracts; see
+[planning and task tracking](docs/README.md#planning-and-task-tracking).
+
 ## Current Implementation and Scope
 
 Read [Current implementation](docs/README.md#current-implementation) for the canonical status
