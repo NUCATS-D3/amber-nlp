@@ -92,7 +92,7 @@ Source and test-file inspection on 2026-10-07 supports the existing inventory: g
 atomic proposed-claim commits exist; `cases.py`, `policy.py`, persistence/export, and the provider
 adapter remain placeholders. The current facade offers system information. No terminology,
 detector, extraction, adjudication, or clinical-effort workflow was found. See
-[Current implementation](../README.md#current-implementation) for the canonical inventory.
+[Current implementation](../README-pre-reset.md#current-implementation) for the canonical inventory.
 
 The September handoff records 517 passing tests on each supported Python version; those tests
 were not rerun for this documentation-only change. Validation here checked 14 changed/new

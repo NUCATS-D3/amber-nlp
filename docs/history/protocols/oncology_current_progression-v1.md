@@ -34,7 +34,7 @@ than silently discarded. Malformed data or an unresolved skip boundary can preve
 The answer has one required strict boolean field, `progression_or_recurrence`. It has no null,
 default, or extra answer fields. It records a supported current clinical state, not whether
 progression or recurrence appears anywhere in the note and not whether the patient has ever
-experienced it. The [OncologyCurrentProgressionAnswer schema](../../src/amber/schemas/oncology_current_progression.py)
+experienced it. The OncologyCurrentProgressionAnswer schema
 validates answer shape only; it does not establish source grounding or semantic support.
 
 ## Decisions and outcomes
@@ -376,7 +376,7 @@ yet been met.
 - [CORAL v1.0, DOI `10.13026/v69y-xa45`](https://doi.org/10.13026/v69y-xa45), dataset
   documentation pages 2–3 and 6.
 - Access-controlled local CORAL BRAT
-  [`annotation.conf`](../../experiments/coral/data/raw/annotated/annotation.conf), consulted for
+  [`annotation.conf`](../../../experiments/coral/data/raw/annotated/annotation.conf), consulted for
   entity, attribute, and relation declarations; no clinical records are redistributed here.
 - [Amber v1 task, evidence, outcome, and evaluation contract](../02-v1-schemas-and-tools.md).
 

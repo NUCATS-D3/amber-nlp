@@ -20,5 +20,5 @@ aggregation remains deferred; provider/destination policy precedes source-bearin
 outcomes, final-claim IDs, and complete support closure remain required.
 
 The [review](../notes/2026-10-07-documentation-review.md) records accepted direction, revisions,
-deferred scope, and verification limits. Follow the [documentation index](../README.md) for
+deferred scope, and verification limits. Follow the [documentation index](../README-pre-reset.md) for
 implementation work. Preserve these files as history rather than maintaining a second live spec.

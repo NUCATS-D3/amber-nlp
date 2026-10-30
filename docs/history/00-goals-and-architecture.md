@@ -4,7 +4,7 @@ Name: **amber** — messy text hardened into structured, durable data with the e
 
 Status: revised plan, consolidated 2026-10-07. Supersedes the Strata-anchored framing in
 `03-strata-scaffold-notes.md`. This document describes the intended architecture; see
-[Current implementation](README.md#current-implementation) for what exists on disk and what
+[Current implementation](README-pre-reset.md#current-implementation) for what exists on disk and what
 remains planned.
 
 ## Goals as stated

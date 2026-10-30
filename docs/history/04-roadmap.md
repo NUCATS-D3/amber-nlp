@@ -19,7 +19,7 @@ exposure across milestones; if test findings guide a change, use a fresh indepen
 for a confirmatory claim or label the repeated comparison exploratory.
 
 For implemented capabilities and outstanding work, see the canonical
-[Current implementation](README.md#current-implementation) summary. Milestones map to Beads epics;
+[Current implementation](README-pre-reset.md#current-implementation) summary. Milestones map to Beads epics;
 track concrete tasks, blockers, and decisions there (`bd ready`) rather than in this document. Milestone requirements below
 describe delivery scope, not a claim that every listed component exists.
 

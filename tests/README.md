@@ -1,79 +1,49 @@
 # Tests and CI
 
-Keep the suite flat and grouped by the boundary under test:
+The suite is flat and grouped by the boundary under test. All inputs are invented and offline.
 
-- `test_interfaces.py`: core imports, the Python facade, and CLI.
-- `test_config.py`: environment/dotenv precedence and cached settings.
-- `test_answer_schemas.py`: strict answer validation, serialization, and frozen/closed value objects.
-- `test_claim_schemas.py`: guarded claim prerequisites, task/inference/edge fields, canonical
-  identifiers, nested immutability, and JSON wire shapes.
-- `test_graph_validation.py`: complete graph/context/source validation, field citations, safe
-  errors, invalid references, rejected support, all-component cycles, and deep iterative chains.
-- `test_graph.py`: owned graph state, idempotent/atomic registration, support traversal, detached
-  views, strict snapshots, and source-revalidated restore against caller-supplied context.
-- `test_commit.py`: proposed positive/negative answers, field citations, rationale/provenance,
-  atomic failure, supporting-claim chains, and structural-versus-semantic support boundaries.
-- `test_case_schemas.py`: strict note case membership, clinical/execution outcome consistency,
-  required reasons/failure kinds, frozen ID lists (including defaults), and provenance validation.
-- `test_cases.py`: final versus supporting claims, full graph/source/context revalidation on
-  result creation/load, citations, declared review coverage, immutable results, guarded
-  construction, strict counters, and source-safe diagnostics.
-- `test_outcomes.py`: validated `no_claim`, immutable graph state, partial-review handling,
-  and rejection of runtime-failure/answered outcomes or unknown citations.
-- `test_api.py`: optional HTTP health/info routes; requires `app` and HTTPX.
-- `test_tracking.py`: optional MLflow entry point, missing dependencies, and the local launcher.
-- `test_invariants.py`: the implemented source, ID, and exact-grounding invariants.
-- `test_coral_brat.py` and `test_coral_audit.py`: parser integrity, preserved source text, safe
-  aggregate diagnostics, and explicit local audit exports; invented BRAT and temporary files only.
-- `test_coral_current_progression.py`: non-authoritative candidate rules, warning/blocker
-  precedence, annotation completeness, and relevant span/skip safety using invented BRAT.
-- `test_coral_current_progression_manifest.py`: deterministic quotas and patient-level splits,
-  byte hashes, restricted output paths, immutable reruns, and atomic publication using invented
-  dataset trees only.
+| File | Covers |
+|---|---|
+| `test_interfaces.py` | Core imports load no optional stack; package version |
+| `test_invariants.py` | Source identity and immutability, IDs, exact grounding, minting rejection |
+| `test_answer_schemas.py` | Frozen, closed, strict `AnswerModel` subclasses |
+| `test_claim_schemas.py` | Task, claim, inference, and edge records; canonical IDs; immutability; wire shapes |
+| `test_graph_validation.py` | Full graph, context, and source validation; field citations; cycles; deep chains |
+| `test_graph.py` | Graph state, atomic registration, traversal, snapshots, and restore |
+| `test_commit.py` | Proposed answers, field citations, atomic failure, supporting-claim chains |
+| `test_case_schemas.py` | Case membership and outcome consistency |
+| `test_cases.py` | Final vs. supporting claims; result creation and load revalidation |
+| `test_outcomes.py` | `no_claim` validation and immutable graph state |
+| `test_tracking.py` | MLflow run-context entry point, missing-dependency handling, local launcher |
+
+`_claim_helpers.py` defines `SyntheticFindingAnswer`, a neutral single-boolean answer used to
+exercise the task-agnostic kernel.
 
 ## Local checks
 
-From the repository root:
-
 ```sh
-uv sync --locked --extra dev --extra app --extra tracking
-uv run --no-sync pytest --strict-markers -ra -m "not slow and not gpu and not mlx"
-uv run --no-sync ruff check .
-uv run --no-sync ruff format --check .
+uv sync --locked --extra dev --extra tracking
+uv run --no-sync pytest --strict-markers -ra -m "not slow"
+uv run --no-sync ruff check . && uv run --no-sync ruff format --check .
 uv run --no-sync mypy src
 uv lock --check
 ```
 
-Without the optional extras, HTTP and installed-MLflow tests may skip. Install both extras for
-the full suite; a skipped interface test is not evidence that its integration works. No test
-starts a server, calls a model, or reads credentialed CORAL data.
-
-Modules that use settings opt into `isolated_settings` from [conftest.py](conftest.py) with
-`pytest.mark.usefixtures`. The fixture removes inherited `AMBER_*` variables, changes into a
-temporary directory without a caller-owned `.env`, and clears `get_settings()` before and after
-each test. Environment and working directory changes are restored on teardown. Use
-`Settings(_env_file=None, ...)` for explicit settings; dotenv tests write invented values to
-temporary files. Other tests keep their normal working directory.
+Without `tracking`, the MLflow entry-point test skips. A skipped plugin test is not evidence that
+the plugin works.
 
 ## CI
 
-[GitHub Actions](../.github/workflows/ci.yml) runs on pushes and pull requests, using Python 3.11
-and 3.12 on Linux. Jobs install from `uv.lock`, with no dataset credentials or external services:
+[GitHub Actions](../.github/workflows/ci.yml) runs on Python 3.12 from `uv.lock`, with no
+credentials or external services:
 
-- Core installation: install non-editably without extras or default dependency groups, then run
-  [check_core_install.py](../scripts/check_core_install.py) with `python -I`. This checks the
-  installed package location, absence of optional stacks, facade, Unicode/CRLF grounding,
-  evidence-backed proposed commits, validated graph restore, and CLI.
-  It also checks case result round-trips and supporting claims retained on an unanswered outcome.
-- Full suite: install `dev`, `app`, and `tracking` plus the default dev group. Explicitly import
-  the optional interfaces before testing so a missing dependency fails the job rather than
-  skipping its tests. Run the synthetic CPU suite on both Python versions; run Ruff, formatting,
-  and mypy on the 3.11 lint/type-check target.
+- **Core install.** A non-editable install with no extras, checked with
+  [check_core_install.py](../scripts/check_core_install.py) under `python -I`. This verifies the
+  absence of optional stacks, Unicode/CRLF grounding, commits, restore, and case results.
+- **Full suite.** `dev` and `tracking` are installed; MLflow import is required before tests;
+  then the suite, Ruff, formatting, and mypy run.
 
-Package installation requires network access; test execution requires no network. Slow/model and
-hardware-marked tests are excluded. Clinical corpus audits remain a separate local operation.
-
-To reproduce the core check without replacing your development environment:
+To reproduce the core check without replacing your environment:
 
 ```sh
 core_check_env="$(mktemp -d)/venv"

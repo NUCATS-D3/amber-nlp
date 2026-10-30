@@ -6,7 +6,7 @@ types, and invariants are binding; method bodies are illustrative. Read `00-goal
 first.
 
 The in-memory case-outcome/result increment implements existing fields on 2026-10-07, with the
-bounded constraints described in §9 and the [implementation inventory](README.md#current-implementation).
+bounded constraints described in §9 and the [implementation inventory](README-pre-reset.md#current-implementation).
 
 Scope of v1: note-level extraction with verified evidence, explicit outcomes, a provider/destination
 policy gate, durable tables, and a minimal correction workflow. Establish a fixed pipeline before
@@ -16,7 +16,7 @@ the first experiment can use the native table export. See the revised M1–M3 de
 All domain models use Pydantic v2 with `ConfigDict(extra="forbid")`; identity/provenance-bearing
 value objects are frozen. Cross-object validation uses the exact source and evidence store at
 construction, commit, and load boundaries. The blocks below abbreviate that validation machinery.
-See [Current implementation](README.md#current-implementation) for the implemented subset and
+See [Current implementation](README-pre-reset.md#current-implementation) for the implemented subset and
 remaining work. Specification blocks do not establish that a model or runtime migration exists.
 
 The [terminology/detection extension](05-terminology-and-mention-detection.md) is conditional design.

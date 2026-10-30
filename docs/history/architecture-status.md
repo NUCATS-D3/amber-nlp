@@ -1,7 +1,7 @@
 # Architecture and implementation status
 
 Snapshot: 2026-10-07, after the case-outcome/result increment in commit `6334b89`.
-This is a visual companion to the canonical [implementation inventory](README.md#current-implementation),
+This is a visual companion to the canonical [implementation inventory](README-pre-reset.md#current-implementation),
 [architecture](00-goals-and-architecture.md), and [v1 contract](02-v1-schemas-and-tools.md).
 Refresh the diagrams from that inventory when capabilities change.
 
@@ -156,7 +156,7 @@ review was complete, that cited evidence conflicts, or that a claim is clinicall
 | Additional domain scope | Mention and StructuredEvidence models planned; CaseResult mentions must currently be empty | Add with implementations and invariant tests when the selected use case requires them |
 | Patient-wide scope and interoperability | PatientFact, temporal aggregation, FHIR, and additional backends deferred; OMOP NOTE_NLP conditional | Preserve patient IDs and effective datetimes without expanding the current single-note graph |
 
-CORAL preparation stays under [experiments/coral](../experiments/coral/README.md); core code never
+CORAL preparation stays under experiments/coral; core code never
 imports experiments. Its credentialed, deidentified data and local manifests are restricted,
 ignored artifacts. No corpus records or manifests were inspected to create this diagram.
 
@@ -165,8 +165,8 @@ local persistence/annotated-data boundaries, one permitted fixed baseline in M2,
 correction and measured expert effort in M3. Agents, broad NLP, and additional runtimes follow
 measured benefit. See the [roadmap](04-roadmap.md) for milestone requirements.
 
-The implemented flow is covered by the [synthetic test suites](../tests/README.md) and
-[installed core smoke example](../scripts/check_core_install.py). Code entry points are
-[schemas](../src/amber/schemas/__init__.py), [grounding](../src/amber/grounding.py),
-[graph](../src/amber/graph.py), [commit](../src/amber/tools/commit.py),
-[outcomes](../src/amber/tools/outcomes.py), and [case results](../src/amber/cases.py).
+The implemented flow is covered by the [synthetic test suites](../../tests/README.md) and
+[installed core smoke example](../../scripts/check_core_install.py). Code entry points are
+[schemas](../../src/amber/schemas/__init__.py), [grounding](../../src/amber/grounding.py),
+[graph](../../src/amber/graph.py), [commit](../../src/amber/tools/commit.py),
+[outcomes](../../src/amber/tools/outcomes.py), and [case results](../../src/amber/cases.py).

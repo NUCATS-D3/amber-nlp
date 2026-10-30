@@ -12,7 +12,7 @@ returns a proposed Claim only after validating its complete evidence support. Th
 increment, not the remainder of M1 in one change.
 
 The [v1 contract](../../02-v1-schemas-and-tools.md), especially sections 4–6 and 8, and
-[working agreement](../../../CLAUDE.md) remain authoritative. This design follows the
+[working agreement](../../../../CLAUDE.md) remain authoritative. This design follows the
 [goals](../../00-goals-and-architecture.md), [roadmap](../../04-roadmap.md), and
 [current-progression protocol](../../protocols/oncology_current_progression-v1.md).
 
@@ -278,7 +278,7 @@ All tests run offline on CPU with invented text. Cover:
 
 Start with focused schema/graph/commit tests, then the full suite on Python 3.11 and 3.12, Ruff lint
 and format checks, `mypy src`, offline lock consistency, and `git diff --check`. See the
-[test guide](../../../tests/README.md) for dependencies. No clinical audit or model run is required.
+[test guide](../../../../tests/README.md) for dependencies. No clinical audit or model run is required.
 
 ## Completion and checkpoint boundaries
 

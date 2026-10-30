@@ -19,7 +19,7 @@ do not become one large module.
 
 **Spec:** [Approved design](../specs/2026-09-16-m1-evidence-backed-claim-commits-design.md),
 approved by the user on 2026-09-16. The [v1 contract](../../02-v1-schemas-and-tools.md) and
-[working agreement](../../../CLAUDE.md) remain binding.
+[working agreement](../../../../CLAUDE.md) remain binding.
 
 **Progress:** Complete. All four checkpoints are implemented and independently reviewed, including
 the whole-slice review and its fixes. Final verification: 517 tests pass on each supported Python

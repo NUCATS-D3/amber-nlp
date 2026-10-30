@@ -1,9 +1,9 @@
 # Planning review and Beads migration — 2026-10-28
 
 I re-evaluated all planning documents against the code at `6334b89`. This dated note records the
-assessment and how the initial [Beads](../README.md#planning-and-task-tracking) issues were
+assessment and how the initial [Beads](../README-pre-reset.md#planning-and-task-tracking) issues were
 derived. It does not track status: run `bd ready` / `bd show <id>`, and use the
-[implementation inventory](../README.md#current-implementation) for what exists.
+[implementation inventory](../README-pre-reset.md#current-implementation) for what exists.
 
 ## Assessment
 

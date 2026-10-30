@@ -49,10 +49,10 @@ The main issues, in priority order:
    describes how its source match was verified.
 
    Resolve the selected unit against the authoritative source, then invoke
-   [exact grounding](../src/amber/grounding.py) with its starting offset. Keep
+   [exact grounding](../../src/amber/grounding.py) with its starting offset. Keep
    `alignment="exact"` and record selection separately. This also avoids producing different
    Inclusion records with the same content-addressed ID when one span is obtained through both
-   `quote` and `select`; the [current graph](../src/amber/graph.py) rejects conflicting records
+   `quote` and `select`; the [current graph](../../src/amber/graph.py) rejects conflicting records
    for an existing ID.
 
 5. **The decision API needs stronger, consistent semantics.** The proposed answer models permit
@@ -104,7 +104,7 @@ The main issues, in priority order:
 
 There is also a factual correction in the motivation: "the model call itself saw the whole note"
 describes a prospective baseline limitation. The
-[current implementation](README.md#current-implementation) has no extraction/model-call pipeline.
+[current implementation](README-pre-reset.md#current-implementation) has no extraction/model-call pipeline.
 
 My recommended first experiment is the existing boolean progression task: deterministic units,
 exact grounding, evidence-restricted decisions, explicit coverage/outcome handling, and one

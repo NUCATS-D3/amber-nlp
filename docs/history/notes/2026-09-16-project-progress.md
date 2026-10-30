@@ -1,7 +1,7 @@
 # Project progress — 2026-09-16
 
 Assessment at commit `88ce99e` on `main`. This is a dated handoff note, not a second live status
-inventory; see [Current implementation](../README.md#current-implementation) for canonical status.
+inventory; see [Current implementation](../README-pre-reset.md#current-implementation) for canonical status.
 
 ## Where we are
 
@@ -46,7 +46,7 @@ Inference records likewise require nullable `trace_id` and `span_id`. Omission t
 - Two existing Starlette/AnyIO deprecation warnings remain; no test failures or skips were reported.
 
 Checks used isolated environments without replacing the project environment. See the
-[test guide](../../tests/README.md) for reproduction commands. The worktree was clean before this
+[test guide](../../../tests/README.md) for reproduction commands. The worktree was clean before this
 note was added, and no commits were pushed. These results validate software behavior, not clinical
 accuracy, safety, or reductions in expert effort.
 
