@@ -9,8 +9,7 @@ progression (single boolean), a lapidary `ds_findings_v1` mention-level finding,
 stage group derived from T/N/M mentions (layered).
 
 Sections: [1 Policy](#1-policy) · [2 Mentions and structured evidence](#2-mentions-and-structured-evidence) · [3 Layered
-variables](#3-layered-variables) · [4 Annotated data](#4-annotated-data) · [5 Wire formats](#5-wire-formats) · 6 Interfaces
-(pending) · 7 Conformance catalog (pending)
+variables](#3-layered-variables) · [4 Annotated data](#4-annotated-data) · [5 Wire formats](#5-wire-formats) · [6 Interfaces](#6-interfaces) · 7 Conformance catalog (pending)
 
 ---
 
@@ -1211,7 +1210,215 @@ Reviewed and accepted 2026-10-30:
 
 ## 6. Interfaces
 
-*Pending.*
+### 6.1 Purpose and rules
+
+Interfaces are `typing.Protocol`s in `amber.interfaces`. amber ships the protocols, the
+contract objects they exchange, the validation they must call, and one **synthetic reference
+implementation** of each in the optional `reference` extra. Real implementations live in
+lapidary (extractors, providers, stores, resolvers, rules, labelers), loupe (review backend),
+and amber's own MLflow plugins (scorers, exporters, the loupe bridge).
+
+Rules that apply to every interface:
+
+- **Structural typing.** Implementations do not inherit from amber classes; they satisfy the
+  protocol. amber never imports an implementation.
+- **Contract objects in, contract objects out.** No interface exchanges dicts, DataFrames, or
+  framework objects. Parquet and JSON appear only at the `Store`/`Exporter` boundary.
+- **Validation is amber's.** An implementation produces candidates and calls amber's
+  `quote`, `cite`, `commit_claim`, `no_claim`, `create_case_result`; it never constructs
+  guarded records directly. The conformance kit detects direct construction.
+- **Capabilities are declared, not inferred.** Each interface exposes a frozen `capabilities`
+  declaration; callers check it before relying on a feature, and the kit checks that declared
+  capabilities are true on synthetic inputs.
+- **Policy before transfer.** Any interface that moves data accepts a `PolicyGate` and calls
+  it before the transfer (§1.5). The reference implementations refuse to run without one.
+- **Experimental until used.** A protocol is marked `@experimental` until a real consumer uses
+  it and the kit covers it (charter rule); the first consumer is named below.
+
+### 6.2 The protocols
+
+```python
+class PolicyGate(Protocol):
+    matrix: PolicyMatrix
+    def check(self, data: DataPolicy, destination: Destination, payload: PayloadKind,
+              *, now: datetime) -> Decision: ...
+    def require(self, data, destination, payload, *, now) -> Decision: ...   # raises PolicyViolation
+```
+Reference: `amber.policy.StaticGate(matrix)`. First consumer: lapidary runner (lap-ecc.4).
+
+```python
+class SourceResolver(Protocol):              # §5.6
+    def resolve(self, source_id: str) -> Source | None: ...
+```
+Reference: `InMemoryResolver`. First consumer: lapidary dataset loader and loupe bridge.
+
+```python
+class Provider(Protocol):
+    destination: Destination                 # kind == "model"; includes zone and capabilities
+    def complete(self, request: ProviderRequest) -> ProviderResponse: ...
+```
+`ProviderRequest`: messages or prompt, optional JSON schema (requires `schema_constrained`),
+optional tools (requires `tools`), budget (max tokens, timeout). `ProviderResponse`: text or
+parsed JSON, token counts, latency, cost estimate, raw trace reference, and a
+`ProviderFailure` variant (`parse`, `provider`, `budget`) that maps to `failure_kind`.
+Providers do **not** see `Source` objects; the extractor decides what text to send and has
+already passed the gate. Reference: `ScriptedProvider` (returns canned responses). First
+consumer: lapidary LangExtract/vLLM method (lap-ecc.14).
+
+```python
+class Extractor(Protocol):
+    name: str; version: str
+    destination: Destination                 # the provider it will use, or local:<name>
+    capabilities: frozenset[Literal["mentions", "note_claims", "derivations", "batch"]]
+    def run(self, case: Case, source: Source, variables: VariableSet, *,
+            gate: PolicyGate, budget: Budget, provenance: Provenance) -> CaseResult: ...
+```
+Contract: returns exactly one `CaseResult` per call, always, including on failure
+(`outcome.failed` with a `failure_kind`); never raises for expected failures; records
+`grounding_failures` and `tool_calls`; stays within `budget` (calls, tokens, retries, wall
+time) and reports usage in the result's provenance. Everything in the result passed through
+amber's tools. Reference: `DeterministicExtractor` (rule-like, synthetic). First consumer:
+lapidary methods (lap-ecc.7).
+
+```python
+class Rule(Protocol):                        # §3.4
+    spec: RuleSpec
+    def apply(self, inputs: Mapping[str, Claim | Evidence | None],
+              parameters: Mapping[str, Any]) -> RuleResult: ...
+```
+`RuleResult` is a value for the deriving variable, or an outcome status with reason. Rules are
+pure: no I/O, no clock, no randomness; the kit replays them. Registry: `amber.rules.Registry`
+keyed by `name@version`, populated by the consumer at startup. Reference: `AjccStub` (a tiny
+invented staging table, clearly labeled non-clinical). First consumer: lapidary rule pack for
+the stage-group stand-in.
+
+```python
+class Labeler(Protocol):
+    name: str; version: str
+    tier: ReferenceTier                      # the tier this labeler can produce (silver for models/rules)
+    def label(self, case: Case, source: Source, variables: VariableSet, *,
+              gate: PolicyGate, provenance: Provenance) -> Example | LabelRecord | LabelerFailure: ...
+```
+A `Labeler` wraps a teacher model, a rule set, or an importer of stored predictions, and
+produces tiered references. A model or rule labeler may only declare `tier=silver`; human
+tiers come from `ReviewBackend` imports. Reference: `ImportLabeler` over a synthetic JSON
+file. First consumer: lapidary gpt-6-sol importer (lap-ecc.13).
+
+```python
+class Store(Protocol):
+    capabilities: frozenset[Literal["events", "examples", "query", "transactions"]]
+    def put_result(self, result: CaseResult) -> None: ...
+    def get_result(self, case_id: str, *, resolver: SourceResolver) -> CaseResult: ...
+    def append_events(self, events: Sequence[AnnotationEvent]) -> None: ...
+    def events(self, case_id: str, *, stream: str | None = None) -> Sequence[AnnotationEvent]: ...
+    def project(self, case_id: str, *, actor: str | None, resolver: SourceResolver) -> CaseResult: ...
+    def put_example(self, example: Example) -> None: ...
+    def get_example(self, example_id: str, *, resolver: SourceResolver) -> Example: ...
+```
+Contract: every `get_*`/`project` revalidates through amber's load boundaries with the
+resolver; `append_events` is append-only (no update or delete); `project` honors blind
+streams; `put_example` rejects a split change for an existing case and a tier that the events
+do not support. Reference: `InMemoryStore`. First consumer: amber's Parquet bundle store (a
+reference too) and lapidary's run artifacts.
+
+```python
+class Exporter(Protocol):
+    format: str                              # "amber-bundle/0.1", "mlflow-dataset", "trl-jsonl", ...
+    payload: PayloadKind                     # the most sensitive kind this export emits
+    def export(self, items: Sequence[CaseResult | Example | LabelRecord], target: Destination, *,
+               gate: PolicyGate, data: DataPolicy) -> ExportReceipt: ...
+```
+Contract: calls the gate with its declared `payload` before writing; `ExportReceipt` carries
+the manifest hashes and the `Decision`. Reference: `BundleExporter` (writes §5 bundles).
+First consumer: lapidary runner artifact logging (lap-ecc.10).
+
+```python
+class Scorer(Protocol):
+    name: str
+    needs: frozenset[Literal["examples", "label_records", "mentions", "traces"]]
+    def score(self, predicted: Sequence[CaseResult], reference: Sequence[Example | LabelRecord],
+              *, variables: VariableSet) -> ScoreReport: ...
+```
+`ScoreReport`: metrics with numerators and denominators, per-variable breakdown, the
+reference **tier mix**, a `provisional: bool` that is true when any reference is below
+`adjudicated`, and `inconclusive` entries for metrics the reference tier cannot support. A
+scorer refuses (`self_reference`) when a silver reference's producer provenance matches the
+predicted results' configuration. Scorers never see source text unless `needs` includes
+`mentions` (span overlap requires offsets, not text). Reference: `StructuralValidityScorer`,
+`LabelCorrectScorer`. First consumer: lapidary `lap eval` (lap-ecc.12).
+
+```python
+class ReviewBackend(Protocol):
+    destination: Destination                 # kind == "review"
+    def export_cases(self, cases: Sequence[tuple[Case, Source, CaseResult | None]], *,
+                     variables: VariableSet, streams: Sequence[str], gate: PolicyGate,
+                     data: DataPolicy) -> ReviewBatchReceipt: ...
+    def import_references(self, receipt: ReviewBatchReceipt, *, resolver: SourceResolver
+                          ) -> tuple[Sequence[Example], Sequence[AnnotationEvent]]: ...
+```
+Contract: `export_cases` sends sources (and proposals, when a `CaseResult` is given) after a
+`source_text` gate check; `import_references` returns validated Examples and the full event
+log derived per §4.7, never partially validated records. Reference: `FileReviewBackend`
+(round-trips through JSON files, simulating a reviewer). First consumer: the amber loupe
+bridge (amber-1ah.7, amber-1ah.2).
+
+### 6.3 Shared value objects introduced by this section
+
+`Budget` (max_calls, max_tokens, max_retries, max_seconds), `Usage` (actual counts, stamped
+into result provenance), `ProviderRequest`/`ProviderResponse`/`ProviderFailure`,
+`RuleResult`, `LabelerFailure`, `ExportReceipt`, `ReviewBatchReceipt`, `ScoreReport`. All
+frozen, `extra="forbid"`, `labels_only` by construction except `ProviderRequest` (which is
+`source_text` and never persisted by amber).
+
+### 6.4 Design checks against the stand-in variables
+
+- **CORAL progression (lapidary run):** `Extractor` = fixed pipeline over a `Provider`
+  (vLLM, zone `institution`), gate = `StaticGate` with the CORAL `DataPolicy`; `Store` =
+  bundle; `Exporter` logs `labels_only` tables to MLflow and keeps `derived_text` local;
+  `Scorer` scores against adjudicated or single-review Examples from the `ReviewBackend`
+  import and marks provisional when needed.
+- **`ds_findings_v1`:** `Extractor` capabilities include `mentions`; `Labeler` =
+  `ImportLabeler` over gpt-6-sol stored predictions (silver); `Scorer` with
+  `needs={"mentions"}` computes span overlap; `self_reference` refuses scoring gpt-6-sol
+  against its own silver.
+- **Stage group:** `Extractor` with `derivations` capability calls registered `Rule`s through
+  the registry; the kit replays the AJCC stub from the bundle alone.
+
+### 6.5 Conformance cases (interfaces)
+
+1. Each reference implementation satisfies its protocol under `typing` checks and passes the
+   kit; a stub that constructs an `Inclusion` or `Claim` directly fails.
+2. `Extractor` returns a `failed` result (never raises) on provider failure, parse failure,
+   policy refusal, and budget exhaustion, each with the right `failure_kind`; usage never
+   exceeds budget.
+3. `Extractor` declaring `mentions` must emit at least one mention on a fixture containing a
+   known span; declaring `derivations` must emit a `Derivation` on the stage fixture.
+4. `Provider` without `schema_constrained` rejects a schema request with `ProviderFailure`
+   rather than returning unparsed text.
+5. `Rule.apply` is pure: two calls with equal inputs give equal results; a rule touching the
+   clock or randomness fails the purity fixture.
+6. `Labeler` declaring a human tier is rejected at registration; a silver Example from a
+   `Labeler` carries the labeler's provenance.
+7. `Store.append_events` rejects updates/deletes; `project` for a stream actor excludes other
+   streams; `put_example` rejects split change and unsupported tier.
+8. `Exporter` without a gate call (detected by a recording gate) fails; `ExportReceipt`
+   hashes match the written bundle.
+9. `Scorer` sets `provisional` iff any reference tier is below adjudicated; evidence metrics
+   over `LabelRecord`s are `inconclusive`; `self_reference` refusal fires.
+10. `ReviewBackend` round trip on the file reference: exported cases → simulated reviews →
+    imported Examples whose events replay to the same projection.
+
+### 6.6 Decisions recorded
+
+Reviewed and accepted 2026-10-30:
+
+1. `Extractor.run(case, ...)` is the contract. `run_many(cases) -> Iterator[CaseResult]` is
+   optional behind the `batch` capability; the kit checks input order and exactly one result
+   per case.
+2. The extractor enforces `Budget` and reports `Usage`; `load_case_result` validates usage
+   against the recorded budget and treats an over-budget result as `failed(budget)`.
+3. `Provider` exposes `complete()` only in v0.1. Streaming and embeddings are future
+   capabilities, added when a consumer needs them.
 
 ## 7. Conformance catalog
 
