@@ -8,7 +8,7 @@ Examples use invented data only. Stand-in variables for the design checks are: C
 progression (single boolean), a lapidary `ds_findings_v1` mention-level finding, and pathologic
 stage group derived from T/N/M mentions (layered).
 
-Sections: [1 Policy](#1-policy) · 2 Mentions and structured evidence (pending) · 3 Layered
+Sections: [1 Policy](#1-policy) · [2 Mentions and structured evidence](#2-mentions-and-structured-evidence) · 3 Layered
 variables (pending) · 4 Annotated data (pending) · 5 Wire formats (pending) · 6 Interfaces
 (pending) · 7 Conformance catalog (pending)
 
@@ -289,7 +289,214 @@ Reviewed and accepted 2026-10-30:
 
 ## 2. Mentions and structured evidence
 
-*Pending.*
+### 2.1 Purpose
+
+A **mention** is a typed, attributed span of source text produced by a detector, a rule engine,
+a model, or a human. It is the unit that lapidary scores at span level, that copal produces,
+that loupe reviewers edit, and that layered variables (§3) build on. A mention is **not**
+evidence by itself: evidence is minted only by grounding, and a claim cites an `Inclusion`
+that may point back to the mention it came from.
+
+**Structured evidence** is a verified row or field from a structured source (a lab value, a
+medication order, a registry field). It is the second kind of source-backed leaf in the
+evidence graph, alongside `Inclusion`.
+
+### 2.2 Mention model
+
+```python
+class Attribute(BaseModel):                  # frozen
+    value: Any                               # JSON value; the category decides its meaning
+    evidence_id: str | None                  # Inclusion of the cue span ("no evidence of"), if any
+    scope_evidence_id: str | None            # Inclusion of the scope the cue applied to, if any
+    assigned_by: str                         # "rule:<ruleset>@<version>+<hash>", "model:<name>", "human:<user>"
+
+class Mention(BaseModel):                    # frozen, extra="forbid"
+    mention_id: str                          # sha256(source_id, start, end, mention_type)
+    source_id: str
+    start: int; end: int                     # end-exclusive code points into Source.text
+    quote: str                               # == Source.text[start:end]; validated against the Source
+    mention_type: str                        # consumer-declared type: "tnm_t", "finding", "medication"
+    label: str | None                        # consumer-declared sub-label (e.g. "T2", "metastasis")
+    attributes: Mapping[str, Attribute]      # keyed by category: "negation", "temporality", ...
+    value: str | float | int | None          # captured or normalized value ("T2", 8, 3.4)
+    unit: str | None
+    concept: Concept | None                  # unchanged from the prior contract; optional
+    section_category: str | None             # from the Source's sections, if any
+    fragments: tuple[tuple[int, int], ...] = ()   # discontinuous parts; (start, end) is their hull
+    inputs: tuple[str, ...] = ()             # producer-side evidence IDs (copal span IDs, model trace IDs)
+    provenance: Provenance
+```
+
+Decisions behind the fields:
+
+- **Attributes are an open mapping, not fixed enums.** The prior contract fixed
+  `polarity`, `temporality`, `experiencer`. Those remain the *recommended* categories, and the
+  conformance kit ships the standard value sets for them (`negation: true|false`,
+  `temporality: current|historical|hypothetical|future`, `experiencer: patient|family|other`,
+  `uncertainty: true|false`). But copal categories are opaque strings chosen by the rule set,
+  and tasks need others (laterality, severity). A **task declares which attribute categories
+  and value sets it requires** (§3); validation checks a mention against that declaration, not
+  against a global enum. Absent category means *no attribution*, not a default value, matching
+  copal's driver semantics.
+- **Attributes carry their own evidence.** The cue ("no evidence of") and its scope are
+  Inclusions, minted by the same grounding path. This is what lets a negated mention be
+  *checked*: a reviewer or scorer can see the cue span, and §3 can require that a derived value
+  which depends on an attribute cites the attribute's evidence.
+- **`value` is captured text or a normalized value, never free text.** For `tnm_t` the value
+  is the captured token `T2`; for a measurement it is the parsed number plus `unit`. How the
+  value was derived is in `assigned_by`-style provenance on the mention, not implied.
+- **Discontinuous mentions** keep their `fragments`; `mention_id` is computed over the hull so
+  overlapping discontinuous and contiguous mentions have distinct identities only when their
+  types differ. Quotes of fragments are validated individually.
+- **Identity excludes attributes.** Two producers that find the same span with the same type
+  produce the same `mention_id` and *different* attribute sets; that is a disagreement to
+  reconcile, not two mentions. Per-producer records keep their own provenance.
+
+Validation on construction (same guard as `Inclusion`): bounds, `quote` equality against the
+authoritative `Source`, fragment bounds inside the hull, `section_category` present in the
+Source's sections when set, and every `evidence_id` in attributes resolvable when the mention
+is registered in a graph. A `Mention` cannot be built from a string alone.
+
+### 2.3 Mentions and evidence
+
+Mentions enter the evidence graph in two ways:
+
+1. **As cited spans.** `cite(mention) -> Inclusion` mints an Inclusion over the mention's
+   hull (or one per fragment) through the grounding path and sets `Inclusion.mention_id`. The
+   graph records the mention alongside the inclusion so that `source_leaves()` can report the
+   mention, its type, and its attributes with the span.
+2. **As claim subjects.** A **mention-level task** (§3) has one claim per mention; its answer
+   schema includes the mention's value and the attribute categories the task requires. The
+   claim cites the mention's inclusion *and* the inclusions of every attribute it relies on.
+
+Rule for attribute-dependent support: if a claim's value depends on an attribute (the stage M
+claim is `M0` because the metastasis mention is negated), the claim's field evidence must
+include the attribute's `evidence_id`. The graph validator checks this through the task's
+declared attribute requirements: a required attribute without evidence is
+`missing_attribute_evidence`. A mention attribute with no evidence (a model asserted "negated"
+without a cue) is permitted on the mention but cannot satisfy a required attribute in a claim.
+
+### 2.4 Mapping copal output to mentions
+
+copal produces immutable spans with `start`, `end`, `quote`, `layer`, `label`, `rule_id`,
+opaque `payload`, `attrs` (including `modifiers`), `inputs`, and rule-set provenance
+`name@version+hash`. The mapping is a **declared adapter policy**, versioned and tested, not
+an implicit conversion:
+
+| copal | Mention | Notes |
+|---|---|---|
+| `start`, `end`, `quote` (code-point units) | `start`, `end`, `quote` | Re-validated against the amber `Source`; the amber Source text must be the exact copal `Text.source`. |
+| `layer` or `label` per policy | `mention_type`, `label` | The policy declares which copal layer maps to which type. |
+| named capture | `value` | e.g. capture `t` in `p?T(?P<t>[0-4][a-c]?)` → `value="T2"`. |
+| `attrs.modifiers[category] = {value, trigger_id, scope_id}` | `attributes[category]` | `value` → `Attribute.value`; `trigger_id` → cue Inclusion via `cite`; `scope_id` → scope Inclusion; `assigned_by = "rule:<name>@<version>+<hash>"`. |
+| sectionizer span containing the mention | `section_category` | Section spans also populate `Source.sections` at import. |
+| `payload` | `concept` or `label` | The consumer's lexicon payload; mapped per policy (a concept record, or nothing). |
+| span IDs of `inputs` | `inputs` | Document-local copal IDs, prefixed with the document key, kept for audit. |
+| rule-set provenance, copal version, lexicon `build_hash` | `provenance.producer`, `provenance.version` | `producer = "rule:<ruleset>@<version>+<hash>"`; `destination = "local:copal"`; zone `local`. |
+
+The adapter never repairs offsets. A copal span whose quote does not match the amber source
+(wrong text version, normalization applied before copal) is reported as a mapping failure with
+a source-free diagnostic, and no mention is created.
+
+Units: copal returns code points by default; the adapter must request code points, never UTF-8
+or UTF-16 units. The conformance kit includes emoji, combining marks, and CRLF sources.
+
+### 2.5 Mentions from models and humans
+
+- **Model-proposed mentions** (LangExtract, GLiNER, an LLM) arrive as candidate offsets or
+  candidate strings. Candidate strings go through `quote()`; candidate offsets are validated
+  against the Source and rejected on quote mismatch. Attributes asserted by the model without a
+  cue get `evidence_id=None` and `assigned_by="model:<name>"`; such attributes cannot satisfy
+  a required attribute in a claim (§2.3). A grounding failure is counted on the result, not
+  silently dropped.
+- **Human mentions** (loupe) are minted by the review bridge through the same grounding path
+  with `assigned_by="human:<user>"`; the reviewer's cue selection, when present, becomes the
+  attribute evidence. loupe's current `loupe-annotation-v1` (concept, four context axes,
+  supporting text) maps directly: supporting text → attribute `evidence_id`.
+
+### 2.6 Structured evidence
+
+```python
+class StructuredSourceMapping(BaseModel):    # frozen; declared per structured Source kind
+    source_kind: SourceKind                  # lab | medication | problem | imaging | other
+    fields: Mapping[str, Literal["string", "number", "datetime", "code"]]
+    key_fields: tuple[str, ...]              # which fields identify a row
+
+class StructuredEvidence(BaseModel):         # frozen; minted only through the structured path
+    kind: Literal["structured"] = "structured"
+    evidence_id: str                         # sha256(source_id, field, canonical value)
+    source_id: str                           # a Source with record != None and text == None
+    field: str
+    value: Any                               # must equal Source.record[field] exactly
+    datetime: datetime | None                # the row's effective time
+```
+
+- A structured `Source` holds the row as `record` (immutable JSON) and no `text`. Its
+  `source_id` hashes the canonical record, so a changed row is a new source.
+- `StructuredEvidence` is minted only by `structured_cite(source, field)` after checking that
+  `field` is declared in the mapping for that `source_kind` and that `value` equals the
+  record's field exactly. No code path constructs one directly, matching the `Inclusion` guard.
+- The provider that fetched the row is a `structured_source` destination (§1); its policy
+  decision is stamped on the row's `Provenance`. Fetching is implementation work (lapidary);
+  amber only validates the result.
+- Graph validation accepts `StructuredEvidence` as a source-backed leaf. `source_leaves()`
+  returns both kinds.
+
+### 2.7 Design checks against the stand-in variables
+
+- **`ds_findings_v1` (discharge-summary finding):** copal dictionary match → mention type
+  `finding`, label from the lexicon payload, `negation` and `temporality` attributes from the
+  modifier driver with cue inclusions, `section_category` from the sectionizer. A
+  mention-level task declares `requires_attributes={"negation": {true,false},
+  "temporality": {...}}`. The mention claim cites the mention inclusion plus both cue
+  inclusions. A model-only run (LangExtract) yields the same mention IDs when it finds the same
+  spans, with `assigned_by="model:..."` attributes that are permitted on the mention but
+  trigger `missing_attribute_evidence` if the task requires evidence for them; the task author
+  chooses whether to require it.
+- **Stage group leaves:** `tnm_t`, `tnm_n`, `tnm_m` mentions with captured `value`;
+  `section_category="final_diagnosis"` required by the T/N/M tasks so a historical `T2` in the
+  clinical history cannot be cited. The M mention `no distant metastasis` carries
+  `negation=true` with a cue inclusion, and the `pathologic_M=M0` claim cites it.
+- **CORAL progression:** unchanged; the task has no mentions, cites inclusions directly.
+  Mentions are optional at the contract level.
+- **A lab-backed variable (future):** `StructuredEvidence` over a lab row with
+  `field="value"`; the mapping declares `value: number`, `datetime` from the row.
+
+### 2.8 Conformance cases (mentions and structured evidence)
+
+1. A mention with `quote != Source.text[start:end]` is rejected; likewise any fragment.
+2. Direct construction without the grounding context is rejected (same guard as Inclusion).
+3. Two producers, same span and type: same `mention_id`, distinct provenance records.
+4. Overlapping and nested mentions of different types coexist; no automatic merging.
+5. A discontinuous mention validates each fragment; hull outside the source is rejected.
+6. `section_category` not present in `Source.sections` is rejected.
+7. An attribute with `evidence_id` not registered in the graph is rejected at registration.
+8. A claim that depends on a required attribute without attribute evidence fails with
+   `missing_attribute_evidence`; with evidence it passes.
+9. copal adapter: emoji, combining marks, and CRLF sources round-trip offsets exactly;
+   a source with normalized whitespace fails mapping with a source-free diagnostic.
+10. copal adapter: modifier `trigger_id`/`scope_id` become cue/scope inclusions whose quotes
+    match copal's `get_span(...).quote`.
+11. Model-proposed offsets with a quote mismatch are counted as grounding failures, not
+    dropped silently and not repaired.
+12. `StructuredEvidence` with a value differing from the record's field is rejected; an
+    undeclared field is rejected; a structured Source with `text` is rejected.
+13. A claim supported only by a `StructuredEvidence` leaf validates; a claim supported only by
+    a mention with no inclusion fails `source_free_support`.
+
+### 2.9 Decisions recorded
+
+Reviewed and accepted 2026-10-30:
+
+1. Required attributes demand cue evidence by default; a task may declare an attribute
+   `lenient` to accept model- or human-asserted values without a cue. Scorers report the share
+   of attribute values lacking evidence either way.
+2. `Concept` keeps its prior optional fields (system, code, label, score). Vocabulary identity
+   (release, fragment) stays with the deferred terminology design.
+3. `CaseResult.mentions` is allowed in v0.1. Mentions are validated against the Source like
+   evidence; every mention cited by a claim is in the result's closure; uncited mentions are
+   retained as diagnostics for span-level scoring. Conformance adds: a result whose cited
+   mention is missing from `mentions` fails to load; uncited mentions survive a round trip.
 
 ## 3. Layered variables
 
