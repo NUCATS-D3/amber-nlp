@@ -16,9 +16,8 @@ from amber.ids import new_ulid, schema_ref, validate_ulid
 from amber.schemas import AnswerModel, Claim, EvidenceEdge, InferenceEvidence, Provenance, Task
 from amber.schemas._immutable import freeze_json
 from amber.schemas.claims import _ClaimRecord
-from amber.schemas.oncology_current_progression import OncologyCurrentProgressionAnswer
 
-from ._claim_helpers import make_provenance, make_task
+from ._claim_helpers import SyntheticFindingAnswer, make_provenance, make_task
 
 
 def claim_data(**overrides: Any) -> dict[str, Any]:
@@ -26,9 +25,9 @@ def claim_data(**overrides: Any) -> dict[str, Any]:
         "claim_id": new_ulid(),
         "source_id": "synthetic-source-1",
         "patient_id": "synthetic-patient-1",
-        "task": "oncology_current_progression",
-        "schema_ref": schema_ref(OncologyCurrentProgressionAnswer),
-        "value": {"progression_or_recurrence": True},
+        "task": "synthetic_finding",
+        "schema_ref": schema_ref(SyntheticFindingAnswer),
+        "value": {"finding_present": True},
         "effective_datetime": datetime(2026, 1, 2, tzinfo=UTC),
         "confidence": 0.75,
         "status": "proposed",
@@ -155,7 +154,7 @@ def test_freeze_json_rejects_values_that_are_not_safe_json(
 
 
 def test_schema_ref_uses_the_exact_canonical_answer_schema_hash() -> None:
-    schema = OncologyCurrentProgressionAnswer.model_json_schema()
+    schema = SyntheticFindingAnswer.model_json_schema()
     payload = json.dumps(
         schema,
         ensure_ascii=False,
@@ -165,9 +164,8 @@ def test_schema_ref_uses_the_exact_canonical_answer_schema_hash() -> None:
     ).encode("utf-8")
     expected_digest = hashlib.sha256(payload).hexdigest()
 
-    assert schema_ref(OncologyCurrentProgressionAnswer) == (
-        "amber.schemas.oncology_current_progression:"
-        f"OncologyCurrentProgressionAnswer@{expected_digest}"
+    assert schema_ref(SyntheticFindingAnswer) == (
+        f"tests._claim_helpers:SyntheticFindingAnswer@{expected_digest}"
     )
 
 
@@ -188,8 +186,8 @@ def test_task_accepts_only_answer_model_subclasses_and_has_v1_defaults() -> None
     task = make_task()
 
     assert not issubclass(Task, AnswerModel)
-    assert task.name == "oncology_current_progression"
-    assert task.answer_model is OncologyCurrentProgressionAnswer
+    assert task.name == "synthetic_finding"
+    assert task.answer_model is SyntheticFindingAnswer
     assert task.evidence_policy == "field"
     assert task.scope == "note"
     assert set(Task.model_fields) == {
@@ -208,7 +206,7 @@ def test_task_rejects_blank_names(name: str) -> None:
     with pytest.raises(ValidationError, match="task name must not be blank"):
         Task(
             name=name,
-            answer_model=OncologyCurrentProgressionAnswer,
+            answer_model=SyntheticFindingAnswer,
             instructions="Synthetic task instructions.",
         )
 
@@ -221,7 +219,7 @@ def test_task_is_frozen_and_forbids_extra_fields() -> None:
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         Task(
             name="synthetic",
-            answer_model=OncologyCurrentProgressionAnswer,
+            answer_model=SyntheticFindingAnswer,
             instructions="Synthetic task instructions.",
             unexpected=True,  # type: ignore[call-arg]
         )
@@ -247,7 +245,7 @@ def test_provenance_prompt_versions_are_deeply_immutable_and_round_trip() -> Non
 
 
 def test_claim_record_has_exact_v1_fields_and_preserves_wire_shape() -> None:
-    value = {"progression_or_recurrence": True, "details": [{"site": "liver"}]}
+    value = {"finding_present": True, "details": [{"site": "liver"}]}
     record = _ClaimRecord.model_validate(claim_data(value=value))
     value["details"][0]["site"] = "changed"
 
@@ -267,11 +265,11 @@ def test_claim_record_has_exact_v1_fields_and_preserves_wire_shape() -> None:
         record.value["details"][0]["site"] = "changed"
     assert record.value["details"][0]["site"] == "liver"
     assert json.loads(record.model_dump_json())["value"] == {
-        "progression_or_recurrence": True,
+        "finding_present": True,
         "details": [{"site": "liver"}],
     }
     assert record.model_dump()["value"] == {
-        "progression_or_recurrence": True,
+        "finding_present": True,
         "details": [{"site": "liver"}],
     }
 

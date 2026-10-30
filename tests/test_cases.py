@@ -40,10 +40,10 @@ def _setup() -> tuple[Case, EvidenceGraph, Inclusion]:
 def _commit(graph: EvidenceGraph, inclusion: Inclusion, value: bool = True) -> str:
     claim = graph.commit_claim(
         graph.task,
-        {"progression_or_recurrence": value},
+        {"finding_present": value},
         [inclusion.evidence_id],
         "Invented interpretation for software testing only.",
-        {"progression_or_recurrence": [inclusion.evidence_id]},
+        {"finding_present": [inclusion.evidence_id]},
         provenance=make_provenance(),
     )
     return claim.claim_id
@@ -80,7 +80,7 @@ def test_answered_result_retains_exact_source_support_and_final_claims(value: bo
 
     assert result.outcome.status == "answered"
     assert result.final_claim_ids == [claim_id]
-    assert result.claims[0].value == {"progression_or_recurrence": value}
+    assert result.claims[0].value == {"finding_present": value}
     assert result.claims[0].effective_datetime == graph.source.datetime
     leaves = [item for item in result.evidence if isinstance(item, Inclusion)]
     assert [(item.start, item.end, item.quote) for item in leaves] == [
@@ -411,10 +411,10 @@ def test_result_preserves_supporting_claim_chain_and_loaded_input_is_detached() 
     graph.register_evidence(bridge)
     final = graph.commit_claim(
         graph.task,
-        {"progression_or_recurrence": True},
+        {"finding_present": True},
         [bridge.evidence_id],
         "Invented chain only.",
-        {"progression_or_recurrence": [bridge.evidence_id]},
+        {"finding_present": [bridge.evidence_id]},
         provenance=make_provenance(),
     )
     result = create_case_result(

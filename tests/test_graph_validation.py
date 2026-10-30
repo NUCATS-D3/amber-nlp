@@ -31,7 +31,7 @@ from ._claim_helpers import (
     make_task,
 )
 
-FIELD = "progression_or_recurrence"
+FIELD = "finding_present"
 
 
 def _assert_error(code: str, function: Any, /, *args: Any, **kwargs: Any) -> None:
@@ -52,7 +52,7 @@ def _valid_graph() -> tuple[Any, dict[str, Any], Inclusion, dict[str, Any]]:
     )
     record = make_claim_record(
         source=source,
-        value={"progression_or_recurrence": False},
+        value={"finding_present": False},
     )
     edge = {
         "claim_id": record["claim_id"],

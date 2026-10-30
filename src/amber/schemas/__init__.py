@@ -1,20 +1,13 @@
-"""Pure domain models shared by the library, CLI, and API.
+"""Pure contract models.
 
-Models in this package must not perform I/O or import from higher-level packages such as
-``amber.services``, ``amber.cli``, or ``amber.api``.
+Models in this package perform no I/O and import nothing outside the amber core. Task-specific
+answer models belong to the projects that define those tasks, not to amber-nlp.
 """
 
 from amber.schemas.answers import AnswerModel
 from amber.schemas.cases import Case, CaseOutcome, CaseResult
 from amber.schemas.claims import Claim
 from amber.schemas.evidence import EvidenceEdge, GroundingFailure, Inclusion, InferenceEvidence
-from amber.schemas.oncology_current_progression import (
-    ONCOLOGY_CURRENT_PROGRESSION_EVIDENCE_POLICY,
-    ONCOLOGY_CURRENT_PROGRESSION_PROTOCOL_VERSION,
-    ONCOLOGY_CURRENT_PROGRESSION_SCOPE,
-    ONCOLOGY_CURRENT_PROGRESSION_TASK,
-    OncologyCurrentProgressionAnswer,
-)
 from amber.schemas.provenance import Provenance, Sensitivity, Zone
 from amber.schemas.sources import Section, Source, SourceKind
 from amber.schemas.tasks import Task
@@ -29,11 +22,6 @@ __all__ = [
     "AnswerModel",
     "Claim",
     "EvidenceEdge",
-    "ONCOLOGY_CURRENT_PROGRESSION_EVIDENCE_POLICY",
-    "ONCOLOGY_CURRENT_PROGRESSION_PROTOCOL_VERSION",
-    "ONCOLOGY_CURRENT_PROGRESSION_SCOPE",
-    "ONCOLOGY_CURRENT_PROGRESSION_TASK",
-    "OncologyCurrentProgressionAnswer",
     "Provenance",
     "Section",
     "Sensitivity",

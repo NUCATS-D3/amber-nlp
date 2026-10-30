@@ -1,94 +1,23 @@
 [project]
 name = "amber"
 version = "0.0.0"
-description = "Messy clinical text hardened into structured data with the evidence preserved as inclusions: grounded extraction agents, evidence DAGs, MLflow end to end."
+description = "Contracts, validation, interfaces, and MLflow plugins for evidence-grounded clinical information extraction."
 readme = "README.md"
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.12,<3.13"
 license = { file = "LICENSE" }
 authors = [{ name = "Will Thompson" }]
 
-# Core: schemas, exact grounding, configuration, and the Python/CLI facade.
+# Core: contract models, canonical IDs, exact grounding, and evidence validation only.
 dependencies = [
     "pydantic>=2.9",
-    "pydantic-settings>=2.5",
     "python-ulid>=2.7",
-    "click",
 ]
 
 [project.optional-dependencies]
-# Local persistence and table exports (planned under M1).
-storage = [
-    "pandas>=2.2",
-    "pyarrow>=17",
-    "duckdb>=1.1",
-]
-# Clinical metrics and analysis (planned alongside the M2 baseline).
-evaluation = [
-    "numpy",
-    "scipy",
-    "scikit-learn",
-]
-# OSS tracking and versioned prompt assets.
+# MLflow plugins (OSS API only); range follows loupe's tested MLflow release.
 tracking = [
-    "mlflow>=3.5",             # optimize_prompts (GEPA) needs >=3.5; OSS surface only
-    "pyyaml",
+    "mlflow>=3.17,<3.18",
 ]
-# Interactive notebooks and their model client.
-notebooks = [
-    "marimo>=0.24.2",
-    "openai>=1.50",
-]
-# Agent runtime. Model-agnostic; talks to any OpenAI-compatible endpoint.
-agents = [
-    "pydantic-ai>=1.0",
-    "openai>=1.50",
-    "anthropic>=0.40",
-    "google-genai>=1.0",
-]
-# Deterministic tool belt (non-LLM NLP).
-nlp = [
-    "rapidfuzz>=3.9",          # optional future fuzzy alignment; exact grounding is core
-    "spacy>=3.7,<4",
-    "medspacy>=1.3",
-    "negspacy>=1.0",
-    "gliner>=0.2.20",
-    "sentence-transformers>=3.0",   # SapBERT via sentence-transformers or raw transformers
-    "rank-bm25>=0.2",
-    "dateparser>=1.2",
-]
-# Optional span-first extraction (SpanTask) and its grounding.
-langextract = ["langextract>=1.6"]
-# Fine-tuning and in-process inference on CPU/GPU (transformers stack).
-train = [
-    "torch>=2.4",
-    "transformers>=4.51.3,<5",   # TRL<=0.24 mis-tokenizes prompt/completion pairs under transformers 5 (silently breaks completion-only loss)
-    "peft>=0.18",
-    "trl>=0.18.2,<=0.24",
-    "accelerate>=0.34",
-    "datasets>=3.4,<4.4",
-    "sentencepiece",
-]
-# Apple silicon: training + inference + schema-constrained decoding.
-mlx = [
-    "mlx-lm>=0.28; sys_platform == 'darwin'",
-    "outlines>=1.0",
-]
-# GPU serving and fast fine-tuning.
-gpu = [
-    "vllm>=0.10; sys_platform == 'linux'",
-    "unsloth>=2025.9; sys_platform == 'linux'",
-    "bitsandbytes>=0.45.5,!=0.46.0,!=0.48.0; sys_platform == 'linux'",
-]
-# Annotation app backend.
-app = [
-    "fastapi>=0.115",
-    "uvicorn[standard]>=0.30",
-    "sqlalchemy>=2.0",
-    "alembic>=1.13",
-    "python-multipart",
-]
-# Orchestration.
-dagster = ["dagster>=1.8", "dagster-mlflow"]
 dev = [
     "pytest>=8",
     "pytest-cov",
@@ -97,9 +26,6 @@ dev = [
     "pre-commit",
     "hypothesis",
 ]
-
-[project.scripts]
-amber = "amber.cli:cli"
 
 # MLflow discovers run-context providers through this entry-point group.
 [project.entry-points."mlflow.run_context_provider"]
@@ -113,31 +39,28 @@ build-backend = "hatchling.build"
 packages = ["src/amber"]
 
 [tool.uv]
-# Resolve for both laptops and Linux GPU boxes; mlx and gpu extras are platform-marked above.
 environments = ["sys_platform == 'darwin'", "sys_platform == 'linux'"]
-# These two extras are never installed together.
-conflicts = [[{ extra = "mlx" }, { extra = "gpu" }]]
 
 [tool.ruff]
 extend-exclude = ["docs", "examples"]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+# Keep explicit TypeAlias Literals; PEP 695 aliases change runtime introspection of Pydantic fields.
+ignore = ["UP040"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 plugins = ["pydantic.mypy"]
 strict = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["slow: tests that load a model", "gpu: tests that need CUDA", "mlx: tests that need Apple silicon"]
+markers = ["slow: tests that need a long-running external resource"]
 
 [dependency-groups]
 dev = [
-    "httpx>=0.27",
-    "marimo>=0.24.2",
     "pytest>=9.1.1",
 ]

@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.11", "3.12"]
+        python: ["3.12"]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -41,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.11", "3.12"]
+        python: ["3.12"]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -54,17 +54,17 @@ jobs:
       - name: Check lockfile consistency
         run: uv lock --check
       - name: Install the locked test and optional interface dependencies
-        run: uv sync --locked --no-editable --extra dev --extra app --extra tracking
-      - name: Require optional interfaces before tests can skip them
-        run: uv run --no-sync python -c "import fastapi, httpx, mlflow"
+        run: uv sync --locked --no-editable --extra dev --extra tracking
+      - name: Require optional plugins before tests can skip them
+        run: uv run --no-sync python -c "import mlflow"
       - name: Run offline CPU tests using synthetic inputs only
-        run: uv run --no-sync pytest --strict-markers -ra -m "not slow and not gpu and not mlx"
+        run: uv run --no-sync pytest --strict-markers -ra -m "not slow"
       - name: Lint
-        if: matrix.python == '3.11'
+        if: matrix.python == '3.12'
         run: uv run --no-sync ruff check .
       - name: Check formatting
-        if: matrix.python == '3.11'
+        if: matrix.python == '3.12'
         run: uv run --no-sync ruff format --check .
       - name: Type check the supported target
-        if: matrix.python == '3.11'
+        if: matrix.python == '3.12'
         run: uv run --no-sync mypy src

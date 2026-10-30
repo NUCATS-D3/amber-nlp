@@ -14,7 +14,7 @@ def _case_payload() -> dict[str, Any]:
     source = make_source()
     return {
         "case_id": "synthetic-case-1",
-        "task": "oncology_current_progression",
+        "task": "synthetic_finding",
         "patient_id": source.patient_id,
         "source_ids": [source.source_id],
         "sensitivity": "synthetic",

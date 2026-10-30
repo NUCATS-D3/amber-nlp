@@ -19,7 +19,7 @@ from amber.schemas import Inclusion, Sensitivity
 
 from ._claim_helpers import make_claim_record, make_inference_record, make_source, make_task
 
-FIELD = "progression_or_recurrence"
+FIELD = "finding_present"
 
 
 def _assert_error(code: str, function: Callable[..., Any], /, *args: Any, **kwargs: Any) -> None:
@@ -299,7 +299,7 @@ def test_snapshot_uses_the_exact_context_envelope() -> None:
     assert graph.to_payload() == {
         "format_version": 1,
         "context": {
-            "task": "oncology_current_progression",
+            "task": "synthetic_finding",
             "schema_ref": schema_ref(task.answer_model),
             "evidence_policy": "field",
             "scope": "note",

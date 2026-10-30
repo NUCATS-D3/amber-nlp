@@ -3,10 +3,11 @@
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+from pydantic import Field
+
 from amber.ids import new_ulid, schema_ref
 from amber.schemas import (
     AnswerModel,
-    OncologyCurrentProgressionAnswer,
     Provenance,
     Sensitivity,
     Source,
@@ -14,6 +15,12 @@ from amber.schemas import (
     Task,
     Zone,
 )
+
+
+class SyntheticFindingAnswer(AnswerModel):
+    """Invented single-boolean answer used to exercise the task-agnostic kernel."""
+
+    finding_present: bool = Field(strict=True)
 
 
 def make_source(text: str = "Alpha beta") -> Source:
@@ -39,13 +46,13 @@ def make_provenance() -> Provenance:
 
 
 def make_task(
-    answer_model: type[AnswerModel] = OncologyCurrentProgressionAnswer,
+    answer_model: type[AnswerModel] = SyntheticFindingAnswer,
     evidence_policy: Literal["claim", "field"] = "field",
 ) -> Task:
     return Task(
-        name="oncology_current_progression",
+        name="synthetic_finding",
         answer_model=answer_model,
-        instructions="Determine whether current progression or recurrence is documented.",
+        instructions="Determine whether the invented finding is documented.",
         evidence_policy=evidence_policy,
     )
 

@@ -6,23 +6,20 @@ stacks intentionally fails this check; use a separate minimal environment.
 
 import importlib.util
 import json
-import os
-import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from tempfile import TemporaryDirectory
+
+from pydantic import Field
 
 import amber
-from amber import create_client
 from amber.cases import create_case_result, load_case_result
-from amber.config import Settings
 from amber.graph import EvidenceGraph
 from amber.schemas import (
+    AnswerModel,
     Case,
     CaseOutcome,
     Inclusion,
-    OncologyCurrentProgressionAnswer,
     Provenance,
     Sensitivity,
     Source,
@@ -35,6 +32,10 @@ from amber.tools.outcomes import no_claim
 from amber.tools.quote import quote
 
 
+class SyntheticFindingAnswer(AnswerModel):
+    finding_present: bool = Field(strict=True)
+
+
 def main() -> None:
     assert sys.flags.isolated, "Run this check with python -I"
     assert Path(amber.__file__).resolve().is_relative_to(Path(sys.prefix).resolve()), (
@@ -42,6 +43,7 @@ def main() -> None:
     )
     optional = (
         "fastapi",
+        "click",
         "mlflow",
         "pandas",
         "pyarrow",
@@ -58,12 +60,7 @@ def main() -> None:
     available = [name for name in optional if importlib.util.find_spec(name) is not None]
     assert not available, f"Expected a core-only environment; found {available}"
 
-    # Keep the smoke check independent of a developer's configuration, too.
-    for name in tuple(os.environ):
-        if name.upper().startswith("AMBER_"):
-            del os.environ[name]
-    client = create_client(Settings(_env_file=None, environment="test"))
-    assert client.info().environment == "test"
+    assert amber.__version__
     source = Source.create(
         patient_id="synthetic-patient",
         kind=SourceKind.note,
@@ -77,7 +74,7 @@ def main() -> None:
     assert (evidence.start, evidence.end, evidence.quote) == (6, 12, "βeta\r\n")
     task = Task(
         name="synthetic_core_smoke",
-        answer_model=OncologyCurrentProgressionAnswer,
+        answer_model=SyntheticFindingAnswer,
         instructions="Exercise an invented evidence-backed answer.",
         evidence_policy="field",
     )
@@ -92,10 +89,10 @@ def main() -> None:
     graph.register_evidence(evidence)
     claim = commit_claim(
         task,
-        {"progression_or_recurrence": False},
+        {"finding_present": False},
         [evidence.evidence_id],
         "The invented exact quote is retained for structural smoke testing.",
-        {"progression_or_recurrence": [evidence.evidence_id]},
+        {"finding_present": [evidence.evidence_id]},
         graph=graph,
         provenance=provenance,
     )
@@ -142,18 +139,8 @@ def main() -> None:
     )
     diagnostic = create_case_result(case, graph=graph, outcome=unanswered, final_claim_ids=[])
     assert diagnostic.final_claim_ids == []
-    assert diagnostic.claims[0].value["progression_or_recurrence"] is False
-
-    with TemporaryDirectory(prefix="amber-core-smoke-") as cwd:
-        output = subprocess.check_output(
-            [str(Path(sys.executable).parent / "amber"), "info", "--json"],
-            cwd=cwd,
-            text=True,
-        )
-    info = json.loads(output)
-    assert info["name"] == "amber"
-    assert info["environment"] == "development"
-    print("Core-only installed facade, claim commit, case results, restore, and CLI checks passed.")
+    assert diagnostic.claims[0].value["finding_present"] is False
+    print("Core-only installed grounding, claim commit, case results, and restore checks passed.")
 
 
 if __name__ == "__main__":

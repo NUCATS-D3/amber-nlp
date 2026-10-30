@@ -1,4 +1,5 @@
-"""Agent-callable tools (docs/02 §8). Plain functions with pydantic-typed I/O, registered
-with the agent runtime and reused by the deterministic cascade. Importable without the
-agent runtime and without model weights.
+"""Deterministic, Pydantic-typed operations that implementations call to produce valid results.
+
+These functions are part of the contract: extractors, agents, and review backends use them
+rather than re-implementing grounding, commit, or outcome validation.
 """

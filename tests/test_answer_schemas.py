@@ -1,73 +1,55 @@
 import json
 
 import pytest
-from pydantic import ValidationError
+from pydantic import Field, ValidationError
 
-from amber.schemas import (
-    ONCOLOGY_CURRENT_PROGRESSION_EVIDENCE_POLICY,
-    ONCOLOGY_CURRENT_PROGRESSION_PROTOCOL_VERSION,
-    ONCOLOGY_CURRENT_PROGRESSION_SCOPE,
-    ONCOLOGY_CURRENT_PROGRESSION_TASK,
-    AnswerModel,
-    OncologyCurrentProgressionAnswer,
-)
+from amber.schemas import AnswerModel
 
 
-def test_current_progression_answer_accepts_only_a_required_strict_boolean() -> None:
-    answer = OncologyCurrentProgressionAnswer(progression_or_recurrence=True)
-    assert answer.model_dump() == {"progression_or_recurrence": True}
+class StrictBooleanAnswer(AnswerModel):
+    finding_present: bool = Field(strict=True)
 
-    for payload in ({}, {"progression_or_recurrence": 1}, {"progression_or_recurrence": "true"}):
+
+def test_answer_subclass_accepts_only_a_required_strict_boolean() -> None:
+    answer = StrictBooleanAnswer(finding_present=True)
+    assert answer.model_dump() == {"finding_present": True}
+
+    for payload in ({}, {"finding_present": 1}, {"finding_present": "true"}):
         with pytest.raises(ValidationError):
-            OncologyCurrentProgressionAnswer.model_validate(payload)
+            StrictBooleanAnswer.model_validate(payload)
 
 
-def test_current_progression_answer_is_frozen_and_forbids_extras() -> None:
-    answer = OncologyCurrentProgressionAnswer(progression_or_recurrence=False)
+def test_answer_subclass_is_frozen_and_forbids_extras() -> None:
+    answer = StrictBooleanAnswer(finding_present=False)
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        OncologyCurrentProgressionAnswer(
-            progression_or_recurrence=False,
+        StrictBooleanAnswer(
+            finding_present=False,
             rationale="not part of the answer",  # type: ignore[call-arg]
         )
     with pytest.raises(ValidationError, match="frozen"):
-        answer.progression_or_recurrence = True  # type: ignore[misc]
+        answer.finding_present = True  # type: ignore[misc]
 
 
-def test_current_progression_task_metadata_is_frozen_in_code() -> None:
-    assert ONCOLOGY_CURRENT_PROGRESSION_TASK == "oncology_current_progression"
-    assert ONCOLOGY_CURRENT_PROGRESSION_PROTOCOL_VERSION == "1.1.0"
-    assert ONCOLOGY_CURRENT_PROGRESSION_SCOPE == "note"
-    assert ONCOLOGY_CURRENT_PROGRESSION_EVIDENCE_POLICY == "field"
-
-
-def test_current_progression_answer_round_trips_true_and_false_as_json() -> None:
+def test_answer_round_trips_true_and_false_as_json() -> None:
     for value in (True, False):
-        answer = OncologyCurrentProgressionAnswer(progression_or_recurrence=value)
-        assert (
-            OncologyCurrentProgressionAnswer.model_validate_json(answer.model_dump_json()) == answer
-        )
-        assert json.loads(answer.model_dump_json()) == {"progression_or_recurrence": value}
-
-
-@pytest.mark.parametrize("value", [None, 0, 1, 0.0, 1.0, "true", "false", "1", "0"])
-def test_current_progression_answer_rejects_non_boolean_values(value: object) -> None:
-    with pytest.raises(ValidationError):
-        OncologyCurrentProgressionAnswer.model_validate({"progression_or_recurrence": value})
+        answer = StrictBooleanAnswer(finding_present=value)
+        assert StrictBooleanAnswer.model_validate_json(answer.model_dump_json()) == answer
+        assert json.loads(answer.model_dump_json()) == {"finding_present": value}
 
 
 @pytest.mark.parametrize(
     "payload",
     [
-        '{"progression_or_recurrence": null}',
-        '{"progression_or_recurrence": 1}',
-        '{"progression_or_recurrence": 1.0}',
-        '{"progression_or_recurrence": "true"}',
-        '{"progression_or_recurrence": true, "extra": false}',
+        '{"finding_present": null}',
+        '{"finding_present": 1}',
+        '{"finding_present": 1.0}',
+        '{"finding_present": "true"}',
+        '{"finding_present": true, "extra": false}',
     ],
 )
-def test_current_progression_answer_rejects_invalid_json_payloads(payload: str) -> None:
+def test_answer_rejects_invalid_json_payloads(payload: str) -> None:
     with pytest.raises(ValidationError):
-        OncologyCurrentProgressionAnswer.model_validate_json(payload)
+        StrictBooleanAnswer.model_validate_json(payload)
 
 
 def test_answer_policy_is_inherited_by_scalar_field_subclass() -> None:

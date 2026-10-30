@@ -30,7 +30,7 @@ from amber.schemas import (
 
 from ._claim_helpers import make_provenance, make_source, make_task
 
-FIELD = "progression_or_recurrence"
+FIELD = "finding_present"
 RATIONALE = "Synthetic interpretation; no clinical assertion."
 
 
@@ -98,15 +98,15 @@ def test_commit_retains_field_support_and_only_proposed_status(value: bool) -> N
     provenance = make_provenance().model_copy(update={"trace_id": "trace-synthetic-1"})
     claim = commit_module.commit_claim(
         task,
-        {"progression_or_recurrence": value},
+        {"finding_present": value},
         [leaf.evidence_id],
         "Synthetic interpretation; no clinical assertion.",
-        {"progression_or_recurrence": [leaf.evidence_id]},
+        {"finding_present": [leaf.evidence_id]},
         graph=graph,
         provenance=provenance,
     )
     assert claim.status == "proposed"
-    assert claim.value == {"progression_or_recurrence": value}
+    assert claim.value == {"finding_present": value}
     assert claim.source_id == source.source_id
     assert claim.patient_id == source.patient_id
     assert claim.task == task.name
