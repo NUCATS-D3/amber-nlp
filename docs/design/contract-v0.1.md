@@ -9,7 +9,7 @@ progression (single boolean), a lapidary `ds_findings_v1` mention-level finding,
 stage group derived from T/N/M mentions (layered).
 
 Sections: [1 Policy](#1-policy) · [2 Mentions and structured evidence](#2-mentions-and-structured-evidence) · [3 Layered
-variables](#3-layered-variables) · [4 Annotated data](#4-annotated-data) · 5 Wire formats (pending) · 6 Interfaces
+variables](#3-layered-variables) · [4 Annotated data](#4-annotated-data) · [5 Wire formats](#5-wire-formats) · 6 Interfaces
 (pending) · 7 Conformance catalog (pending)
 
 ---
@@ -972,7 +972,242 @@ Reviewed and accepted 2026-10-30:
 
 ## 5. Wire formats
 
-*Pending.*
+### 5.1 Purpose
+
+The wire format is the exact representation of contract records when they leave a process:
+JSON for single records and bundles, Parquet tables for runs and annotated sets. lapidary
+writes tables, loupe reads and writes JSON, MLflow stores both as artifacts, and all of them
+must agree without sharing code. The Pydantic models conform to this section, not the reverse.
+
+lapidary's L1 table design is the starting point; this section adopts its conventions and
+extends them for §2–§4. Where this section and that plan differ, this section wins and the
+plan is updated (lap-ecc.1).
+
+### 5.2 Common rules
+
+- **Schema version.** Every JSON record and every bundle manifest carries
+  `schema_version: "amber/<major>.<minor>"`. v0.1 is `amber/0.1`. Readers reject a different
+  major and accept a lower or equal minor (additive changes only). A reader never guesses.
+- **IDs** are strings: content-addressed SHA-256 hex for `source_id`, `mention_id`, inclusion
+  and structured `evidence_id`; ULIDs for `claim_id`, inference `evidence_id`, `event_id`,
+  `example_id`.
+- **Offsets** are end-exclusive Unicode code-point indices into the exact source text. Parquet
+  `int64`, JSON integers.
+- **Times** are RFC 3339 with offset in JSON; `timestamp[us, tz=UTC]` in Parquet.
+- **JSON columns** in Parquet are UTF-8 strings containing canonical JSON (sorted keys, no
+  whitespace, `ensure_ascii=False`), never Arrow structs, so column schemas survive answer-
+  model changes.
+- **Nulls** mean absent. A column that does not apply to a row is null; there are no sentinel
+  strings.
+- **Source text is never stored in tables.** `sources` carries `text_hash`; `quote` columns
+  and attribute cue quotes do contain source text and classify the file as `derived_text`
+  (§1). Every other table is `labels_only` by construction, except `annotation_events`, whose
+  `before`/`after` are `labels_only` views and whose `reason` is free text written by a human
+  (treated as `derived_text` conservatively).
+- **Provenance** is flattened into `provenance_*` columns: `producer`, `model`,
+  `prompt_versions` (JSON), `run_id`, `trace_id`, `zone`, `sensitivity`, `destination`,
+  `policy_version`, `restriction_ids` (JSON list), `created_at` (timestamp), `version`.
+  lapidary's `vocabulary_release` and `fragment_id` are **not** adopted (terminology deferred);
+  consumers may add `x_`-prefixed columns, which amber readers ignore and never validate.
+
+### 5.3 JSON records
+
+The JSON form of each record is `model_dump(mode="json")` of the contract model, with these
+fixed points that the conformance kit checks byte-for-byte on fixtures:
+
+| Record | Required top-level keys |
+|---|---|
+| `CaseResult` | `schema_version, case_id, variable_set, variable_set_version, claims, mentions, evidence, edges, variable_outcomes, outcome, final_claim_ids, grounding_failures, tool_calls, escalated, trace_id` |
+| `Example` | as §4.3 plus `schema_version` |
+| `AnnotationEvent` | as §4.4 |
+| `LabelRecord` | as §4.6 plus `schema_version` |
+| `Decision` | as §1.3 plus `schema_version` |
+| `VariableSet` | `schema_version, name, version, variables, schema_ref`; `answer_model` is serialized as its JSON Schema plus `schema_ref`, never as an import path alone |
+
+Rules:
+
+- Evidence records are a discriminated union on `kind` (`inclusion`, `structured`,
+  `inference`); unknown kinds are rejected.
+- `Derivation`, `Attribute`, and `VariableOutcome` are nested objects, not flattened.
+- A JSON record is **self-describing but not self-validating**: loading requires the
+  authoritative `Source` (via the resolver, §5.6) and the `VariableSet`, exactly as
+  `load_case_result` requires them today. Readers that lack them may parse but must not mark
+  the record as validated.
+
+### 5.4 Parquet tables
+
+A **bundle** is a directory:
+
+```
+<bundle>/
+  manifest.json
+  sources.parquet            required
+  mentions.parquet           required (may be empty)
+  claims.parquet             required
+  evidence.parquet           required
+  evidence_edges.parquet     required
+  cases.parquet              required
+  variable_outcomes.parquet  required
+  annotation_events.parquet  optional (review/gold bundles)
+  examples.parquet           optional (gold bundles): one row per (example, final variable)
+  decisions.parquet          optional: policy audit records
+```
+
+Tables and columns (keys in bold; `→` is a foreign key):
+
+**sources** — **source_id**, patient_id, kind, external_id?, datetime?, text_hash, record (JSON)?,
+sections (JSON list of `{start,end,label,category?,is_template}`), meta (JSON).
+`record` is the structured row for non-text sources; text sources have `record = null`.
+
+**mentions** — **mention_id**, source_id →, start, end, quote, mention_type, label?, value (JSON)?,
+unit?, attributes (JSON: `{category: {value, evidence_id?, scope_evidence_id?, assigned_by}}`),
+concept (JSON)?, section_category?, fragments (JSON list)?, inputs (JSON list)?, status,
+provenance_*.
+Replaces lapidary's fixed `polarity/temporality/experiencer` columns with the open
+`attributes` JSON; the standard categories are documented values inside it. lapidary's OMOP
+link columns are not adopted in v0.1.
+
+**claims** — **claim_id**, case_id, source_id →, patient_id, variable, variable_set,
+variable_set_version, schema_ref, value (JSON), effective_datetime?, confidence?, status,
+provenance_*.
+`value` is never null: a missing answer is a `variable_outcomes` row, not a null claim.
+
+**evidence** — **evidence_id**, kind, source_id →?, start?, end?, quote?, alignment?,
+alignment_score?, mention_id →?, field?, value (JSON)?, datetime?, rationale?, inputs (JSON
+list)?, derivation (JSON)?, trace_id?, span_id?, provenance_*.
+
+**evidence_edges** — **claim_id →, evidence_id →, role?**, weight?.
+
+**variable_outcomes** — **case_id, variable**, status, reason?, failure_kind?,
+reviewed_source_ids (JSON list), evidence_ids (JSON list), final_claim_ids (JSON list),
+provenance_*.
+
+**annotation_events** — **event_id**, case_id, variable?, actor, role, round, stream?, action,
+target_id?, before (JSON)?, after (JSON)?, reason?, at, external_ref?, provenance_*.
+
+**examples** — **example_id, variable**, case_id, variable_set, variable_set_version, split?,
+tier, outcome_status, final_claim_ids (JSON list), annotators (JSON list), adjudicator?,
+derived_from_events (JSON list), created_at.
+The Example's claims, mentions, evidence, and edges are the rows of the other tables whose
+`case_id` matches and whose status is `gold`/`verified`; a gold bundle therefore contains only
+retained records.
+
+**decisions** — **decision_id**, checked_at, permitted, reason, restriction_id?, policy_version,
+destination, zone, sensitivity, payload, case_id?, run_id?.
+
+### 5.5 Manifest
+
+```json
+{
+  "schema_version": "amber/0.1",
+  "bundle_kind": "run" | "review" | "gold",
+  "producer": {"name": "lapidary", "version": "0.3.0", "run_id": "..."},
+  "variable_set": {"name": "...", "version": "...", "schema_ref": "..."},
+  "dataset": {"name": "...", "manifest_hash": "...", "sensitivity": "deidentified",
+              "restriction_ids": ["physionet-chdl-1.5.0"]},
+  "policy_version": "nm-2026.10",
+  "sources": {"count": 40, "text_hash_algorithm": "sha256"},
+  "tables": {"cases": {"rows": 40, "sha256": "..."}, "claims": {"rows": 40, "sha256": "..."}, ...},
+  "payload_kinds": {"evidence.parquet": "derived_text", "mentions.parquet": "derived_text",
+                    "annotation_events.parquet": "derived_text", "claims.parquet": "labels_only", ...},
+  "created_at": "2026-10-30T20:00:00Z"
+}
+```
+
+The manifest is `labels_only`. `payload_kinds` is computed by the writer from the columns
+present (any `quote`, cue quote, or free-text human column makes a file `derived_text`); the
+reader recomputes and rejects a manifest that under-declares. Table hashes let a reader detect
+a modified file before validation.
+
+### 5.6 Source resolver
+
+Tables carry `text_hash`, not text. Any validation that needs text (quote equality, bounds,
+section membership, attribute cue quotes) takes a resolver:
+
+```python
+class SourceResolver(Protocol):
+    def resolve(self, source_id: str) -> Source | None   # returns the authoritative Source or None
+```
+
+Rules:
+
+- The loader calls the resolver for every `source_id` in `sources.parquet`, checks that
+  `sha256(Source.text)` (or canonical `record`) equals `text_hash`, and otherwise fails with
+  `source_hash_mismatch` naming the source ID only. A `None` result fails with
+  `source_unavailable`.
+- With a resolver, the loader performs full validation (§2–§4) and returns validated records.
+  Without one, `load(..., resolver=None)` returns a **parsed, unvalidated** bundle whose records
+  are wrapped so that `graph`/`cases`/`examples` boundaries refuse them; this exists for
+  `labels_only` processing (metrics over claims, event replay for timing) and nothing else.
+- Resolvers are consumer implementations: lapidary's reads the dataset at the manifest's
+  location under its policy gate; loupe's reads the frozen source Dataset; a test resolver
+  holds synthetic sources in memory. amber ships only the protocol and the in-memory one.
+- The resolver is itself a `source_text` transfer when the dataset is restricted; calling it
+  inside a process that already holds the data is `local`, and the enforcement point that
+  constructed the resolver made that check.
+
+### 5.7 Versioning and migration
+
+- `amber/0.x` minors may add optional columns, JSON keys, enum values, or tables. They may not
+  rename, remove, change types, or change ID derivations.
+- A major change (`amber/1.0`) ships with: a migration note in `docs/migrations/`, a
+  `migrate(bundle, to=...)` function for every supported path, updated fixtures in the
+  conformance kit, and a conformance case that the old fixture migrated equals the new fixture.
+- ID derivations are part of the format: changing `source_id` or `mention_id` inputs is a
+  major change, because stored references would stop resolving.
+- The `schema_ref` of an answer model is content-addressed; a changed answer model is a new
+  `variable_set_version`, not a format change. Old bundles remain valid against their recorded
+  set.
+- Readers must preserve unknown `x_` columns and keys when rewriting a bundle.
+
+### 5.8 Design checks against the stand-in variables
+
+- **CORAL progression run bundle:** 40 sources (hash only), 0 mentions, ≤40 claims, inclusions
+  and inferences, 40 `variable_outcomes` rows, no events. `evidence.parquet` is
+  `derived_text` and stays in the restricted local path; `claims.parquet` is `labels_only`
+  and may be logged to the institutional MLflow. Loading with lapidary's resolver revalidates
+  every quote against `~/data/coral/v1.0` text without the bundle containing it.
+- **`ds_findings_v1`:** mentions with `attributes` JSON holding negation/temporality and cue
+  evidence IDs that resolve in `evidence.parquet`; claims per mention with `variable =
+  "finding"`; one `variable_outcomes` row per note. The gpt-6-sol import produces a `gold`
+  bundle with `tier = silver` in `examples.parquet`.
+- **Stage group:** `claims.parquet` holds four mention-level rows and one `stage_group` row
+  per note; the `stage_group` inference row carries `derivation` JSON naming the rule and
+  input claim IDs; replay in the conformance kit reads only tables plus the registered rule.
+
+### 5.9 Conformance cases (wire formats)
+
+1. Fixture bundles for each stand-in round-trip (write → read → write) byte-identically.
+2. A bundle with a different major `schema_version` is rejected; a lower minor loads.
+3. Missing required table, missing key column, wrong column type, or duplicate key → rejected
+   with a diagnostic naming the table and column only.
+4. `text_hash` mismatch via the resolver → `source_hash_mismatch`; resolver `None` →
+   `source_unavailable`; no resolver → unvalidated wrapper refused by graph/case/example
+   boundaries.
+5. A `quote` column present in a file declared `labels_only` in the manifest → rejected.
+6. Table hash in the manifest differs from the file → rejected before validation.
+7. Canonical JSON: a JSON column with unsorted keys or whitespace is rejected (writers must
+   canonicalize; readers detect).
+8. Unknown evidence `kind` or unknown event `action` → rejected.
+9. `x_` columns survive a read/write cycle; non-prefixed unknown columns are rejected.
+10. A claim row with null `value` is rejected.
+11. The manifest's recomputed `payload_kinds` must equal the declared ones.
+12. Migration: the `amber/0.1` fixture migrated to a synthetic `amber/0.2` fixture by the test
+    migrator equals the hand-written target.
+
+### 5.10 Decisions recorded
+
+Reviewed and accepted 2026-10-30:
+
+1. `case_id` is a ULID minted when the case is created. The case records the
+   `(dataset, source_id, variable_set)` triple, which is the join key across runs; ID reuse is
+   a consumer choice, not a requirement. `cases` therefore joins the table set: **case_id**,
+   dataset, dataset_manifest_hash, source_id →, patient_id, variable_set, variable_set_version,
+   sensitivity, split?, created_at.
+2. Annotation events are always exported as `annotation_events.parquet`; no event database is
+   part of the contract. loupe revisions in MLflow are the review store; the bridge derives the
+   table.
+3. Sections are a JSON list on the `sources` row; no separate sections table.
 
 ## 6. Interfaces
 
