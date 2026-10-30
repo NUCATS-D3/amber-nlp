@@ -1,7 +1,7 @@
 # Contract v0.1 design
 
-Status: draft in progress, 2026-10-30. This document is written in dependency order; each
-section is reviewed as drafted. Sections marked *pending* are not yet written. The
+Status: complete draft, 2026-10-30; sections 1–6 accepted individually, section 7 under review.
+A final whole-document review follows. Written in dependency order. The
 [plan](../plan.md) describes the phases; the [charter](../charter.md) sets scope.
 
 Examples use invented data only. Stand-in variables for the design checks are: CORAL current
@@ -9,7 +9,7 @@ progression (single boolean), a lapidary `ds_findings_v1` mention-level finding,
 stage group derived from T/N/M mentions (layered).
 
 Sections: [1 Policy](#1-policy) · [2 Mentions and structured evidence](#2-mentions-and-structured-evidence) · [3 Layered
-variables](#3-layered-variables) · [4 Annotated data](#4-annotated-data) · [5 Wire formats](#5-wire-formats) · [6 Interfaces](#6-interfaces) · 7 Conformance catalog (pending)
+variables](#3-layered-variables) · [4 Annotated data](#4-annotated-data) · [5 Wire formats](#5-wire-formats) · [6 Interfaces](#6-interfaces) · [7 Conformance catalog](#7-conformance-catalog)
 
 ---
 
@@ -1422,4 +1422,151 @@ Reviewed and accepted 2026-10-30:
 
 ## 7. Conformance catalog
 
-*Pending.*
+### 7.1 Purpose and structure
+
+The catalog is the complete list of checks that define conformance to contract v0.1. It is
+implemented as the pytest plugin `amber.conformance` (Phase 2) and its IDs are stable: a
+consumer reports "amber conformance 0.1: 72/78, failing MEN-09, WIR-04". Changing a case's
+meaning requires a new ID; retired IDs are never reused.
+
+Each case has a **level**:
+
+- **core**: exercised against amber itself on synthetic fixtures; runs in amber's CI; a
+  consumer cannot fail it.
+- **implementation**: exercised against a consumer's implementation of an interface, or
+  against records it produced, through the plugin's fixtures (`amber_extractor`,
+  `amber_store`, `amber_review_backend`, ...). The consumer selects which interfaces it
+  implements; cases for other interfaces are skipped and reported as not applicable, never as
+  passed.
+- **bundle**: exercised against a written bundle plus a resolver; usable on any run output.
+
+"Applies to" names the interfaces or adapters the case checks; `—` means it checks contract
+objects only.
+
+The catalog contains 78 cases. Every case uses invented data; no fixture contains clinical
+text. Fixtures include Unicode (non-BMP, combining marks), CRLF, repeated quotes, empty and
+whitespace-only sources, and the three stand-in variable sets.
+
+### 7.2 Policy (§1)
+
+| ID | Level | Applies to | Case |
+|---|---|---|---|
+| `POL-01` | core | PolicyGate | Every cell of the default matrix: permitted and refused combinations. |
+| `POL-02` | core | PolicyGate | A widened matrix without the explicit flag fails validation. |
+| `POL-03` | core | PolicyGate | Payload not accepted by destination is refused even when the zone is allowed. |
+| `POL-04` | core | Rule | Each restriction rule refuses independently, with the matching `restriction_id`. |
+| `POL-05` | core | PolicyGate | Restrictions apply in order; the first failure is reported. |
+| `POL-06` | core | — | `labels_only_view` output shares no substring of length ≥ 8 with the source text, across Unicode and CRLF sources. |
+| `POL-07` | core | — | A `Provenance` without `destination`/`policy_version` is rejected. |
+| `POL-08` | implementation | Extractor | A `failed` outcome from a refusal has `failure_kind="policy"` and no claims. |
+| `POL-09` | core | PolicyGate | `check` never raises and never includes source text in a `Decision`. |
+| `POL-10` | core | PolicyGate | A deidentified derivative cannot be created with a sensitivity lower than its declared `DataPolicy` without a new dataset identity. |
+| `POL-11` | core | PolicyGate | An expired restriction refuses with `restriction_expired`; the same call with an earlier `now` is permitted. |
+| `POL-12` | core | PolicyGate | `model_weights` to an `external` destination is refused for `phi` data, and weights trained on two datasets carry the more restrictive policy. |
+| `POL-13` | core | — | A serialized `Decision` contains no source text and is accepted as a `labels_only` payload. |
+
+### 7.3 Mentions and structured evidence (§2)
+
+| ID | Level | Applies to | Case |
+|---|---|---|---|
+| `MEN-01` | core | — | A mention with `quote != Source.text[start:end]` is rejected; likewise any fragment. |
+| `MEN-02` | core | — | Direct construction without the grounding context is rejected (same guard as Inclusion). |
+| `MEN-03` | core | — | Two producers, same span and type: same `mention_id`, distinct provenance records. |
+| `MEN-04` | core | — | Overlapping and nested mentions of different types coexist; no automatic merging. |
+| `MEN-05` | core | — | A discontinuous mention validates each fragment; hull outside the source is rejected. |
+| `MEN-06` | core | — | `section_category` not present in `Source.sections` is rejected. |
+| `MEN-07` | core | — | An attribute with `evidence_id` not registered in the graph is rejected at registration. |
+| `MEN-08` | core | — | A claim that depends on a required attribute without attribute evidence fails with `missing_attribute_evidence`; with evidence it passes. |
+| `MEN-09` | implementation | copal adapter | copal adapter: emoji, combining marks, and CRLF sources round-trip offsets exactly; a source with normalized whitespace fails mapping with a source-free diagnostic. |
+| `MEN-10` | implementation | copal adapter | copal adapter: modifier `trigger_id`/`scope_id` become cue/scope inclusions whose quotes match copal's `get_span(...).quote`. |
+| `MEN-11` | implementation | Extractor | Model-proposed offsets with a quote mismatch are counted as grounding failures, not dropped silently and not repaired. |
+| `MEN-12` | core | — | `StructuredEvidence` with a value differing from the record's field is rejected; an undeclared field is rejected; a structured Source with `text` is rejected. |
+| `MEN-13` | core | — | A claim supported only by a `StructuredEvidence` leaf validates; a claim supported only by a mention with no inclusion fails `source_free_support`. |
+| `MEN-14` | implementation | — | A CaseResult whose cited mention is missing from `mentions` fails to load; uncited mentions survive a round trip. |
+
+### 7.4 Layered variables (§3)
+
+| ID | Level | Applies to | Case |
+|---|---|---|---|
+| `VAR-01` | core | — | A one-variable set via `Task` produces identical validation results to the current graph on the full existing test suite. |
+| `VAR-02` | core | — | A `VariableSet` with a dependency cycle, an unknown input name, a mention-level variable without mention types, or no final variable is rejected. |
+| `VAR-03` | core | — | A claim whose `variable` is not in the set, or whose value fails that variable's schema, is rejected with `invalid_schema`. |
+| `VAR-04` | core | — | A mention-level claim citing a mention of the wrong type is rejected. |
+| `VAR-05` | core | — | Required attribute: missing value → rejected; value outside `values` → rejected; value present without cue evidence → `missing_attribute_evidence` unless lenient. |
+| `VAR-06` | core | — | `requires_section`: a citation outside the declared sections is rejected; inside passes. |
+| `VAR-07` | core | — | An inference citing a claim from an undeclared input variable fails `undeclared_dependency`. |
+| `VAR-08` | core | — | A derivation whose `inputs` are not a subset of the inference's inputs is rejected. |
+| `VAR-09` | implementation | Rule | Replay: a registered rule recomputes the derived value; a tampered derived value fails `derivation_mismatch`; an unregistered rule validates structurally and is not replayed. |
+| `VAR-10` | core | Rule | `on_missing`: `refuse` yields `insufficient_evidence` naming the role; `default` records `defaults_used`; `pass_none` invokes the rule with `None`. |
+| `VAR-11` | core | PolicyGate | A `conflicting_evidence` input propagates to the derived variable and cites the same evidence; the derived claim is never created. |
+| `VAR-12` | core | — | Case-level outcome is derived from variable outcomes by the fixed severity order; a payload asserting a different case-level outcome fails to load. |
+| `VAR-13` | core | — | Two final variables, one answered and one `not_mentioned`: `final_claim_ids` contains only the answered one; `variable_outcomes` carries both. |
+| `VAR-14` | core | — | A mention-level `conflicting_evidence` outcome is rejected. |
+| `VAR-15` | core | ReviewBackend | Zero mention claims without declared full review cannot load as `not_mentioned`. |
+
+### 7.5 Annotated data (§4)
+
+| ID | Level | Applies to | Case |
+|---|---|---|---|
+| `ANN-01` | core | — | An Example with a `failed` outcome, a `proposed` final claim, or a `rejected` retained claim fails to load. |
+| `ANN-02` | core | — | `answered` with empty final IDs, or a non-answer with final IDs, fails to load. |
+| `ANN-03` | implementation | — | An Example whose cited mention is missing from `mentions` fails; uncited mentions round-trip. |
+| `ANN-04` | core | ReviewBackend | Tier can rise (`silver` → `single_review` → `adjudicated`) only with new events; a payload asserting a higher tier without events fails; a lower tier than the events support fails. |
+| `ANN-05` | implementation | Store | Split change for an existing case is rejected by the store. |
+| `ANN-06` | implementation | — | Replay determinism: random event sequences produce identical projections; replaying a prefix produces the prefix's projection. |
+| `ANN-07` | core | — | Blind streams: an actor's projection excludes other streams until resolve. |
+| `ANN-08` | core | — | `before`/`after` contain no substring of length ≥ 8 from the source text. |
+| `ANN-09` | core | — | A `gold` claim cannot be edited in place; a correction produces a new claim and a linked event. |
+| `ANN-10` | core | — | A claim can be `gold` only if its cited mentions are `gold` or `verified`. |
+| `ANN-11` | implementation | Scorer | A `LabelRecord` cannot be loaded as an Example; a scorer scoring evidence metrics against LabelRecords reports `inconclusive`. |
+| `ANN-12` | implementation | Scorer | Scoring a configuration against silver Examples produced by the same configuration is refused. |
+| `ANN-13` | implementation | ReviewBackend | loupe mapping fixtures: accepted → adjudicated Example; unresolved → no Example, events retained; excluded → no Example; no-mentions confirmation → `not_mentioned`; unsubmitted → `insufficient_evidence`. |
+| `ANN-14` | implementation | ReviewBackend | Per-change events derived from a revision diff and a single full-state `review.submit` event replay to the same projection. |
+
+### 7.6 Wire formats (§5)
+
+| ID | Level | Applies to | Case |
+|---|---|---|---|
+| `WIR-01` | bundle | — | Fixture bundles for each stand-in round-trip (write → read → write) byte-identically. |
+| `WIR-02` | bundle | — | A bundle with a different major `schema_version` is rejected; a lower minor loads. |
+| `WIR-03` | bundle | — | Missing required table, missing key column, wrong column type, or duplicate key → rejected with a diagnostic naming the table and column only. |
+| `WIR-04` | bundle | SourceResolver | `text_hash` mismatch via the resolver → `source_hash_mismatch`; resolver `None` → `source_unavailable`; no resolver → unvalidated wrapper refused by graph/case/example boundaries. |
+| `WIR-05` | bundle | — | A `quote` column present in a file declared `labels_only` in the manifest → rejected. |
+| `WIR-06` | bundle | — | Table hash in the manifest differs from the file → rejected before validation. |
+| `WIR-07` | bundle | — | Canonical JSON: a JSON column with unsorted keys or whitespace is rejected (writers must canonicalize; readers detect). |
+| `WIR-08` | bundle | — | Unknown evidence `kind` or unknown event `action` → rejected. |
+| `WIR-09` | bundle | — | `x_` columns survive a read/write cycle; non-prefixed unknown columns are rejected. |
+| `WIR-10` | bundle | — | A claim row with null `value` is rejected. |
+| `WIR-11` | bundle | — | The manifest's recomputed `payload_kinds` must equal the declared ones. |
+| `WIR-12` | bundle | — | Migration: the `amber/0.1` fixture migrated to a synthetic `amber/0.2` fixture by the test migrator equals the hand-written target. |
+
+### 7.7 Interfaces (§6)
+
+| ID | Level | Applies to | Case |
+|---|---|---|---|
+| `IFC-01` | implementation | — | Each reference implementation satisfies its protocol under `typing` checks and passes the kit; a stub that constructs an `Inclusion` or `Claim` directly fails. |
+| `IFC-02` | implementation | Extractor, Provider | `Extractor` returns a `failed` result (never raises) on provider failure, parse failure, policy refusal, and budget exhaustion, each with the right `failure_kind`; usage never exceeds budget. |
+| `IFC-03` | implementation | Extractor | `Extractor` declaring `mentions` must emit at least one mention on a fixture containing a known span; declaring `derivations` must emit a `Derivation` on the stage fixture. |
+| `IFC-04` | implementation | Provider | `Provider` without `schema_constrained` rejects a schema request with `ProviderFailure` rather than returning unparsed text. |
+| `IFC-05` | implementation | Rule | `Rule.apply` is pure: two calls with equal inputs give equal results; a rule touching the clock or randomness fails the purity fixture. |
+| `IFC-06` | implementation | Labeler | `Labeler` declaring a human tier is rejected at registration; a silver Example from a `Labeler` carries the labeler's provenance. |
+| `IFC-07` | implementation | Store | `Store.append_events` rejects updates/deletes; `project` for a stream actor excludes other streams; `put_example` rejects split change and unsupported tier. |
+| `IFC-08` | implementation | Exporter, PolicyGate | `Exporter` without a gate call (detected by a recording gate) fails; `ExportReceipt` hashes match the written bundle. |
+| `IFC-09` | implementation | Scorer | `Scorer` sets `provisional` iff any reference tier is below adjudicated; evidence metrics over `LabelRecord`s are `inconclusive`; `self_reference` refusal fires. |
+| `IFC-10` | implementation | Exporter, ReviewBackend | `ReviewBackend` round trip on the file reference: exported cases → simulated reviews → imported Examples whose events replay to the same projection. |
+
+### 7.8 Reporting
+
+The plugin emits a `ConformanceReport` (labels_only): amber version, catalog version, the
+consumer's declared interfaces, and per-case `passed | failed | not_applicable` with a
+source-free diagnostic code on failure. lapidary logs it as a run artifact; loupe publishes it
+with a release. A consumer claims conformance only for interfaces with zero failures.
+
+### 7.9 Open questions for review
+
+1. **Strictness of "not applicable".** Proposed: a consumer must declare its interfaces
+   explicitly; undeclared interfaces are not applicable, and the report says so. The
+   alternative, auto-detection, risks silently skipping.
+2. **Catalog versioning.** Proposed: the catalog version equals the contract minor
+   (`0.1`); adding cases within a minor is allowed (consumers may fail new cases until they
+   update, reported against the catalog version they ran).
