@@ -8,8 +8,8 @@ Examples use invented data only. Stand-in variables for the design checks are: C
 progression (single boolean), a lapidary `ds_findings_v1` mention-level finding, and pathologic
 stage group derived from T/N/M mentions (layered).
 
-Sections: [1 Policy](#1-policy) · [2 Mentions and structured evidence](#2-mentions-and-structured-evidence) · 3 Layered
-variables (pending) · 4 Annotated data (pending) · 5 Wire formats (pending) · 6 Interfaces
+Sections: [1 Policy](#1-policy) · [2 Mentions and structured evidence](#2-mentions-and-structured-evidence) · [3 Layered
+variables](#3-layered-variables) · 4 Annotated data (pending) · 5 Wire formats (pending) · 6 Interfaces
 (pending) · 7 Conformance catalog (pending)
 
 ---
@@ -500,7 +500,244 @@ Reviewed and accepted 2026-10-30:
 
 ## 3. Layered variables
 
-*Pending.*
+### 3.1 Purpose
+
+A **variable** is a named question with an answer schema. Today one `EvidenceGraph` binds one
+`Task`, so every claim in a graph has the same schema. Layered variables let one case hold
+claims at several levels (mention, note, and later patient), each validated against its own
+schema, with the higher levels deriving from the lower ones through recorded, checkable steps.
+The single-task case stays a special case: a variable set with one variable and no
+dependencies behaves exactly as the current graph does.
+
+### 3.2 Variable set
+
+```python
+class AttributeRequirement(BaseModel):       # frozen
+    category: str                            # "negation", "temporality", ...
+    values: frozenset[Any] | None            # permitted values; None = any JSON value
+    evidence: Literal["required", "lenient"] = "required"
+
+class Variable(BaseModel):                   # frozen, extra="forbid"
+    name: str                                # unique within the set: "pathologic_T", "stage_group"
+    level: Literal["mention", "note"]        # "patient" reserved, not accepted in v0.1
+    answer_model: type[AnswerModel]
+    instructions: str
+    evidence_policy: Literal["claim", "field"] = "claim"
+    inputs: frozenset[str] = frozenset()     # names of variables this one may derive from
+    mention_types: frozenset[str] = frozenset()   # mention-level only: which mention_type(s) it is about
+    requires_attributes: tuple[AttributeRequirement, ...] = ()   # mention-level only
+    requires_section: frozenset[str] = frozenset()   # cited spans must lie in these section categories
+    final: bool = False                      # a task answer (reported), as opposed to an intermediate
+
+class VariableSet(BaseModel):                # frozen
+    name: str                                # "pathologic_staging"
+    version: str                             # semver; changing any variable changes the version
+    variables: Mapping[str, Variable]
+    schema_ref: str                          # sha256 over the canonical serialization of the set
+```
+
+Validation of a `VariableSet`: names unique; every `inputs` name exists; the `inputs` relation
+is acyclic; a mention-level variable has nonempty `mention_types` and no `inputs` from
+note-level variables; at least one variable is `final`.
+
+`Task` becomes the one-variable special case: `Task(name, answer_model, instructions,
+evidence_policy)` is sugar for a `VariableSet` with one final note-level variable of that name.
+Existing call sites keep working; `EvidenceGraph(source, task=...)` and
+`EvidenceGraph(source, variables=...)` are both accepted, the first wrapping into the second.
+
+### 3.3 Claims in a multi-variable graph
+
+`Claim` gains `variable: str` (the variable name; for a one-variable set equal to `task`) and
+keeps `schema_ref`, which now refers to that variable's answer model. Graph validation changes
+from "every claim matches the graph's task" to:
+
+1. `claim.variable` is in the set, and `claim.value` validates against that variable's
+   `answer_model`; `schema_ref` matches.
+2. For a mention-level claim: the claim's primary citation is an `Inclusion` with a
+   `mention_id`, that mention's `mention_type` is in the variable's `mention_types`, and every
+   `requires_attributes` entry is satisfied on the mention (value in `values`; cue evidence
+   present and cited when `evidence == "required"`), otherwise `missing_attribute_evidence` or
+   `attribute_value_not_permitted`.
+3. If `requires_section` is set, every cited Inclusion lies inside a `Source.sections` span
+   with one of those categories; otherwise `citation_outside_section`.
+4. For a claim with `InferenceEvidence` inputs that are claims: each input claim's `variable`
+   must be in this variable's declared `inputs`; otherwise `undeclared_dependency`. Inputs
+   that are evidence IDs (inclusions, structured) are always permitted.
+5. Existing rules are unchanged: edges, field roles, acyclicity across edges and inference
+   inputs, source-backed leaves on every branch, case scope, one note.
+
+Rule 4 is what prevents a stage-group claim from silently depending on a mention the set never
+declared, and it is the hook for §3.4.
+
+### 3.4 Derivations
+
+A derivation is an `InferenceEvidence` whose rationale is a typed record rather than free
+text. `InferenceEvidence` gains one optional field:
+
+```python
+class Derivation(BaseModel):                 # frozen
+    kind: Literal["rule", "model", "human"]
+    name: str                                # "ajcc_breast_stage_group", "gpt-x extraction", "human:<user>"
+    version: str                             # rule table version, prompt version, or review revision
+    inputs: Mapping[str, str]                # role -> input id: {"T": claim_id, "N": claim_id, "M": claim_id}
+    parameters: Mapping[str, Any] = {}       # frozen JSON; e.g. {"edition": 8, "site": "breast"}
+    replayable: bool                         # True only for kind == "rule"
+
+class InferenceEvidence(...):
+    ...
+    derivation: Derivation | None = None     # None keeps the current free-rationale behaviour
+```
+
+Rules for derivations:
+
+- `inputs` values must be a subset of the inference's existing `inputs` list (so the graph
+  rules still apply) and the role names must be exactly those the deriving variable's rule
+  expects; the rule's expected roles are part of the rule's registration (below).
+- A **rule** derivation is replayable: amber defines a `Rule` protocol,
+  `apply(inputs: Mapping[str, Claim | None], parameters) -> RuleResult`, where `RuleResult` is
+  either a value for the deriving variable or an outcome status with a reason. Rule
+  implementations live with the consumer (lapidary, a rule pack) and are registered by
+  `name@version`; amber's conformance kit can **replay** a derivation when the rule is
+  registered and checks that the replayed value equals the claim's value. A mismatch is
+  `derivation_mismatch`. Unregistered rules are not replayed; the record is still validated
+  structurally.
+- A **model** derivation records prompt/model versions through `Provenance` as today and is
+  never replayed.
+- A **human** derivation records the review revision; never replayed.
+
+A rule may also accept **structured evidence** and **inclusions** as inputs (role → evidence
+id), so a rule such as "ECOG from an explicit score mention, else from functional-status
+mentions" is expressible.
+
+### 3.5 Outcomes per variable
+
+`CaseResult` currently has one `outcome` and one `final_claim_ids` list. With several final
+variables, each needs its own. The result gains:
+
+```python
+class VariableOutcome(BaseModel):            # frozen
+    variable: str
+    outcome: CaseOutcome                     # same model and rules as today
+    final_claim_ids: tuple[str, ...]         # non-empty iff outcome.status == "answered"
+
+class CaseResult(...):
+    ...
+    variable_outcomes: Mapping[str, VariableOutcome]   # one per final variable in the set
+    outcome: CaseOutcome                     # case-level: answered iff every final variable answered;
+                                             # failed iff any failed; otherwise the most severe non-answer
+    final_claim_ids: ...                     # union of the per-variable final IDs (kept for compatibility)
+```
+
+The case-level outcome is **derived** from the per-variable outcomes by a fixed rule (failed >
+conflicting_evidence > insufficient_evidence > not_mentioned > answered) and validated on load;
+it cannot be set independently. For a one-variable set this reduces to today's behaviour.
+
+Intermediate (non-final) variables do not get a `VariableOutcome`; their absence is visible
+through the derivation that needed them (§3.6).
+
+### 3.6 Outcome propagation through rules
+
+When a rule's input variable has no claim (its mention-level question was `not_mentioned`,
+`insufficient_evidence`, or the mention-level work was never run), the rule receives `None`
+for that role. The rule itself decides, and that decision is **declared in the rule's
+registration**, not improvised:
+
+```python
+class RuleSpec(BaseModel):                   # frozen; registered with the rule implementation
+    name: str; version: str
+    roles: Mapping[str, RoleSpec]            # RoleSpec: variable name or evidence kind, required: bool,
+                                             #           on_missing: Literal["refuse", "default", "pass_none"]
+    outputs: str                             # the deriving variable name
+    defaults: Mapping[str, Any] = {}         # role -> default value when on_missing == "default"
+```
+
+- `refuse`: a missing required input makes the derived variable `insufficient_evidence` with
+  reason naming the role. The rule is not applied.
+- `default`: the declared default is used (the AJCC edition 8 breast table treats absent
+  clinical M as `cM0`), and the derivation records that the default was used
+  (`parameters["defaults_used"] = ["M"]`), so the derived claim's provenance shows it.
+- `pass_none`: the rule receives `None` and handles it (ECOG fallback).
+
+A derived claim whose derivation used a default is still a valid answered claim; scorers can
+stratify by `defaults_used`. A derived claim can never be produced from an input variable that
+ended in `conflicting_evidence`; that propagates as `conflicting_evidence` on the derived
+variable, citing the same evidence.
+
+### 3.7 Final claims and reporting
+
+Only `final: true` variables are task answers. Scorers score final variables; intermediate
+claims are support. `Example` (§4) stores gold per final variable and may store gold for
+intermediate variables when annotated. `labels_only_view` (§1) emits one record per final
+variable.
+
+### 3.8 Design checks against the stand-in variables
+
+- **CORAL progression:** `VariableSet("oncology_current_progression", variables={that one,
+  final=True, level=note})`. No inputs, no mention types. Every existing test passes
+  unchanged through the `Task` sugar; `variable_outcomes` has one entry equal to the case
+  outcome.
+- **`ds_findings_v1`:** one mention-level final variable per finding type, or one variable
+  with `mention_types={"finding"}` whose answer model carries the label and the required
+  attributes `negation` (required evidence) and `temporality` (lenient, by the task author's
+  choice). Claims are per mention; a document's `variable_outcomes` for a mention-level
+  variable is `answered` when at least one mention claim exists, `not_mentioned` with declared
+  full review otherwise.
+- **Stage group:** four mention-level variables (`pathologic_T`, `pathologic_N`,
+  `pathologic_M`, `ajcc_edition`) with `requires_section={"final_diagnosis"}`, and one
+  note-level final variable `stage_group` with `inputs={T, N, M, ajcc_edition}`. The rule
+  `ajcc_breast_stage_group@8.0` declares roles T, N (required, refuse), M (default `M0`),
+  edition (required, refuse). The derived claim's `InferenceEvidence.derivation` names the
+  rule, the four input claim IDs, and `defaults_used=["M"]` when M was absent. Replay in the
+  conformance kit recomputes the stage from the input claims and matches. A `T2` cited from the
+  clinical history fails `citation_outside_section`; a claim citing a mention of type
+  `tnm_n` for `pathologic_T` fails the mention-type check; an inference citing a
+  `pathologic_T` claim from a `stage_group` variable whose `inputs` omit `pathologic_T` fails
+  `undeclared_dependency`.
+- **Deferred, checked for non-preclusion:** a `patient` level would add `inputs` across
+  cases; the set model and derivation record need no change, only the graph's one-note scope
+  rule, which is where patient aggregation will be introduced later.
+
+### 3.9 Conformance cases (layered variables)
+
+1. A one-variable set via `Task` produces identical validation results to the current graph on
+   the full existing test suite.
+2. A `VariableSet` with a dependency cycle, an unknown input name, a mention-level variable
+   without mention types, or no final variable is rejected.
+3. A claim whose `variable` is not in the set, or whose value fails that variable's schema, is
+   rejected with `invalid_schema`.
+4. A mention-level claim citing a mention of the wrong type is rejected.
+5. Required attribute: missing value → rejected; value outside `values` → rejected; value
+   present without cue evidence → `missing_attribute_evidence` unless lenient.
+6. `requires_section`: a citation outside the declared sections is rejected; inside passes.
+7. An inference citing a claim from an undeclared input variable fails `undeclared_dependency`.
+8. A derivation whose `inputs` are not a subset of the inference's inputs is rejected.
+9. Replay: a registered rule recomputes the derived value; a tampered derived value fails
+   `derivation_mismatch`; an unregistered rule validates structurally and is not replayed.
+10. `on_missing`: `refuse` yields `insufficient_evidence` naming the role; `default` records
+    `defaults_used`; `pass_none` invokes the rule with `None`.
+11. A `conflicting_evidence` input propagates to the derived variable and cites the same
+    evidence; the derived claim is never created.
+12. Case-level outcome is derived from variable outcomes by the fixed severity order; a
+    payload asserting a different case-level outcome fails to load.
+13. Two final variables, one answered and one `not_mentioned`: `final_claim_ids` contains only
+    the answered one; `variable_outcomes` carries both.
+
+### 3.10 Decisions recorded
+
+Reviewed and accepted 2026-10-30:
+
+1. The `Rule` protocol and `RuleSpec` are amber contract; rule implementations live in lapidary
+   or a separate rule pack and register by `name@version`. amber ships only synthetic example
+   rules for the conformance kit.
+2. Intermediate (non-final) variables get no `VariableOutcome` in v0.1; their status is
+   recoverable from derivations and the absence of claims.
+3. Mention-level final variables get a document-level `VariableOutcome` with statuses
+   `answered` (at least one mention claim), `not_mentioned` (zero claims and declared full
+   review), `insufficient_evidence` (zero claims without full review, or skipped scope), and
+   `failed`. `conflicting_evidence` is invalid at mention level. This maps directly to loupe's
+   "no target mentions" confirmation versus an unsubmitted review. Conformance adds: a
+   mention-level `conflicting_evidence` outcome is rejected; zero claims without declared full
+   review cannot load as `not_mentioned`.
 
 ## 4. Annotated data
 
