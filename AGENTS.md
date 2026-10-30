@@ -71,8 +71,8 @@ For the core-only installation check, see [tests/README.md](tests/README.md#ci).
 
 - Never commit PHI, real or credentialed clinical text (including CORAL), credentials, local
   databases, MLflow artifacts, or model weights.
-- Restricted local data may remain in ignored paths (`data/`, `experiments/*/data/`) until it
-  moves to lapidary. Keep those ignore rules.
+- Datasets live outside repositories and are registered in lapidary; `data/` and
+  `experiments/` stay ignored here as a safety net.
 - `examples/` is synthetic only.
 - The worktree may contain user changes: check `git status` first and preserve unrelated work.
 

@@ -20,12 +20,8 @@ notebooks/**/__marimo__/
 /data/*
 !/data/.gitkeep
 
-# Experiment inputs and generated outputs stay local; track only their placeholders.
-/experiments/*/data/*
-!/experiments/*/data/.gitkeep
-!/experiments/*/outputs/
-/experiments/*/outputs/*
-!/experiments/*/outputs/.gitkeep
+# Experiments and datasets live in lapidary; never add them here.
+/experiments/
 
 # Beads / Dolt files (added by bd init)
 .dolt/
