@@ -1,7 +1,7 @@
 # Contract v0.1 design
 
-Status: complete draft, 2026-10-30; sections 1–6 accepted individually, section 7 under review.
-A final whole-document review follows. Written in dependency order. The
+Status: complete draft, 2026-10-30; all seven sections accepted individually. Awaiting the
+owner's whole-document review before implementation issues are filed against it. Written in dependency order. The
 [plan](../plan.md) describes the phases; the [charter](../charter.md) sets scope.
 
 Examples use invented data only. Stand-in variables for the design checks are: CORAL current
@@ -1562,11 +1562,11 @@ consumer's declared interfaces, and per-case `passed | failed | not_applicable` 
 source-free diagnostic code on failure. lapidary logs it as a run artifact; loupe publishes it
 with a release. A consumer claims conformance only for interfaces with zero failures.
 
-### 7.9 Open questions for review
+### 7.9 Decisions recorded
 
-1. **Strictness of "not applicable".** Proposed: a consumer must declare its interfaces
-   explicitly; undeclared interfaces are not applicable, and the report says so. The
-   alternative, auto-detection, risks silently skipping.
-2. **Catalog versioning.** Proposed: the catalog version equals the contract minor
-   (`0.1`); adding cases within a minor is allowed (consumers may fail new cases until they
-   update, reported against the catalog version they ran).
+Reviewed and accepted 2026-10-30:
+
+1. Consumers declare the interfaces they implement; cases for undeclared interfaces are
+   reported as `not_applicable`. There is no auto-detection.
+2. The catalog version equals the contract minor. Cases may be added within a minor;
+   consumers report against the catalog version they ran.
