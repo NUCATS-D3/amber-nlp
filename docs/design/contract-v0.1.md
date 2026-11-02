@@ -814,6 +814,8 @@ class VariableOutcome(BaseModel):            # frozen
 class CaseResult(...):
     ...
     variable_outcomes: Mapping[str, VariableOutcome]   # one per final variable in the set
+    budget: Budget | None                    # limits the run was given (§6.3)
+    usage: Usage | None                      # what the run actually used; checked against budget on load
     outcome: CaseOutcome | None              # one-variable sets only: that variable's outcome
     final_claim_ids: tuple[str, ...] | None  # one-variable sets only: that variable's final IDs
 ```
@@ -1334,17 +1336,43 @@ plan is updated (lap-ecc.1).
   inference `evidence_id`, `event_id`.
 - **Offsets** are end-exclusive Unicode code-point indices into the exact source text. Parquet
   `int64`, JSON integers.
-- **Times** are RFC 3339 with offset in JSON; `timestamp[us, tz=UTC]` in Parquet.
-- **JSON columns** in Parquet are UTF-8 strings containing canonical JSON (sorted keys, no
-  whitespace, `ensure_ascii=False`), never Arrow structs, so column schemas survive answer-
-  model changes.
+- **Times** are RFC 3339 in UTC with `Z` and exactly six fractional digits in JSON
+  (`2026-10-30T20:00:00.000000Z`); `timestamp[us, tz=UTC]` in Parquet.
+- **Canonical JSON** is RFC 8785 (JSON Canonicalization Scheme): keys sorted, no whitespace,
+  numbers in ECMAScript form, UTF-8 without escaping non-ASCII. Timestamps inside it use the
+  form above. Strings are never Unicode-normalized, because they can be source text whose
+  offsets must survive. Every content-addressed ID (§5.7) and every hash below is computed
+  over canonical JSON, so any implementation, in any language, reproduces them. For strings
+  and integers, which are all that today's IDs hash, this equals the current `ids.py` output.
+- **JSON columns** in Parquet are UTF-8 strings containing canonical JSON, never Arrow
+  structs, so column schemas survive answer-model changes.
+- **Row order and content hashes.** Writers sort every table by its key columns. A table's
+  `content_sha256` is the SHA-256 of its rows in that order, each row the canonical JSON of
+  `{column: value}` (JSON columns as their parsed values), joined by `\n`. Two writers produce
+  the same `content_sha256` for the same content even when their Parquet bytes differ
+  (library version, compression, row groups); file bytes are never compared across writers.
+- **Scope.** A bundle holds one dataset (`manifest_hash`) and one variable set
+  (`schema_ref`); every `cases` row must match the manifest, and a mixed bundle is rejected.
+  The manifest's single `sensitivity` and `restriction_ids` therefore apply to every row.
 - **Nulls** mean absent. A column that does not apply to a row is null; there are no sentinel
   strings.
-- **Source text is never stored in tables.** `sources` carries `text_hash`; `quote` columns
-  and attribute cue quotes do contain source text and classify the file as `derived_text`
-  (§1). `mention_readings` (a captured `value` is source text) and `annotation_events`
-  (`before`/`after` can carry such values, and `reason` is free human text) are `derived_text`
-  as well. Every other table is `labels_only` by construction.
+- **Full source text is never stored in tables**; `sources` carries `text_hash`. Fragments of
+  it can be, and each file's payload kind (§1) is derived from its **schema**, never from
+  column names or a scan of its content:
+  - A field is *closed* when every value comes from a fixed set: IDs, numbers, booleans,
+    timestamps, enum values defined by the contract, producer references, or strings an
+    answer model's JSON Schema limits with `enum`, `const`, or `format: date|date-time`.
+  - A file is `labels_only` only if every field, including every field inside its JSON
+    columns, is closed. Any open string makes it `derived_text`.
+  - For `claims.parquet` the answer models of the bundle's variable set decide: a boolean or
+    enum answer keeps it `labels_only`; a free-text answer field makes it `derived_text`.
+
+  By this rule `evidence`, `mentions`, and `mention_readings` (quotes, captured values),
+  `annotation_events` (`before`/`after`, `reason`), `sources` (section labels as written in
+  the note, free-form `meta`), and `variable_outcomes` (free-text `reason`) are always
+  `derived_text`. `cases`, `results`, `evidence_edges`, `examples`, and `decisions` are
+  `labels_only`.
+  Data headed for a `labels_only` destination goes through `labels_only_view` (§1.4).
 - **Provenance** is flattened into `provenance_*` columns: `producer`, `model`,
   `prompt_versions` (JSON), `run_id`, `trace_id`, `zone`, `sensitivity`, `destination`,
   `policy_version`, `restriction_ids` (JSON list), `created_at` (timestamp), `version`.
@@ -1358,7 +1386,7 @@ fixed points that the conformance kit checks byte-for-byte on fixtures:
 
 | Record | Required top-level keys |
 |---|---|
-| `CaseResult` | `schema_version, case_id, variable_set, variable_set_version, variable_set_ref, claims, mentions, mention_readings, evidence, edges, variable_outcomes, outcome, final_claim_ids, grounding_failures, tool_calls, escalated, trace_id` |
+| `CaseResult` | `schema_version, case_id, variable_set, variable_set_version, variable_set_ref, claims, mentions, mention_readings, evidence, edges, variable_outcomes, outcome, final_claim_ids, grounding_failures, tool_calls, escalated, trace_id, budget, usage` |
 | `Example` | as §4.3 plus `schema_version` |
 | `AnnotationEvent` | as §4.4 |
 | `LabelRecord` | as §4.6 plus `schema_version` |
@@ -1392,6 +1420,7 @@ A **bundle** is a directory:
   evidence_edges.parquet     required
   cases.parquet              required
   variable_outcomes.parquet  required
+  results.parquet            required in run bundles; optional otherwise
   annotation_events.parquet  optional (review/gold bundles)
   examples.parquet           optional (gold bundles): one row per (example, final variable)
   decisions.parquet          optional: policy audit records
@@ -1431,6 +1460,12 @@ list)?, derivation (JSON)?, trace_id?, span_id?, provenance_*.
 reviewed_source_ids (JSON list), evidence_ids (JSON list), final_claim_ids (JSON list),
 provenance_*.
 
+**results** — **case_id →**, grounding_failures, tool_calls, escalated, trace_id?, budget
+(JSON)?, usage (JSON)?.
+One row per `CaseResult`: the run-level fields that belong to no claim or evidence. Every field
+is closed, so the table is `labels_only`. Together with the other tables it reconstructs the
+`CaseResult` exactly, and the loader applies the budget check (§6.6) to it.
+
 **annotation_events** — **event_id**, case_id, variable?, actor, role, round, stream?, action,
 target_id?, before (JSON)?, after (JSON)?, reason?, at, external_ref?, provenance_*.
 
@@ -1457,18 +1492,22 @@ destination, zone, sensitivity, payload, case_id?, run_id?.
               "restriction_ids": ["physionet-chdl-1.5.0"]},
   "policy_version": "nm-2026.10",
   "sources": {"count": 40, "text_hash_algorithm": "sha256"},
-  "tables": {"cases": {"rows": 40, "sha256": "..."}, "claims": {"rows": 40, "sha256": "..."}, ...},
+  "tables": {"cases": {"rows": 40, "content_sha256": "...", "file_sha256": "..."}, ...},
   "payload_kinds": {"evidence.parquet": "derived_text", "mentions.parquet": "derived_text",
-                    "mention_readings.parquet": "derived_text",
-                    "annotation_events.parquet": "derived_text", "claims.parquet": "labels_only", ...},
+                    "mention_readings.parquet": "derived_text", "sources.parquet": "derived_text",
+                    "variable_outcomes.parquet": "derived_text",
+                    "annotation_events.parquet": "derived_text", "claims.parquet": "labels_only",
+                    "cases.parquet": "labels_only",
+                    "results.parquet": "labels_only", ...},
   "created_at": "2026-10-30T20:00:00Z"
 }
 ```
 
-The manifest is `labels_only`. `payload_kinds` is computed by the writer from the columns
-present (any `quote`, cue quote, or free-text human column makes a file `derived_text`); the
-reader recomputes and rejects a manifest that under-declares. Table hashes let a reader detect
-a modified file before validation.
+The manifest is `labels_only`. `payload_kinds` is computed by the writer from each file's
+schema and the variable set's answer models (§5.2); the reader recomputes it the same way and
+rejects a manifest that under-declares. The reader recomputes each table's `content_sha256`
+(§5.2) and rejects a mismatch before validation; `file_sha256` is optional and checks only
+that this particular copy is unmodified.
 
 ### 5.6 Source resolver
 
@@ -1504,8 +1543,12 @@ Rules:
 - A major change (`amber/1.0`) ships with: a migration note in `docs/migrations/`, a
   `migrate(bundle, to=...)` function for every supported path, updated fixtures in the
   conformance kit, and a conformance case that the old fixture migrated equals the new fixture.
-- ID derivations are part of the format: changing `source_id` or `mention_id` inputs is a
-  major change, because stored references would stop resolving.
+- ID derivations are part of the format: changing the inputs of any content-addressed ID
+  (`source_id`, `mention_id`, inclusion and structured `evidence_id`, `example_id`, the set's
+  `schema_ref`) or the canonical JSON rules (§5.2) is a major change, because stored
+  references would stop resolving. The answer-model `schema_ref` keeps today's form,
+  `module:qualname@digest`; because it includes the Python import path, renaming a module
+  changes it even when the schema is unchanged.
 - The `schema_ref` of an answer model, and the set's `schema_ref`, are content-addressed; a
   changed variable is a new set `schema_ref` and needs a new `variable_set_version` (§3.2), not
   a format change. Old bundles remain valid against their recorded set.
@@ -1516,7 +1559,9 @@ Rules:
 - **CORAL progression run bundle:** 40 sources (hash only), 0 mentions, ≤40 claims, inclusions
   and inferences, 40 `variable_outcomes` rows, no events. `evidence.parquet` is
   `derived_text` and stays in the restricted local path; `claims.parquet` is `labels_only`
-  and may be logged to the institutional MLflow. Loading with lapidary's resolver revalidates
+  because the answer model is a single boolean, and may be logged to the institutional
+  MLflow. `variable_outcomes.parquet` is `derived_text` (free-text `reason`), so outcomes
+  reach MLflow through `labels_only_view`. Loading with lapidary's resolver revalidates
   every quote against `~/data/coral/v1.0` text without the bundle containing it.
 - **`ds_findings_v1`:** one `mentions` row per span and one `mention_readings` row per
   producer, with `attributes` JSON holding negation/temporality and cue evidence IDs that
@@ -1529,23 +1574,37 @@ Rules:
 
 ### 5.9 Conformance cases (wire formats)
 
-1. Fixture bundles for each stand-in round-trip (write → read → write) byte-identically.
+1. Fixture bundles for each stand-in round-trip (write → read → write) with identical
+   `content_sha256` for every table and byte-identical JSON records; Parquet file bytes may
+   differ between writers. Rows are written sorted by key.
 2. A bundle with a different major `schema_version` is rejected; a lower minor loads.
 3. Missing required table, missing key column, wrong column type, or duplicate key → rejected
    with a diagnostic naming the table and column only.
 4. `text_hash` mismatch via the resolver → `source_hash_mismatch`; resolver `None` →
    `source_unavailable`; no resolver → unvalidated wrapper refused by graph/case/example
    boundaries.
-5. A `quote` column present in a file declared `labels_only` in the manifest → rejected.
-6. Table hash in the manifest differs from the file → rejected before validation.
-7. Canonical JSON: a JSON column with unsorted keys or whitespace is rejected (writers must
-   canonicalize; readers detect).
+5. Payload kind is derived from schemas: a file declared `labels_only` that has a `quote`
+   column, an open string inside a JSON column, or (for `claims`) an answer model with an
+   unconstrained string field → rejected; a claims table whose answer models are boolean or
+   enum-only is `labels_only`; `sources` with section labels and `variable_outcomes` with a
+   `reason` are `derived_text`.
+6. A table whose recomputed `content_sha256` differs from the manifest → rejected before
+   validation; so is a `file_sha256`, when present, that differs from the file. A `cases` row
+   whose dataset or variable set differs from the manifest → rejected.
+7. Canonical JSON follows RFC 8785: a JSON column with unsorted keys, whitespace, a
+   non-ECMAScript number form (`1e-07`), or a timestamp not in UTC `Z` with six fractional
+   digits is rejected; strings are compared without Unicode normalization; fixture IDs
+   computed by a second, independent JCS implementation match amber's.
 8. Unknown evidence `kind` or unknown event `action` → rejected.
 9. `x_` columns survive a read/write cycle; non-prefixed unknown columns are rejected.
 10. A claim row with null `value` is rejected.
 11. The manifest's recomputed `payload_kinds` must equal the declared ones.
 12. Migration: the `amber/0.1` fixture migrated to a synthetic `amber/0.2` fixture by the test
     migrator equals the hand-written target.
+13. (Catalog `WIR-13`.) A `CaseResult` written to a bundle and read back equals the original,
+    including `grounding_failures`, `tool_calls`, `escalated`, `trace_id`, `budget`, and
+    `usage`; a run bundle without `results.parquet` is rejected; a result whose `usage`
+    exceeds its `budget` loads as `failed` with `failure_kind="budget"`.
 
 ### 5.10 Decisions recorded
 
@@ -1560,6 +1619,26 @@ Reviewed and accepted 2026-10-30:
    part of the contract. loupe revisions in MLflow are the review store; the bridge derives the
    table.
 3. Sections are a JSON list on the `sources` row; no separate sections table.
+
+Reviewed and accepted 2026-11-02 (whole-document review):
+
+4. A file's payload kind is derived from its schema: only closed fields (IDs, numbers,
+   booleans, timestamps, contract enums, producer references, answer-model strings limited by
+   `enum`/`const`/date formats) keep it `labels_only`. `claims.parquet` follows the variable
+   set's answer models; `sources`, `variable_outcomes`, `evidence`, `mentions`,
+   `mention_readings`, and `annotation_events` are `derived_text`.
+5. `CaseResult` gains `budget` and `usage` fields (not provenance), and run-level fields live
+   in a new `labels_only` table `results.parquet`, required in run bundles, so a bundle
+   reconstructs a `CaseResult` exactly and the budget check runs on bundles.
+6. Tables are hashed by content, not bytes: rows sorted by key, each row canonical JSON,
+   giving `content_sha256` in the manifest. `file_sha256` is optional per copy. Round trips
+   compare content hashes and JSON bytes, never Parquet bytes.
+7. Canonical JSON is RFC 8785 with UTC `Z` timestamps at microsecond precision and no
+   Unicode normalization. Existing IDs (strings and integers only) are unchanged;
+   `ids.canonical_sha256` changes for floats and datetimes. The answer-model `schema_ref`
+   keeps its import-path prefix for now.
+8. A bundle holds one dataset and one variable set; every `cases` row must match the
+   manifest.
 
 ## 6. Interfaces
 
@@ -1629,7 +1708,7 @@ class Extractor(Protocol):
 Contract: returns exactly one `CaseResult` per call, always, including on failure
 (`outcome.failed` with a `failure_kind`); never raises for expected failures; records
 `grounding_failures` and `tool_calls`; stays within `budget` (calls, tokens, retries, wall
-time) and reports usage in the result's provenance. Everything in the result passed through
+time) and records `budget` and `usage` on the result. Everything in the result passed through
 amber's tools. Reference: `DeterministicExtractor` (rule-like, synthetic). First consumer:
 lapidary methods (lap-ecc.7).
 
@@ -1721,8 +1800,8 @@ bridge (amber-1ah.7, amber-1ah.2).
 
 ### 6.3 Shared value objects introduced by this section
 
-`Budget` (max_calls, max_tokens, max_retries, max_seconds), `Usage` (actual counts, stamped
-into result provenance), `ProviderRequest`/`ProviderResponse`/`ProviderFailure`,
+`Budget` (max_calls, max_tokens, max_retries, max_seconds), `Usage` (actual counts, recorded
+on `CaseResult.usage`), `ProviderRequest`/`ProviderResponse`/`ProviderFailure`,
 `RuleResult`, `LabelerFailure`, `ExportReceipt`, `ReviewBatchReceipt`, `ScoreReport`. All
 frozen, `extra="forbid"`, `labels_only` by construction except `ProviderRequest` (which is
 `source_text` and never persisted by amber).
@@ -1783,7 +1862,7 @@ Reviewed and accepted 2026-10-30:
 
 The catalog is the complete list of checks that define conformance to contract v0.1. It is
 implemented as the pytest plugin `amber.conformance` (Phase 2) and its IDs are stable: a
-consumer reports "amber conformance 0.1: 83/89, failing MEN-09, WIR-04". Changing a case's
+consumer reports "amber conformance 0.1: 84/90, failing MEN-09, WIR-04". Changing a case's
 meaning requires a new ID; retired IDs are never reused.
 
 Each case has a **level**:
@@ -1800,7 +1879,7 @@ Each case has a **level**:
 "Applies to" names the interfaces or adapters the case checks; `—` means it checks contract
 objects only.
 
-The catalog contains 89 cases. Every case uses invented data; no fixture contains clinical
+The catalog contains 90 cases. Every case uses invented data; no fixture contains clinical
 text. Fixtures include Unicode (non-BMP, combining marks), CRLF, repeated quotes, empty and
 whitespace-only sources, and the three stand-in variable sets.
 
@@ -1895,18 +1974,19 @@ whitespace-only sources, and the three stand-in variable sets.
 
 | ID | Level | Applies to | Case |
 |---|---|---|---|
-| `WIR-01` | bundle | — | Fixture bundles for each stand-in round-trip (write → read → write) byte-identically. |
+| `WIR-01` | bundle | — | Fixture bundles for each stand-in round-trip (write → read → write) with identical `content_sha256` for every table and byte-identical JSON records; Parquet file bytes may differ between writers. Rows are written sorted by key. |
 | `WIR-02` | bundle | — | A bundle with a different major `schema_version` is rejected; a lower minor loads. |
 | `WIR-03` | bundle | — | Missing required table, missing key column, wrong column type, or duplicate key → rejected with a diagnostic naming the table and column only. |
 | `WIR-04` | bundle | SourceResolver | `text_hash` mismatch via the resolver → `source_hash_mismatch`; resolver `None` → `source_unavailable`; no resolver → unvalidated wrapper refused by graph/case/example boundaries. |
-| `WIR-05` | bundle | — | A `quote` column present in a file declared `labels_only` in the manifest → rejected. |
-| `WIR-06` | bundle | — | Table hash in the manifest differs from the file → rejected before validation. |
-| `WIR-07` | bundle | — | Canonical JSON: a JSON column with unsorted keys or whitespace is rejected (writers must canonicalize; readers detect). |
+| `WIR-05` | bundle | — | Payload kind is derived from schemas: a file declared `labels_only` that has a `quote` column, an open string inside a JSON column, or (for `claims`) an answer model with an unconstrained string field → rejected; a claims table whose answer models are boolean or enum-only is `labels_only`; `sources` with section labels and `variable_outcomes` with a `reason` are `derived_text`. |
+| `WIR-06` | bundle | — | A table whose recomputed `content_sha256` differs from the manifest → rejected before validation; so is a `file_sha256`, when present, that differs from the file. A `cases` row whose dataset or variable set differs from the manifest → rejected. |
+| `WIR-07` | bundle | — | Canonical JSON follows RFC 8785: a JSON column with unsorted keys, whitespace, a non-ECMAScript number form (`1e-07`), or a timestamp not in UTC `Z` with six fractional digits is rejected; strings are compared without Unicode normalization; fixture IDs computed by a second, independent JCS implementation match amber's. |
 | `WIR-08` | bundle | — | Unknown evidence `kind` or unknown event `action` → rejected. |
 | `WIR-09` | bundle | — | `x_` columns survive a read/write cycle; non-prefixed unknown columns are rejected. |
 | `WIR-10` | bundle | — | A claim row with null `value` is rejected. |
 | `WIR-11` | bundle | — | The manifest's recomputed `payload_kinds` must equal the declared ones. |
 | `WIR-12` | bundle | — | Migration: the `amber/0.1` fixture migrated to a synthetic `amber/0.2` fixture by the test migrator equals the hand-written target. |
+| `WIR-13` | bundle | Extractor | A `CaseResult` written to a bundle and read back equals the original, including `grounding_failures`, `tool_calls`, `escalated`, `trace_id`, `budget`, and `usage`; a run bundle without `results.parquet` is rejected; a result whose `usage` exceeds its `budget` loads as `failed` with `failure_kind="budget"`. |
 
 ### 7.7 Interfaces (§6)
 
