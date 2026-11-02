@@ -1,9 +1,10 @@
 # Contract v0.1 design
 
-Status: complete draft, 2026-10-30; all seven sections accepted individually. Whole-document
-review, 2026-11-02: every section reviewed and its revisions recorded in that section's
-"Decisions recorded" list. Awaiting the owner's sign-off on the revised whole before
-implementation issues are filed against it. Written in dependency order. The
+Status: **accepted** 2026-11-02. All seven sections were accepted individually on 2026-10-30;
+the whole-document review on 2026-11-02 revised every section, recorded each revision in that
+section's "Decisions recorded" list, and the owner signed off on the revised whole.
+Implementation is tracked in Beads under `amber-ndt` and the interface, conformance, and MLflow
+epics. Written in dependency order. The
 [plan](../plan.md) describes the phases; the [charter](../charter.md) sets scope.
 
 Examples use invented data only. Stand-in variables for the design checks are: CORAL current
