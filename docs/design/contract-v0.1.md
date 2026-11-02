@@ -1,7 +1,8 @@
 # Contract v0.1 design
 
-Status: complete draft, 2026-10-30; all seven sections accepted individually. Awaiting the
-owner's whole-document review before implementation issues are filed against it. Written in dependency order. The
+Status: complete draft, 2026-10-30; all seven sections accepted individually. Whole-document
+review in progress (2026-11-02): mention and attribute revisions recorded in §1.11 and §2.9.
+Implementation issues are filed after the review completes. Written in dependency order. The
 [plan](../plan.md) describes the phases; the [charter](../charter.md) sets scope.
 
 Examples use invented data only. Stand-in variables for the design checks are: CORAL current
@@ -192,6 +193,24 @@ review service as the destination. Deterministic tools that send nothing anywher
 Existing `Provenance` records lacking the new fields fail validation after the change; this is a
 breaking contract change and ships with a migration note (schema version bump in §5).
 
+**Producer references.** Every field that names who produced or decided something uses one
+grammar, validated by the core and parsed by `amber.ids.parse_producer`:
+
+```
+rule:<name>@<version>[+<hash>]     # <hash>: content hash of the rule set (e.g. copal build hash)
+model:<name>[@<version>]           # deployment or model id; prompt versions stay in Provenance
+human:<user>                       # stable reviewer id, never a display name
+tool:<name>[@<version>]            # deterministic tools and importers
+```
+
+It applies to `Provenance.producer`, `Attribute.assigned_by`, `AnnotationEvent.actor`, and
+`VariableReference.annotators`/`adjudicator`; a string that does not parse is rejected.
+Equality is exact string equality, with one exception: the scorer's `self_reference` check
+(§4.2) compares rule references without `+<hash>`, so a rebuilt rule set with the same
+`name@version` still counts as the same configuration. `Derivation.name` is a bare name,
+because `Derivation.kind` and `.version` carry the rest. Destination names (`local:copal`,
+`local:<tool>`) are a separate namespace: they say where data went, not who produced it.
+
 ### 1.7 Dataset restrictions as data
 
 Restrictions are declared on the dataset manifest (lapidary) and travel with the `DataPolicy`.
@@ -273,6 +292,10 @@ tool's output is not trusted to set `sensitivity` on the original.
 12. `model_weights` to an `external` destination is refused for `phi` data, and weights trained
     on two datasets carry the more restrictive policy.
 13. A serialized `Decision` contains no source text and is accepted as a `labels_only` payload.
+14. Producer references: each of the four forms parses; an unprefixed name, an unknown
+    prefix, `rule:` without `@<version>`, or an empty segment is rejected in every field that
+    takes one; `rule:a@1+h1` and `rule:a@1+h2` are equal for `self_reference` and unequal
+    otherwise.
 
 ### 1.11 Decisions recorded
 
@@ -284,17 +307,33 @@ Reviewed and accepted 2026-10-30:
 3. `Decision` is the audit record; amber defines it and the tracking plugin logs it;
    persistence belongs to enforcement points.
 
+Reviewed and accepted 2026-11-02 (whole-document review):
+
+4. Producer references use one validated grammar (`rule:`, `model:`, `human:`, `tool:`;
+   §1.6) in every producer, actor, annotator, and `assigned_by` field. `self_reference`
+   ignores the rule `+<hash>`; everything else compares exact strings. `Derivation.name` is
+   bare; destination names are a separate namespace.
+
 ---
 
 ## 2. Mentions and structured evidence
 
 ### 2.1 Purpose
 
-A **mention** is a typed, attributed span of source text produced by a detector, a rule engine,
-a model, or a human. It is the unit that lapidary scores at span level, that copal produces,
-that loupe reviewers edit, and that layered variables (§3) build on. A mention is **not**
-evidence by itself: evidence is minted only by grounding, and a claim cites an `Inclusion`
-that may point back to the mention it came from.
+A **mention** is a typed span of source text found by a detector, a rule engine, a model, or a
+human. It is the unit that lapidary scores at span level, that copal produces, that loupe
+reviewers edit, and that layered variables (§3) build on. A mention is **not** evidence by
+itself: evidence is minted only by grounding, and a claim cites the `Inclusion` at the
+mention's position.
+
+A mention has two parts with different identities:
+
+- the **span** (`Mention`): where the text is and what type it is. It is content-addressed, so
+  every producer that finds the same span with the same type refers to the same `mention_id`;
+- a **reading** (`MentionReading`): one producer's interpretation of that span (label, value,
+  attributes, concept) with its own provenance and review status. A span may have any number
+  of readings; disagreement between producers is several readings of one span, and a human
+  correction is a new reading, never an edit.
 
 **Structured evidence** is a verified row or field from a structured source (a lab value, a
 medication order, a registry field). It is the second kind of source-backed leaf in the
@@ -304,25 +343,30 @@ evidence graph, alongside `Inclusion`.
 
 ```python
 class Attribute(BaseModel):                  # frozen
-    value: Any                               # JSON value; the category decides its meaning
+    value: str | bool | int                  # strict JSON scalar; never null; the category decides its meaning
     evidence_id: str | None                  # Inclusion of the cue span ("no evidence of"), if any
-    scope_evidence_id: str | None            # Inclusion of the scope the cue applied to, if any
-    assigned_by: str                         # "rule:<ruleset>@<version>+<hash>", "model:<name>", "human:<user>"
+    scope_evidence_id: str | None            # Inclusion of the cue's scope, if any; must contain the mention
+    assigned_by: str | None = None           # None = the reading's producer; else another producer reference
 
-class Mention(BaseModel):                    # frozen, extra="forbid"
-    mention_id: str                          # sha256(source_id, start, end, mention_type)
+class Mention(BaseModel):                    # frozen, extra="forbid"; the span, shared by all producers
+    mention_id: str                          # sha256(source_id, start, end, mention_type[, fragments])
     source_id: str
     start: int; end: int                     # end-exclusive code points into Source.text
     quote: str                               # == Source.text[start:end]; validated against the Source
     mention_type: str                        # consumer-declared type: "tnm_t", "finding", "medication"
+    fragments: tuple[tuple[int, int], ...] = ()   # discontinuous parts; (start, end) is their hull
+    section_category: str | None             # from the Source's sections, if any
+
+class MentionReading(BaseModel):             # frozen, extra="forbid"; one producer's reading of a span
+    reading_id: str                          # ULID
+    mention_id: str                          # the Mention this reading interprets
     label: str | None                        # consumer-declared sub-label (e.g. "T2", "metastasis")
-    attributes: Mapping[str, Attribute]      # keyed by category: "negation", "temporality", ...
     value: str | float | int | None          # captured or normalized value ("T2", 8, 3.4)
     unit: str | None
     concept: Concept | None                  # unchanged from the prior contract; optional
-    section_category: str | None             # from the Source's sections, if any
-    fragments: tuple[tuple[int, int], ...] = ()   # discontinuous parts; (start, end) is their hull
+    attributes: Mapping[str, Attribute]      # keyed by category: "negation", "temporality", ...
     inputs: tuple[str, ...] = ()             # producer-side evidence IDs (copal span IDs, model trace IDs)
+    status: Literal["proposed", "verified", "rejected", "gold"]
     provenance: Provenance
 ```
 
@@ -334,64 +378,123 @@ Decisions behind the fields:
   `temporality: current|historical|hypothetical|future`, `experiencer: patient|family|other`,
   `uncertainty: true|false`). But copal categories are opaque strings chosen by the rule set,
   and tasks need others (laterality, severity). A **task declares which attribute categories
-  and value sets it requires** (§3); validation checks a mention against that declaration, not
-  against a global enum. Absent category means *no attribution*, not a default value, matching
-  copal's driver semantics.
+  and value sets it requires** (§3); validation checks a reading against that declaration, not
+  against a global enum. Absent category means *not assessed*, not a default value, matching
+  copal's driver semantics; an assessed category always has a value (`negation=False` is
+  "looked, not negated"). A required category that is absent fails the requirement.
+- **Attribute values are strict scalars.** `str`, `bool`, or `int`; never `null`, `float`,
+  lists, or objects. Values compare with strict types, so `True` never equals `1` (Python's
+  `True == 1` would otherwise let a boolean satisfy an integer value set). Graded or measured
+  quantities belong in the reading's `value`/`unit`, not in an attribute.
 - **Attributes carry their own evidence.** The cue ("no evidence of") and its scope are
   Inclusions, minted by the same grounding path. This is what lets a negated mention be
   *checked*: a reviewer or scorer can see the cue span, and §3 can require that a derived value
   which depends on an attribute cites the attribute's evidence.
+- **The scope is what ties a cue to a mention.** A cue shows that a negating (or historical,
+  or family) phrase exists; the scope shows how far it reaches. When `scope_evidence_id` is
+  set, the mention's hull must lie inside the scope inclusion, otherwise the reading is
+  rejected with `attribute_outside_scope`. This catches a real cue attached to the wrong
+  mention (in "no evidence of distant metastasis, but regional nodes are positive", a negation
+  on "regional nodes" whose scope ends at "but"). The scope need not contain the cue
+  (post-negation: "metastasis was ruled out"). It is optional, shown to reviewers, and never
+  required in a claim's citations: containment is checked once, on the reading.
 - **`value` is captured text or a normalized value, never free text.** For `tnm_t` the value
   is the captured token `T2`; for a measurement it is the parsed number plus `unit`. How the
-  value was derived is in `assigned_by`-style provenance on the mention, not implied.
-- **Discontinuous mentions** keep their `fragments`; `mention_id` is computed over the hull so
-  overlapping discontinuous and contiguous mentions have distinct identities only when their
-  types differ. Quotes of fragments are validated individually.
-- **Identity excludes attributes.** Two producers that find the same span with the same type
-  produce the same `mention_id` and *different* attribute sets; that is a disagreement to
-  reconcile, not two mentions. Per-producer records keep their own provenance.
+  value was derived is recorded by the reading's provenance (and, for copal, the declared
+  adapter policy's capture), not implied.
+- **`assigned_by` is set only when an attribute came from someone other than the reading's
+  producer:** another component of a composed pipeline, or a value carried over unchanged
+  into a human correction. `None` means the reading's own producer assigned it; setting it
+  equal to that producer is rejected as redundant, so the field always signals a real
+  difference.
+- **The span holds only what every producer must agree on.** Position, quote, type, fragments,
+  and section are facts about the source; anything a producer could get wrong or disagree
+  about (label, value, unit, concept, attributes) is on the reading. `section_category` is
+  derived from the span and the Source's sections, so it is a span fact.
+- **Discontinuous mentions** keep their `fragments` on the span. `mention_id` hashes
+  `fragments` when it is nonempty, so a discontinuous mention and a contiguous one with the
+  same hull and type have distinct identities; contiguous mentions hash exactly as before.
+  Quotes of fragments are validated individually.
+- **Span identity excludes readings.** Two producers that find the same span with the same
+  type produce one `Mention` and two `MentionReading`s; differing readings are a disagreement
+  to reconcile, not two mentions. This mirrors `Inclusion` (content-addressed, shared) and
+  `Claim` (ULID, provenance, lifecycle).
+- **Readings are never edited.** A correction, including a reviewer changing one attribute, is
+  a new reading; the annotation event links old to new (§4.5), as for claims.
 
-Validation on construction (same guard as `Inclusion`): bounds, `quote` equality against the
-authoritative `Source`, fragment bounds inside the hull, `section_category` present in the
-Source's sections when set, and every `evidence_id` in attributes resolvable when the mention
-is registered in a graph. A `Mention` cannot be built from a string alone.
+**Minting.** A `Mention` is minted only by the `mention()` tool, beside `quote()`:
+
+```python
+def mention(source_id: str, text: str, hint_start: int | None, mention_type: str, *,
+            fragments: tuple[tuple[int, int], ...] = (),
+            sources: Mapping[str, Source]) -> Mention | GroundingFailure
+```
+
+It applies the same guard as `Inclusion`: bounds, `quote` equality against the authoritative
+`Source` (for the hull and for each fragment), fragments inside the hull, and
+`section_category` derived from the Source's sections. Cue and scope spans are not mentions;
+they are ordinary inclusions from `quote(source_id, text, hint_start)`. A `MentionReading`
+holds no source text of its own and is validated when it is registered in a graph:
+`mention_id` resolvable, every `evidence_id` and `scope_evidence_id` in its attributes
+resolvable, and the mention's hull inside each attribute's scope when one is set. A `Mention`
+in a graph or result has at least one reading.
+
+Because every record is frozen, construction follows the references: ground cue and scope
+inclusions with `quote()`; ground the span with `mention()`; build the reading with those IDs;
+register evidence, then the mention, then its readings.
 
 ### 2.3 Mentions and evidence
 
 Mentions enter the evidence graph in two ways:
 
-1. **As cited spans.** `cite(mention) -> Inclusion` mints an Inclusion over the mention's
-   hull (or one per fragment) through the grounding path and sets `Inclusion.mention_id`. The
-   graph records the mention alongside the inclusion so that `source_leaves()` can report the
-   mention, its type, and its attributes with the span.
-2. **As claim subjects.** A **mention-level task** (§3) has one claim per mention; its answer
-   schema includes the mention's value and the attribute categories the task requires. The
-   claim cites the mention's inclusion *and* the inclusions of every attribute it relies on.
+1. **As cited spans.** `cite(mention) -> tuple[Inclusion, ...]` returns the inclusion over
+   the mention's hull, or one per fragment, through the grounding path. Inclusions are
+   positions only: they carry no `mention_id`, so one position has one inclusion ID however
+   many mentions, cues, or scopes share it. The link from evidence to a mention goes through
+   the claim's `reading_id` and the reading's span; `source_leaves()` reports, for each
+   inclusion, the mentions and readings registered at that position.
+2. **As claim subjects.** A **mention-level task** (§3) has one claim per mention. The claim
+   names the one reading it relies on in `Claim.reading_id` (required for mention-level
+   variables, forbidden for note-level ones), and its answer schema includes that reading's
+   value and the attribute categories the task requires. The reading's span is in the claim's
+   source; the claim cites the inclusion(s) at the span; and the claim never relies on a
+   `rejected` reading.
 
 Rule for attribute-dependent support: if a claim's value depends on an attribute (the stage M
-claim is `M0` because the metastasis mention is negated), the claim's field evidence must
-include the attribute's `evidence_id`. The graph validator checks this through the task's
-declared attribute requirements: a required attribute without evidence is
-`missing_attribute_evidence`. A mention attribute with no evidence (a model asserted "negated"
-without a cue) is permitted on the mention but cannot satisfy a required attribute in a claim.
+claim is `M0` because the metastasis mention is negated), the claim cites the attribute's cue
+with an edge whose role is `attribute:<category>`:
+
+```python
+EvidenceEdge(claim_id=m_claim, evidence_id=cue_inclusion_id, role="attribute:negation")
+```
+
+`attribute:` roles are a separate namespace from answer-field roles: they are used under both
+evidence policies and do not count toward field coverage under `evidence_policy="field"`. The
+same cue may also be cited with a field role when an answer field rests on it. The graph
+validator checks the task's declared attribute requirements: for each requirement with
+`evidence == "required"`, the claim's reading must carry the category with a cue
+`evidence_id`, and the claim must have the `attribute:<category>` edge to exactly that
+inclusion; otherwise `missing_attribute_evidence`. An attribute with no cue (a model asserted
+"negated") is permitted on the reading but cannot satisfy a required attribute in a claim.
 
 ### 2.4 Mapping copal output to mentions
 
 copal produces immutable spans with `start`, `end`, `quote`, `layer`, `label`, `rule_id`,
 opaque `payload`, `attrs` (including `modifiers`), `inputs`, and rule-set provenance
 `name@version+hash`. The mapping is a **declared adapter policy**, versioned and tested, not
-an implicit conversion:
+an implicit conversion. Each mapped copal span yields one `Mention` (reused if the span already
+exists) and one `MentionReading` with `status="proposed"`:
 
-| copal | Mention | Notes |
+| copal | amber | Notes |
 |---|---|---|
-| `start`, `end`, `quote` (code-point units) | `start`, `end`, `quote` | Re-validated against the amber `Source`; the amber Source text must be the exact copal `Text.source`. |
-| `layer` or `label` per policy | `mention_type`, `label` | The policy declares which copal layer maps to which type. |
-| named capture | `value` | e.g. capture `t` in `p?T(?P<t>[0-4][a-c]?)` → `value="T2"`. |
-| `attrs.modifiers[category] = {value, trigger_id, scope_id}` | `attributes[category]` | `value` → `Attribute.value`; `trigger_id` → cue Inclusion via `cite`; `scope_id` → scope Inclusion; `assigned_by = "rule:<name>@<version>+<hash>"`. |
-| sectionizer span containing the mention | `section_category` | Section spans also populate `Source.sections` at import. |
-| `payload` | `concept` or `label` | The consumer's lexicon payload; mapped per policy (a concept record, or nothing). |
-| span IDs of `inputs` | `inputs` | Document-local copal IDs, prefixed with the document key, kept for audit. |
-| rule-set provenance, copal version, lexicon `build_hash` | `provenance.producer`, `provenance.version` | `producer = "rule:<ruleset>@<version>+<hash>"`; `destination = "local:copal"`; zone `local`. |
+| `start`, `end`, `quote` (code-point units) | `Mention.start`, `.end`, `.quote` | Re-validated against the amber `Source`; the amber Source text must be the exact copal `Text.source`. |
+| `layer` or `label` per policy | `Mention.mention_type`, `MentionReading.label` | The policy declares which copal layer maps to which type. |
+| named capture | `MentionReading.value` | e.g. capture `t` in `p?T(?P<t>[0-4][a-c]?)` → `value="T2"`. |
+| `attrs.modifiers[category] = {value, trigger_id, scope_id}` | `MentionReading.attributes[category]` | `value` → `Attribute.value`; `trigger_id` → cue Inclusion via `quote(get_span(trigger_id).quote, hint_start=start)`; `scope_id` → scope Inclusion the same way; `assigned_by = None` (the rule set is the reading's producer). |
+| sectionizer span containing the mention | `Mention.section_category` | Section spans also populate `Source.sections` at import. |
+| `payload` | `MentionReading.concept` or `.label` | The consumer's lexicon payload; mapped per policy (a concept record, or nothing). |
+| span IDs of `inputs` | `MentionReading.inputs` | Document-local copal IDs, prefixed with the document key, kept for audit. |
+| rule-set provenance, copal version, lexicon `build_hash` | `MentionReading.provenance.producer`, `.version` | `producer = "rule:<ruleset>@<version>+<build_hash>"` (§1.6); `destination = "local:copal"`; zone `local`. |
 
 The adapter never repairs offsets. A copal span whose quote does not match the amber source
 (wrong text version, normalization applied before copal) is reported as a mapping failure with
@@ -403,15 +506,22 @@ or UTF-16 units. The conformance kit includes emoji, combining marks, and CRLF s
 ### 2.5 Mentions from models and humans
 
 - **Model-proposed mentions** (LangExtract, GLiNER, an LLM) arrive as candidate offsets or
-  candidate strings. Candidate strings go through `quote()`; candidate offsets are validated
-  against the Source and rejected on quote mismatch. Attributes asserted by the model without a
-  cue get `evidence_id=None` and `assigned_by="model:<name>"`; such attributes cannot satisfy
-  a required attribute in a claim (§2.3). A grounding failure is counted on the result, not
-  silently dropped.
-- **Human mentions** (loupe) are minted by the review bridge through the same grounding path
-  with `assigned_by="human:<user>"`; the reviewer's cue selection, when present, becomes the
-  attribute evidence. loupe's current `loupe-annotation-v1` (concept, four context axes,
-  supporting text) maps directly: supporting text → attribute `evidence_id`.
+  candidate strings. Both go through `mention()`: candidate strings without a hint, candidate
+  offsets as `hint_start`, rejected on quote mismatch. Each grounded candidate yields the span
+  (shared if another producer already found it) and a reading carrying the model's
+  provenance. Attributes asserted by the model without a cue get `evidence_id=None`; such
+  attributes cannot satisfy a required attribute in a claim (§2.3). When a pipeline combines
+  producers (model spans, rule negation), the reading's provenance is the pipeline and each
+  attribute from another component sets `assigned_by` to that component. A grounding failure
+  is counted on the result, not silently dropped.
+- **Human mentions** (loupe) are minted by the review bridge through the same grounding path,
+  in readings with `producer="human:<user>"`. Accepting a proposed reading unchanged moves it
+  to `verified`; any change produces a new human reading of the same span. Attributes the
+  reviewer set have `assigned_by=None`; attributes carried over unchanged from the corrected
+  reading keep the original producer in `assigned_by`, so scorers can tell reviewed values
+  from inherited ones. The reviewer's cue selection, when present, becomes the attribute
+  evidence. loupe's current `loupe-annotation-v1` (concept, four context axes, supporting
+  text) maps directly: supporting text → attribute `evidence_id`.
 
 ### 2.6 Structured evidence
 
@@ -449,13 +559,16 @@ class StructuredEvidence(BaseModel):         # frozen; minted only through the s
   mention-level task declares `requires_attributes={"negation": {true,false},
   "temporality": {...}}`. The mention claim cites the mention inclusion plus both cue
   inclusions. A model-only run (LangExtract) yields the same mention IDs when it finds the same
-  spans, with `assigned_by="model:..."` attributes that are permitted on the mention but
+  spans, plus its own readings, whose cue-less model attributes are permitted on the reading
+  but
   trigger `missing_attribute_evidence` if the task requires evidence for them; the task author
   chooses whether to require it.
 - **Stage group leaves:** `tnm_t`, `tnm_n`, `tnm_m` mentions with captured `value`;
   `section_category="final_diagnosis"` required by the T/N/M tasks so a historical `T2` in the
-  clinical history cannot be cited. The M mention `no distant metastasis` carries
-  `negation=true` with a cue inclusion, and the `pathologic_M=M0` claim cites it.
+  clinical history cannot be cited. A reading of the M mention `no distant metastasis`
+  carries `negation=true` with a cue inclusion, and the `pathologic_M=M0` claim cites it. If a
+  rule reads `pT2` as `T2` and a model reads it as `T2a`, the span has two readings, and the
+  `pathologic_T` claim relies on one of them.
 - **CORAL progression:** unchanged; the task has no mentions, cites inclusions directly.
   Mentions are optional at the contract level.
 - **A lab-backed variable (future):** `StructuredEvidence` over a lab row with
@@ -465,13 +578,16 @@ class StructuredEvidence(BaseModel):         # frozen; minted only through the s
 
 1. A mention with `quote != Source.text[start:end]` is rejected; likewise any fragment.
 2. Direct construction without the grounding context is rejected (same guard as Inclusion).
-3. Two producers, same span and type: same `mention_id`, distinct provenance records.
+3. Two producers, same span and type: one `Mention`, two `MentionReading`s with distinct
+   `reading_id`s and provenance; differing values or attributes are both retained.
 4. Overlapping and nested mentions of different types coexist; no automatic merging.
 5. A discontinuous mention validates each fragment; hull outside the source is rejected.
 6. `section_category` not present in `Source.sections` is rejected.
 7. An attribute with `evidence_id` not registered in the graph is rejected at registration.
 8. A claim that depends on a required attribute without attribute evidence fails with
-   `missing_attribute_evidence`; with evidence it passes.
+   `missing_attribute_evidence`; with the cue cited under role `attribute:<category>` it
+   passes; the cue cited only under a field role, or a different inclusion under the
+   attribute role, still fails; `attribute:` edges do not satisfy field coverage.
 9. copal adapter: emoji, combining marks, and CRLF sources round-trip offsets exactly;
    a source with normalized whitespace fails mapping with a source-free diagnostic.
 10. copal adapter: modifier `trigger_id`/`scope_id` become cue/scope inclusions whose quotes
@@ -482,6 +598,28 @@ class StructuredEvidence(BaseModel):         # frozen; minted only through the s
     undeclared field is rejected; a structured Source with `text` is rejected.
 13. A claim supported only by a `StructuredEvidence` leaf validates; a claim supported only by
     a mention with no inclusion fails `source_free_support`.
+14. (Catalog `MEN-15`.) A reading whose `mention_id` is not registered is rejected; a
+    `Mention` with no reading in a graph or result is rejected.
+15. (Catalog `MEN-16`.) `mention_id`: a contiguous mention hashes exactly as
+    `(source_id, start, end, mention_type)`; a discontinuous mention with the same hull and
+    type has a different ID; two discontinuous mentions differing only in fragments have
+    different IDs.
+16. (Catalog `MEN-17`.) An attribute whose `scope_evidence_id` does not contain the mention's
+    hull is rejected with `attribute_outside_scope`; a scope that contains the mention but not
+    the cue (post-negation) is accepted; an attribute without a scope is not checked.
+17. (Catalog `MEN-18`.) Two mentions of different types at one position, a cue, and a plain
+    `quote()` of that position all resolve to one inclusion with one `evidence_id`; an
+    inclusion payload carrying `mention_id` is rejected.
+18. (Catalog `MEN-19`.) An attribute value of `null`, a float, a list, or an object is
+    rejected; `True` does not satisfy a requirement with `values={1}`, and `1` does not satisfy
+    `values={True}`; an absent required category fails the requirement.
+19. (Catalog `MEN-20`.) An attribute whose `assigned_by` equals the reading's producer is
+    rejected; a human correction keeps `assigned_by` on carried-over attributes and `None` on
+    the attributes the reviewer changed.
+20. (Catalog `MEN-21`.) A mention-level claim without `reading_id`, with an unregistered or
+    `rejected` reading, or with a reading whose span is in another source or is not cited, is
+    rejected; a note-level claim with `reading_id` is rejected; two claims relying on two
+    different readings of one span each validate against their own reading's attributes.
 
 ### 2.9 Decisions recorded
 
@@ -496,6 +634,32 @@ Reviewed and accepted 2026-10-30:
    evidence; every mention cited by a claim is in the result's closure; uncited mentions are
    retained as diagnostics for span-level scoring. Conformance adds: a result whose cited
    mention is missing from `mentions` fails to load; uncited mentions survive a round trip.
+
+Reviewed and accepted 2026-11-02 (whole-document review):
+
+4. A mention is split into a content-addressed span (`Mention`) and per-producer
+   `MentionReading`s (ULID, provenance, status). Label, value, unit, concept, attributes, and
+   inputs are on the reading; corrections are new readings. Results and Examples carry both
+   (`mentions` and `mention_readings`).
+5. `fragments` stay on the span and enter `mention_id` when nonempty; contiguous mention IDs
+   are unchanged.
+6. `Attribute.scope_evidence_id` stays optional. When set, the mention's hull must lie inside
+   it (`attribute_outside_scope`); claims are not required to cite it.
+7. Inclusions are positions only: `Inclusion.mention_id` is removed (code and
+   `evidence.parquet`), so one position has one inclusion ID. Claims reach a mention through
+   their reading. `cite(mention)` returns the hull or fragment inclusions.
+8. Spans are minted by a `mention()` tool beside `quote()`; cues and scopes are ordinary
+   `quote()` inclusions. Construction order: cue/scope inclusions, span, reading,
+   registration.
+9. `Attribute.value` and `AttributeRequirement.values` are `str | bool | int`, compared with
+   strict types; `null` is forbidden; an absent category means not assessed.
+10. `Attribute.assigned_by` is optional: `None` means the reading's producer; it is set only
+    for attributes from another pipeline component or carried over into a human correction,
+    and setting it equal to the reading's producer is rejected.
+11. A mention-level claim names its reading in `Claim.reading_id` (required for mention-level
+    variables, forbidden for note-level ones). Attribute cues are cited with edge role
+    `attribute:<category>`, a namespace separate from answer-field roles that does not count
+    toward field coverage.
 
 ## 3. Layered variables
 
@@ -513,7 +677,7 @@ dependencies behaves exactly as the current graph does.
 ```python
 class AttributeRequirement(BaseModel):       # frozen
     category: str                            # "negation", "temporality", ...
-    values: frozenset[Any] | None            # permitted values; None = any JSON value
+    values: frozenset[str | bool | int] | None   # permitted values, strict-type match; None = any value
     evidence: Literal["required", "lenient"] = "required"
 
 class Variable(BaseModel):                   # frozen, extra="forbid"
@@ -547,16 +711,21 @@ Existing call sites keep working; `EvidenceGraph(source, task=...)` and
 ### 3.3 Claims in a multi-variable graph
 
 `Claim` gains `variable: str` (the variable name; for a one-variable set equal to `task`) and
-keeps `schema_ref`, which now refers to that variable's answer model. Graph validation changes
-from "every claim matches the graph's task" to:
+`reading_id: str | None` (§2.3), and keeps `schema_ref`, which now refers to that variable's
+answer model. `EvidenceEdge.role` is either an answer-field name or `attribute:<category>`.
+Graph validation changes from "every claim matches the graph's task" to:
 
 1. `claim.variable` is in the set, and `claim.value` validates against that variable's
    `answer_model`; `schema_ref` matches.
-2. For a mention-level claim: the claim's primary citation is an `Inclusion` with a
-   `mention_id`, that mention's `mention_type` is in the variable's `mention_types`, and every
-   `requires_attributes` entry is satisfied on the mention (value in `values`; cue evidence
-   present and cited when `evidence == "required"`), otherwise `missing_attribute_evidence` or
-   `attribute_value_not_permitted`.
+2. For a mention-level claim: `reading_id` is set and registered (otherwise
+   `missing_reading`); the reading is not `rejected` and its span is in the claim's source; the
+   claim cites the inclusion(s) at that span (hull, or every fragment); the span's
+   `mention_type` is in the variable's `mention_types`; and every `requires_attributes` entry
+   is satisfied on that reading (category present, value in `values`, and, when
+   `evidence == "required"`, a cue `evidence_id` cited with role `attribute:<category>`),
+   otherwise `missing_attribute_evidence` or `attribute_value_not_permitted`. Attributes on
+   other readings of the same span never satisfy the requirement. A note-level claim with
+   `reading_id` set is rejected.
 3. If `requires_section` is set, every cited Inclusion lies inside a `Source.sections` span
    with one of those categories; otherwise `citation_outside_section`.
 4. For a claim with `InferenceEvidence` inputs that are claims: each input claim's `variable`
@@ -576,7 +745,7 @@ text. `InferenceEvidence` gains one optional field:
 ```python
 class Derivation(BaseModel):                 # frozen
     kind: Literal["rule", "model", "human"]
-    name: str                                # "ajcc_breast_stage_group", "gpt-x extraction", "human:<user>"
+    name: str                                # bare name: "ajcc_breast_stage_group", "gpt-x", "<user>"
     version: str                             # rule table version, prompt version, or review revision
     inputs: Mapping[str, str]                # role -> input id: {"T": claim_id, "N": claim_id, "M": claim_id}
     parameters: Mapping[str, Any] = {}       # frozen JSON; e.g. {"edition": 8, "site": "breast"}
@@ -767,7 +936,8 @@ Rules, carried over from the CORAL protocol 1.1.0 and now contract:
   provisional (scorer responsibility, §6).
 - Silver Examples record their producer's provenance (model, prompt versions, rule) so that a
   system is never scored against its own outputs: the scorer refuses when the producer
-  provenance of a silver Example matches the configuration under evaluation.
+  provenance of a silver Example matches the configuration under evaluation (rule
+  references compared without `+<hash>`, §1.6).
 
 ### 4.3 Example
 
@@ -777,8 +947,8 @@ class VariableReference(BaseModel):           # frozen
     tier: ReferenceTier
     outcome: CaseOutcome                      # answered | not_mentioned | conflicting_evidence | insufficient_evidence
     final_claim_ids: tuple[str, ...]          # nonempty iff answered; gold claims
-    annotators: tuple[str, ...]               # "human:<user>" or "model:<name>" / "rule:<name@version>"
-    adjudicator: str | None
+    annotators: tuple[str, ...]               # producer references (§1.6)
+    adjudicator: str | None                   # producer reference, normally human:<user>
     derived_from_events: tuple[str, ...]      # event IDs whose replay yields this reference
 
 class Example(BaseModel):                     # frozen, extra="forbid"; loaded only through amber.examples
@@ -790,7 +960,8 @@ class Example(BaseModel):                     # frozen, extra="forbid"; loaded o
     split: Literal["train", "dev", "test"] | None
     references: Mapping[str, VariableReference]   # one per final variable
     claims: tuple[Claim, ...]                 # gold and supporting claims (status gold|verified)
-    mentions: tuple[Mention, ...]             # reviewed mentions, cited or not
+    mentions: tuple[Mention, ...]             # spans of the retained readings
+    mention_readings: tuple[MentionReading, ...]  # reviewed readings, cited or not (status gold|verified)
     evidence: tuple[Evidence, ...]
     edges: tuple[EvidenceEdge, ...]
     created_at: datetime
@@ -808,8 +979,9 @@ Invariants (validated on load, with the authoritative Source and VariableSet sup
    the same case (the store rejects it; the conformance kit checks the rule).
 5. `derived_from_events` is nonempty for `adjudicated` and `single_review`; for `silver` it
    names the import event that recorded the producer's result.
-6. Mentions: every mention cited by a retained claim is present; uncited reviewed mentions may
-   be present (they are span-level gold).
+6. Mentions: every mention cited by a retained claim is present, with the reading that claim
+   relies on; uncited reviewed readings may be present (they are span-level gold). Retained
+   readings are `gold` or `verified`; every retained span has at least one retained reading.
 
 ### 4.4 Annotation events
 
@@ -819,19 +991,20 @@ class AnnotationEvent(BaseModel):             # frozen, append-only; ULID ids ar
     schema_version: str
     case_id: str
     variable: str | None                      # None for case-level events
-    actor: str                                # "human:<user>", "model:<name>", "rule:<name@version>", "tool:<name>"
+    actor: str                                # producer reference (§1.6)
     role: Literal["reviewer", "adjudicator", "importer", "system"]
     round: int                                # review round; independent streams share a round
     stream: str | None                        # independent review stream id, when blind review applies
     action: Literal[
-        "mention.create", "mention.update", "mention.delete",
+        "mention.create",
+        "reading.create", "reading.update", "reading.set_status",
         "claim.create", "claim.update", "claim.set_status",
         "evidence.cite", "evidence.attach_structured", "edge.add", "edge.remove",
         "outcome.set",
         "review.open", "review.submit", "review.reopen",
         "adjudication.resolve", "import.result", "tier.set",
     ]
-    target_id: str | None                     # mention/claim/evidence/edge id the action concerns
+    target_id: str | None                     # mention/reading/claim/evidence/edge id the action concerns
     before: Mapping[str, Any] | None          # labels_only view of the prior state
     after: Mapping[str, Any] | None           # labels_only view of the new state
     reason: str | None
@@ -871,8 +1044,12 @@ A human **correction** is `claim.update` (new value and/or evidence) followed by
 transitions; the updated claim gets a new `claim_id`, and the event links old and new. There
 is no edit-in-place of a `gold` claim.
 
-Mentions have `proposed` → `verified`/`rejected` and `verified` → `gold` with the same actions;
-a claim can only be `gold` if every mention it cites is `gold` or `verified`.
+Mention readings follow the same table with `reading.*` actions: `proposed` →
+`verified`/`rejected`, `verified` → `gold`, and a correction is `reading.update`, which creates
+a new reading linked to the old one. Spans have no status: `mention.create` registers a span
+the first time any reading needs it, and spans are never updated or deleted. Removing a
+mention is rejecting its readings; changing its offsets or type is a different span with a new
+reading. A claim can only be `gold` if every reading it relies on is `gold` or `verified`.
 
 ### 4.6 Label-only evaluation records
 
@@ -902,7 +1079,7 @@ The review bridge (§6, MLflow plugins) performs the mapping; the contract fixes
 |---|---|
 | source record (`record_id` = `source_id`, exact text, metadata) | `Source` + `Case`; metadata carries split, sensitivity, variable set |
 | review stream, round | `stream`, `round` |
-| a saved revision (submission id) | one `review.submit` event with `external_ref` = submission id, preceded by the `mention.*`/`claim.*`/`evidence.*` events that the revision's diff implies; the adapter computes the diff against the prior revision |
+| a saved revision (submission id) | one `review.submit` event with `external_ref` = submission id, preceded by the `mention.*`/`reading.*`/`claim.*`/`evidence.*` events that the revision's diff implies; the adapter computes the diff against the prior revision |
 | "no target mentions" confirmation with whole-note review | `outcome.set` with `not_mentioned` and `reviewed_source_ids` = the note |
 | unsubmitted or partial review | no `review.submit`; projection outcome `insufficient_evidence` |
 | adjudication decision `accepted` with selected revision | `adjudication.resolve` + `tier.set adjudicated`; final claims → `gold` |
@@ -946,7 +1123,8 @@ payload before it is accepted, so the event diff never contains an ungrounded sp
 8. `before`/`after` contain no substring of length ≥ 8 from the source text.
 9. A `gold` claim cannot be edited in place; a correction produces a new claim and a linked
    event.
-10. A claim can be `gold` only if its cited mentions are `gold` or `verified`.
+10. A claim can be `gold` only if the readings it relies on are `gold` or `verified`; a span
+    is never updated or deleted, and a reading correction produces a new linked reading.
 11. A `LabelRecord` cannot be loaded as an Example; a scorer scoring evidence metrics against
     LabelRecords reports `inconclusive`.
 12. Scoring a configuration against silver Examples produced by the same configuration is
@@ -988,8 +1166,8 @@ plan is updated (lap-ecc.1).
   `schema_version: "amber/<major>.<minor>"`. v0.1 is `amber/0.1`. Readers reject a different
   major and accept a lower or equal minor (additive changes only). A reader never guesses.
 - **IDs** are strings: content-addressed SHA-256 hex for `source_id`, `mention_id`, inclusion
-  and structured `evidence_id`; ULIDs for `claim_id`, inference `evidence_id`, `event_id`,
-  `example_id`.
+  and structured `evidence_id`; ULIDs for `claim_id`, `reading_id`, inference `evidence_id`,
+  `event_id`, `example_id`.
 - **Offsets** are end-exclusive Unicode code-point indices into the exact source text. Parquet
   `int64`, JSON integers.
 - **Times** are RFC 3339 with offset in JSON; `timestamp[us, tz=UTC]` in Parquet.
@@ -1016,7 +1194,7 @@ fixed points that the conformance kit checks byte-for-byte on fixtures:
 
 | Record | Required top-level keys |
 |---|---|
-| `CaseResult` | `schema_version, case_id, variable_set, variable_set_version, claims, mentions, evidence, edges, variable_outcomes, outcome, final_claim_ids, grounding_failures, tool_calls, escalated, trace_id` |
+| `CaseResult` | `schema_version, case_id, variable_set, variable_set_version, claims, mentions, mention_readings, evidence, edges, variable_outcomes, outcome, final_claim_ids, grounding_failures, tool_calls, escalated, trace_id` |
 | `Example` | as §4.3 plus `schema_version` |
 | `AnnotationEvent` | as §4.4 |
 | `LabelRecord` | as §4.6 plus `schema_version` |
@@ -1042,6 +1220,7 @@ A **bundle** is a directory:
   manifest.json
   sources.parquet            required
   mentions.parquet           required (may be empty)
+  mention_readings.parquet   required (may be empty)
   claims.parquet             required
   evidence.parquet           required
   evidence_edges.parquet     required
@@ -1058,24 +1237,29 @@ Tables and columns (keys in bold; `→` is a foreign key):
 sections (JSON list of `{start,end,label,category?,is_template}`), meta (JSON).
 `record` is the structured row for non-text sources; text sources have `record = null`.
 
-**mentions** — **mention_id**, source_id →, start, end, quote, mention_type, label?, value (JSON)?,
-unit?, attributes (JSON: `{category: {value, evidence_id?, scope_evidence_id?, assigned_by}}`),
-concept (JSON)?, section_category?, fragments (JSON list)?, inputs (JSON list)?, status,
-provenance_*.
+**mentions** — **mention_id**, source_id →, start, end, quote, mention_type, fragments (JSON
+list)?, section_category?.
+One row per span, shared by every reading of it; no status or provenance.
+
+**mention_readings** — **reading_id**, mention_id →, case_id, label?, value (JSON)?, unit?,
+attributes (JSON: `{category: {value, evidence_id?, scope_evidence_id?, assigned_by?}}`),
+concept (JSON)?, inputs (JSON list)?, status, provenance_*.
 Replaces lapidary's fixed `polarity/temporality/experiencer` columns with the open
 `attributes` JSON; the standard categories are documented values inside it. lapidary's OMOP
-link columns are not adopted in v0.1.
+link columns are not adopted in v0.1. `value` may be captured source text, so the file is
+`derived_text`.
 
 **claims** — **claim_id**, case_id, source_id →, patient_id, variable, variable_set,
-variable_set_version, schema_ref, value (JSON), effective_datetime?, confidence?, status,
-provenance_*.
+variable_set_version, schema_ref, reading_id →?, value (JSON), effective_datetime?,
+confidence?, status, provenance_*.
 `value` is never null: a missing answer is a `variable_outcomes` row, not a null claim.
 
 **evidence** — **evidence_id**, kind, source_id →?, start?, end?, quote?, alignment?,
-alignment_score?, mention_id →?, field?, value (JSON)?, datetime?, rationale?, inputs (JSON
+alignment_score?, field?, value (JSON)?, datetime?, rationale?, inputs (JSON
 list)?, derivation (JSON)?, trace_id?, span_id?, provenance_*.
 
 **evidence_edges** — **claim_id →, evidence_id →, role?**, weight?.
+`role` is an answer-field name or `attribute:<category>`.
 
 **variable_outcomes** — **case_id, variable**, status, reason?, failure_kind?,
 reviewed_source_ids (JSON list), evidence_ids (JSON list), final_claim_ids (JSON list),
@@ -1087,9 +1271,9 @@ target_id?, before (JSON)?, after (JSON)?, reason?, at, external_ref?, provenanc
 **examples** — **example_id, variable**, case_id, variable_set, variable_set_version, split?,
 tier, outcome_status, final_claim_ids (JSON list), annotators (JSON list), adjudicator?,
 derived_from_events (JSON list), created_at.
-The Example's claims, mentions, evidence, and edges are the rows of the other tables whose
-`case_id` matches and whose status is `gold`/`verified`; a gold bundle therefore contains only
-retained records.
+The Example's claims, mention readings, evidence, and edges are the rows of the other tables
+whose `case_id` matches and whose status is `gold`/`verified`, and its mentions are the spans
+those readings point to; a gold bundle therefore contains only retained records.
 
 **decisions** — **decision_id**, checked_at, permitted, reason, restriction_id?, policy_version,
 destination, zone, sensitivity, payload, case_id?, run_id?.
@@ -1108,6 +1292,7 @@ destination, zone, sensitivity, payload, case_id?, run_id?.
   "sources": {"count": 40, "text_hash_algorithm": "sha256"},
   "tables": {"cases": {"rows": 40, "sha256": "..."}, "claims": {"rows": 40, "sha256": "..."}, ...},
   "payload_kinds": {"evidence.parquet": "derived_text", "mentions.parquet": "derived_text",
+                    "mention_readings.parquet": "derived_text",
                     "annotation_events.parquet": "derived_text", "claims.parquet": "labels_only", ...},
   "created_at": "2026-10-30T20:00:00Z"
 }
@@ -1166,9 +1351,10 @@ Rules:
   `derived_text` and stays in the restricted local path; `claims.parquet` is `labels_only`
   and may be logged to the institutional MLflow. Loading with lapidary's resolver revalidates
   every quote against `~/data/coral/v1.0` text without the bundle containing it.
-- **`ds_findings_v1`:** mentions with `attributes` JSON holding negation/temporality and cue
-  evidence IDs that resolve in `evidence.parquet`; claims per mention with `variable =
-  "finding"`; one `variable_outcomes` row per note. The gpt-6-sol import produces a `gold`
+- **`ds_findings_v1`:** one `mentions` row per span and one `mention_readings` row per
+  producer, with `attributes` JSON holding negation/temporality and cue evidence IDs that
+  resolve in `evidence.parquet`; claims per mention with `variable = "finding"` and
+  `reading_id`; cue edges with role `attribute:negation`; one `variable_outcomes` row per note. The gpt-6-sol import produces a `gold`
   bundle with `tier = silver` in `examples.parquet`.
 - **Stage group:** `claims.parquet` holds four mention-level rows and one `stage_group` row
   per note; the `stage_group` inference row carries `derivation` JSON naming the rule and
@@ -1225,7 +1411,7 @@ Rules that apply to every interface:
 - **Contract objects in, contract objects out.** No interface exchanges dicts, DataFrames, or
   framework objects. Parquet and JSON appear only at the `Store`/`Exporter` boundary.
 - **Validation is amber's.** An implementation produces candidates and calls amber's
-  `quote`, `cite`, `commit_claim`, `no_claim`, `create_case_result`; it never constructs
+  `quote`, `mention`, `cite`, `commit_claim`, `no_claim`, `create_case_result`; it never constructs
   guarded records directly. The conformance kit detects direct construction.
 - **Capabilities are declared, not inferred.** Each interface exposes a frozen `capabilities`
   declaration; callers check it before relying on a feature, and the kit checks that declared
@@ -1426,7 +1612,7 @@ Reviewed and accepted 2026-10-30:
 
 The catalog is the complete list of checks that define conformance to contract v0.1. It is
 implemented as the pytest plugin `amber.conformance` (Phase 2) and its IDs are stable: a
-consumer reports "amber conformance 0.1: 72/78, failing MEN-09, WIR-04". Changing a case's
+consumer reports "amber conformance 0.1: 80/86, failing MEN-09, WIR-04". Changing a case's
 meaning requires a new ID; retired IDs are never reused.
 
 Each case has a **level**:
@@ -1443,7 +1629,7 @@ Each case has a **level**:
 "Applies to" names the interfaces or adapters the case checks; `—` means it checks contract
 objects only.
 
-The catalog contains 78 cases. Every case uses invented data; no fixture contains clinical
+The catalog contains 86 cases. Every case uses invented data; no fixture contains clinical
 text. Fixtures include Unicode (non-BMP, combining marks), CRLF, repeated quotes, empty and
 whitespace-only sources, and the three stand-in variable sets.
 
@@ -1464,6 +1650,7 @@ whitespace-only sources, and the three stand-in variable sets.
 | `POL-11` | core | PolicyGate | An expired restriction refuses with `restriction_expired`; the same call with an earlier `now` is permitted. |
 | `POL-12` | core | PolicyGate | `model_weights` to an `external` destination is refused for `phi` data, and weights trained on two datasets carry the more restrictive policy. |
 | `POL-13` | core | — | A serialized `Decision` contains no source text and is accepted as a `labels_only` payload. |
+| `POL-14` | core | — | Producer references: each of the four forms parses; an unprefixed name, an unknown prefix, `rule:` without `@<version>`, or an empty segment is rejected in every field that takes one; `rule:a@1+h1` and `rule:a@1+h2` are equal for `self_reference` and unequal otherwise. |
 
 ### 7.3 Mentions and structured evidence (§2)
 
@@ -1471,18 +1658,25 @@ whitespace-only sources, and the three stand-in variable sets.
 |---|---|---|---|
 | `MEN-01` | core | — | A mention with `quote != Source.text[start:end]` is rejected; likewise any fragment. |
 | `MEN-02` | core | — | Direct construction without the grounding context is rejected (same guard as Inclusion). |
-| `MEN-03` | core | — | Two producers, same span and type: same `mention_id`, distinct provenance records. |
+| `MEN-03` | core | — | Two producers, same span and type: one `Mention`, two `MentionReading`s with distinct `reading_id`s and provenance; differing values or attributes are both retained. |
 | `MEN-04` | core | — | Overlapping and nested mentions of different types coexist; no automatic merging. |
 | `MEN-05` | core | — | A discontinuous mention validates each fragment; hull outside the source is rejected. |
 | `MEN-06` | core | — | `section_category` not present in `Source.sections` is rejected. |
 | `MEN-07` | core | — | An attribute with `evidence_id` not registered in the graph is rejected at registration. |
-| `MEN-08` | core | — | A claim that depends on a required attribute without attribute evidence fails with `missing_attribute_evidence`; with evidence it passes. |
+| `MEN-08` | core | — | A claim that depends on a required attribute without attribute evidence fails with `missing_attribute_evidence`; with the cue cited under role `attribute:<category>` it passes; the cue cited only under a field role, or a different inclusion under the attribute role, still fails; `attribute:` edges do not satisfy field coverage. |
 | `MEN-09` | implementation | copal adapter | copal adapter: emoji, combining marks, and CRLF sources round-trip offsets exactly; a source with normalized whitespace fails mapping with a source-free diagnostic. |
 | `MEN-10` | implementation | copal adapter | copal adapter: modifier `trigger_id`/`scope_id` become cue/scope inclusions whose quotes match copal's `get_span(...).quote`. |
 | `MEN-11` | implementation | Extractor | Model-proposed offsets with a quote mismatch are counted as grounding failures, not dropped silently and not repaired. |
 | `MEN-12` | core | — | `StructuredEvidence` with a value differing from the record's field is rejected; an undeclared field is rejected; a structured Source with `text` is rejected. |
 | `MEN-13` | core | — | A claim supported only by a `StructuredEvidence` leaf validates; a claim supported only by a mention with no inclusion fails `source_free_support`. |
 | `MEN-14` | implementation | — | A CaseResult whose cited mention is missing from `mentions` fails to load; uncited mentions survive a round trip. |
+| `MEN-15` | core | — | A reading whose `mention_id` is not registered is rejected; a `Mention` with no reading in a graph or result is rejected. |
+| `MEN-16` | core | — | `mention_id`: a contiguous mention hashes exactly as `(source_id, start, end, mention_type)`; a discontinuous mention with the same hull and type has a different ID; two discontinuous mentions differing only in fragments have different IDs. |
+| `MEN-17` | core | — | An attribute whose `scope_evidence_id` does not contain the mention's hull is rejected with `attribute_outside_scope`; a scope that contains the mention but not the cue (post-negation) is accepted; an attribute without a scope is not checked. |
+| `MEN-18` | core | — | Two mentions of different types at one position, a cue, and a plain `quote()` of that position all resolve to one inclusion with one `evidence_id`; an inclusion payload carrying `mention_id` is rejected. |
+| `MEN-19` | core | — | An attribute value of `null`, a float, a list, or an object is rejected; `True` does not satisfy a requirement with `values={1}`, and `1` does not satisfy `values={True}`; an absent required category fails the requirement. |
+| `MEN-20` | core | — | An attribute whose `assigned_by` equals the reading's producer is rejected; a human correction keeps `assigned_by` on carried-over attributes and `None` on the attributes the reviewer changed. |
+| `MEN-21` | core | — | A mention-level claim without `reading_id`, with an unregistered or `rejected` reading, or with a reading whose span is in another source or is not cited, is rejected; a note-level claim with `reading_id` is rejected; two claims relying on two different readings of one span each validate against their own reading's attributes. |
 
 ### 7.4 Layered variables (§3)
 
@@ -1517,7 +1711,7 @@ whitespace-only sources, and the three stand-in variable sets.
 | `ANN-07` | core | — | Blind streams: an actor's projection excludes other streams until resolve. |
 | `ANN-08` | core | — | `before`/`after` contain no substring of length ≥ 8 from the source text. |
 | `ANN-09` | core | — | A `gold` claim cannot be edited in place; a correction produces a new claim and a linked event. |
-| `ANN-10` | core | — | A claim can be `gold` only if its cited mentions are `gold` or `verified`. |
+| `ANN-10` | core | — | A claim can be `gold` only if the readings it relies on are `gold` or `verified`; a span is never updated or deleted, and a reading correction produces a new linked reading. |
 | `ANN-11` | implementation | Scorer | A `LabelRecord` cannot be loaded as an Example; a scorer scoring evidence metrics against LabelRecords reports `inconclusive`. |
 | `ANN-12` | implementation | Scorer | Scoring a configuration against silver Examples produced by the same configuration is refused. |
 | `ANN-13` | implementation | ReviewBackend | loupe mapping fixtures: accepted → adjudicated Example; unresolved → no Example, events retained; excluded → no Example; no-mentions confirmation → `not_mentioned`; unsubmitted → `insufficient_evidence`. |
