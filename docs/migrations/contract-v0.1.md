@@ -1,0 +1,61 @@
+# Migrating to contract v0.1
+
+Contract v0.1 ([design](../design/contract-v0.1.md)) changes some records and identifiers that
+existing code and stored payloads depend on. Each change is listed here when it is implemented,
+with who is affected and how to upgrade. Changes still to be implemented are listed at the end.
+
+## Implemented
+
+### Provenance gains destination, policy version, and restrictions
+
+`Provenance` now requires `destination` and `policy_version`, and accepts `restriction_ids`
+(contract §1.6).
+
+- **Affected:** every stored claim, inference, and case outcome, and every caller that builds a
+  `Provenance`. Payloads without the new fields fail validation.
+- **Upgrade:** set `destination` to the name of the destination that produced the node, or
+  `local:<tool>` for a tool that sends nothing anywhere (its `zone` must then be `local`). Set
+  `policy_version` to the policy matrix version in force, and `restriction_ids` to the IDs of
+  the dataset restrictions that applied. Payloads produced before the policy gate existed
+  cannot be re-stamped truthfully; regenerate them, or record them with the destination and
+  policy version that actually applied.
+
+### Producer references are validated
+
+`Provenance.producer` must be a producer reference: `rule:<name>@<version>[+<hash>]`,
+`model:<name>[@<version>]`, `human:<user>`, or `tool:<name>[@<version>]` (contract §1.6).
+
+- **Affected:** callers using free-form producer names.
+- **Upgrade:** rewrite each producer in the grammar. A rule without a version needs one.
+
+### Canonical JSON follows RFC 8785
+
+`amber.ids.canonical_json` and `canonical_sha256` implement RFC 8785 (contract §5.2).
+
+- **Unchanged:** every ID over strings, integers, booleans, and null, with ASCII keys. That
+  covers every `source_id`, inclusion `evidence_id`, and `mention_id`, and string or integer
+  structured values. A regression test pins them.
+- **Changed:**
+  - floats are written in ECMAScript form (`1` not `1.0`, `1e-7` not `1e-07`);
+  - timestamps hash as UTC with six fractional digits and `Z`, and naive timestamps are
+    rejected;
+  - keys sort by UTF-16 code units, which differs from the old order only for keys above
+    U+FFFF compared with keys in U+E000–U+FFFF;
+  - integers beyond ±(2⁵³−1) and strings with lone surrogates are rejected.
+- **Affected:** an answer model's `schema_ref` changes if its JSON Schema contains such floats
+  (for example a `ge=1.0` constraint) or non-ASCII keys. Stored claims citing the old
+  `schema_ref` no longer match the model.
+- **Upgrade:** recompute `schema_ref` for each answer model. Where it changed, record the new
+  value in a new variable-set version.
+
+## Still to implement
+
+Each entry moves to "Implemented" in the commit that makes the change:
+
+- `Inclusion.mention_id` removed; `mention_id` hashes `fragments` when present (§2.2).
+- A structured source's `source_id` includes its canonical `record` (§2.6, `amber-ndt.3`).
+- `CaseResult` gains `run_id`, `budget`, `usage`, and variable-set fields, and its case-level
+  `outcome` and `final_claim_ids` become null for sets with several final variables (§3.5,
+  §5.4, §6.6).
+- `Task` becomes the one-variable case of `VariableSet` (§3.2).
+- `example_id` becomes content-addressed (§4.3).

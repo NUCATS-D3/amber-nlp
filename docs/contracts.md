@@ -11,6 +11,11 @@ resist mutation. Offsets are end-exclusive Python code points into the immutable
 
 ## Identity (`amber.ids`)
 
+Content-addressed IDs hash canonical JSON as defined by RFC 8785 (`canonical_json`,
+`canonical_sha256`): keys sorted by UTF-16 code units, ECMAScript number form, no Unicode
+normalization. Timestamps must be timezone-aware and hash as UTC with six fractional digits and
+`Z`. NaN, infinities, lone surrogates, and integers beyond ±(2⁵³−1) are rejected.
+
 | Identifier | Derivation |
 |---|---|
 | `source_id` | Canonical SHA-256 of `patient_id`, `kind`, `external_id`, `text` |
@@ -19,13 +24,20 @@ resist mutation. Offsets are end-exclusive Python code points into the immutable
 | `claim_id`, inference `evidence_id` | Canonical ULID |
 | `schema_ref` | `module:Class@sha256(model JSON schema)` for an answer model |
 
+**Producer references** (`parse_producer`) name who produced or decided something:
+`rule:<name>@<version>[+<hash>]`, `model:<name>[@<version>]`, `human:<user>`, or
+`tool:<name>[@<version>]`. `producer_configuration` returns the `model:`/`rule:` keys used to
+refuse scoring a configuration against its own silver references; rule hashes are ignored.
+
 ## Models (`amber.schemas`)
 
 - **`Source`**, **`Section`**, **`SourceKind`**: an immutable note or record, with
   bounds-checked sections. `Source.create` computes the ID; the text is never normalized
   afterward.
-- **`Provenance`**, **`Zone`**, **`Sensitivity`**: producer, model, prompt versions, run and
-  trace IDs, zone, declared sensitivity, time, and version.
+- **`Provenance`**, **`Zone`**, **`Sensitivity`**: a producer reference, model, prompt
+  versions, run and trace IDs, the destination that produced the node (`local:<tool>` for
+  tools that send nothing anywhere, which must be zone `local`), the policy version, the
+  restrictions that applied, zone, declared sensitivity, time, and version.
 - **`AnswerModel`**: a frozen, closed base class for task answers. Task-specific answer models
   live in the projects that define the tasks.
 - **`Task`**: name, answer model, instructions, `evidence_policy` (`claim` or `field`), and

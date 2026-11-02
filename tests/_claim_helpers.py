@@ -38,6 +38,8 @@ def make_provenance() -> Provenance:
     return Provenance(
         producer="tool:synthetic@1",
         prompt_versions={"extractor": "prompts:/synthetic/1"},
+        destination="local:synthetic",
+        policy_version="synthetic-policy@1",
         zone=Zone.local,
         sensitivity=Sensitivity.synthetic,
         created_at=datetime(2026, 1, 2, tzinfo=UTC),

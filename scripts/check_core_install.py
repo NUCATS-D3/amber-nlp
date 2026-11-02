@@ -80,6 +80,8 @@ def main() -> None:
     )
     provenance = Provenance(
         producer="tool:core-smoke@1",
+        destination="local:core-smoke",
+        policy_version="core-smoke-policy@1",
         zone=Zone.local,
         sensitivity=Sensitivity.synthetic,
         created_at=datetime(2026, 1, 2, tzinfo=UTC),
