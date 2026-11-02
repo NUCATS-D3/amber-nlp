@@ -11,6 +11,7 @@ from typing import Any, NoReturn
 from pydantic import ValidationError
 
 from amber._graph_validation import (
+    ATTRIBUTE_ROLE_PREFIX,
     _GraphContext,
     _ValidatedState,
     build_context,
@@ -331,12 +332,17 @@ class EvidenceGraph:
         provenance: Provenance,
         effective_datetime: datetime | None = None,
         confidence: float | None = None,
+        reading_id: str | None = None,
     ) -> Claim:
         """Atomically validate and publish one evidence-backed proposed claim.
 
         ``task`` is the graph's ``Task`` (one-variable sets) or the name of a variable in the
-        graph's set.
+        graph's set. A mention-level claim names the reading it relies on in ``reading_id``
+        and cites the inclusions at that reading's span. ``field_roles`` keys are answer
+        fields or ``attribute:<category>`` for the cue of a reading attribute.
         """
+        if reading_id is not None and type(reading_id) is not str:
+            _raise("invalid_schema")
         variable_name = self._variable_name(task)
         variable = self._context.variables.variables[variable_name]
 
@@ -376,7 +382,9 @@ class EvidenceGraph:
                 _raise("invalid_schema")
             known_fields = self._context.field_names[variable_name]
             for role, role_ids in role_items:
-                if type(role) is not str or role not in known_fields:
+                if type(role) is not str or (
+                    role not in known_fields and not role.startswith(ATTRIBUTE_ROLE_PREFIX)
+                ):
                     _raise("invalid_context")
                 normalized_ids = _validated_identifiers(role_ids)
                 if not set(normalized_ids).issubset(primary_ids):
@@ -392,6 +400,7 @@ class EvidenceGraph:
             "patient_id": self._context.source.patient_id,
             "task": self._context.variables.name,
             "variable": variable_name,
+            "reading_id": reading_id,
             "schema_ref": self._context.schema_refs[variable_name],
             "value": normalized_value,
             "effective_datetime": (

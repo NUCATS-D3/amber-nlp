@@ -41,6 +41,7 @@ class _ClaimRecord(BaseModel):
     patient_id: _StrictString
     task: _StrictString
     variable: _StrictString
+    reading_id: _StrictString | None = None
     schema_ref: _StrictString
     value: dict[str, Any]
     effective_datetime: datetime | None
@@ -52,6 +53,11 @@ class _ClaimRecord(BaseModel):
     @classmethod
     def require_canonical_claim_id(cls, value: str) -> str:
         return validate_ulid(value)
+
+    @field_validator("reading_id")
+    @classmethod
+    def require_canonical_reading_id(cls, value: str | None) -> str | None:
+        return None if value is None else validate_ulid(value)
 
     @field_validator("source_id", "patient_id", "task", "variable", "schema_ref")
     @classmethod

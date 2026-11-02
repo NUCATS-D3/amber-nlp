@@ -257,23 +257,6 @@ def test_patient_level_is_constructible_but_graphs_reject_it() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    "variable",
-    [
-        _variable("m", level="mention", mention_types=frozenset({"finding"}), final=True),
-        _variable("n", requires_section=frozenset({"findings"}), final=True),
-    ],
-)
-def test_graphs_reject_rules_they_do_not_enforce_yet(variable: Variable) -> None:
-    _assert_error(
-        "invalid_context",
-        EvidenceGraph,
-        source=make_source(),
-        variables=_set(variable),
-        sensitivity=Sensitivity.synthetic,
-    )
-
-
 def test_graph_needs_exactly_one_of_task_or_variables() -> None:
     source = make_source()
     task = make_task()

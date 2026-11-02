@@ -256,6 +256,7 @@ def test_claim_record_has_exact_v1_fields_and_preserves_wire_shape() -> None:
         "patient_id",
         "task",
         "variable",
+        "reading_id",
         "schema_ref",
         "value",
         "effective_datetime",

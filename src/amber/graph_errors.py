@@ -19,6 +19,10 @@ GraphValidationCode: TypeAlias = Literal[
     "missing_reading",
     "attribute_outside_scope",
     "undeclared_dependency",
+    "uncited_mention",
+    "missing_attribute_evidence",
+    "attribute_value_not_permitted",
+    "citation_outside_section",
 ]
 
 

@@ -24,6 +24,7 @@ def commit_claim(
     provenance: Provenance,
     effective_datetime: datetime | None = None,
     confidence: float | None = None,
+    reading_id: str | None = None,
 ) -> Claim:
     """Forward a proposed claim commit to its graph-owned validation boundary."""
     return graph.commit_claim(
@@ -35,4 +36,5 @@ def commit_claim(
         provenance=provenance,
         effective_datetime=effective_datetime,
         confidence=confidence,
+        reading_id=reading_id,
     )

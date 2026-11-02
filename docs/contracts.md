@@ -51,13 +51,16 @@ refuse scoring a configuration against its own silver references; rule hashes ar
   never of its `version`, which is a label. Permitted attribute values are a tuple compared
   with strict types, so `True` and `1` stay distinct.
 - **`Claim`**: a validated answer value, the set name (`task`) and `variable` it answers,
-  that variable's `schema_ref`, effective time, confidence, status, and provenance. Claims are admitted only through graph validation.
+  that variable's `schema_ref`, the `reading_id` it relies on (mention-level variables only),
+  effective time, confidence, status, and provenance. Claims are admitted only through graph validation.
 - **Evidence**:
   - `Inclusion`: a verified source span. Only the grounding path can mint one. Inclusions are
     positions only, so one position has one `evidence_id` whatever cites it.
   - `InferenceEvidence`: a rationale with non-empty inputs, which are evidence IDs or
     non-rejected claim IDs.
-  - `EvidenceEdge`: a claim → evidence link with an optional field role and weight.
+  - `EvidenceEdge`: a claim → evidence link with an optional role and weight. A role is an
+    answer-field name or `attribute:<category>`, which cites the cue of that attribute on the
+    claim's reading and never counts toward field coverage.
   - `GroundingFailure`: an explicit grounding failure, never evidence.
 - **`Mention`**: a typed, content-addressed span (`mention_type`, hull offsets and quote,
   optional `fragments` for discontinuous spans, and `section_category` derived from the
@@ -107,9 +110,7 @@ Pure data and functions; no I/O, credentials, or clock (contract v0.1 §1).
   whose hull is the grounded text. `amber.tools.mention.cite` re-grounds a mention and returns
   the inclusion at its hull, or one per fragment.
 - `amber.graph.EvidenceGraph`: one source, one variable set (`task=` or `variables=`), one
-  sensitivity. Graphs accept note-level variables only for now: patient level is reserved,
-  and mention-level variables and section requirements are refused until their claim checks
-  exist. It offers:
+  sensitivity. Patient-level variables are reserved and refused. It offers:
   - atomic registration and claim commits; `register_mention` takes a span with at least one
     reading, and `register_reading` adds a reading of a registered span;
   - complete validation: known in-scope references, field roles, acyclicity across edges and
@@ -118,12 +119,20 @@ Pure data and functions; no I/O, credentials, or clock (contract v0.1 §1).
     registered inclusions, and a scope must contain the mention's hull. Graphs hold only
     `proposed` and `rejected` readings and claims. Each claim validates against its own
     variable; a claim's inferences may consume claims of its own variable or of declared
-    `inputs` only (`undeclared_dependency`);
+    `inputs` only (`undeclared_dependency`). A mention-level claim names a registered,
+    non-rejected reading of a span of a permitted `mention_type` (`missing_reading`), and
+    cites the inclusions at the span's hull or every fragment (`uncited_mention`). Required
+    attributes must be present with a permitted value, compared with strict types
+    (`attribute_value_not_permitted`), and, unless `lenient`, have a cue cited under
+    `attribute:<category>` (`missing_attribute_evidence`). With `requires_section`, every
+    inclusion a claim cites directly or through its own inferences lies in a section of a
+    listed category (`citation_outside_section`);
   - support traversal, and `mentions_at` / `readings_of` from a source leaf to the spans and
     readings at its position;
   - snapshot (format version 3, bound to the set's name, version, and `schema_ref`) and
     restore against authoritative context.
 - `amber.tools.commit.commit_claim`: admits a proposed claim only with valid, complete support.
+  It takes a `Task` or a variable name, and `reading_id` for mention-level variables.
 - `amber.tools.outcomes.no_claim`: records the three clinical non-answers and never creates a
   null claim. Only runtimes record `failed`.
 - `amber.cases.create_case_result` / `load_case_result`: build and revalidate results against
@@ -147,7 +156,7 @@ These items are tracked in Beads (`bd list --status=open`):
   later minor; contract v0.1 §2.6);
 - `Example` with reference tiers;
 - annotation events and status transitions;
-- mention-level variables, section requirements, per-variable outcomes, and derivations;
+- per-variable outcomes and derivations;
 - interfaces (`Extractor`, `Store`, `Exporter`, `Scorer`, `ReviewBackend`, `Labeler`);
 - the conformance kit;
 - MLflow plugins for evaluation, datasets, the loupe bridge, and deployment.

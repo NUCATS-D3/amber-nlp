@@ -22,6 +22,7 @@ from amber.schemas.sources import Source, SourceKind
 from amber.schemas.tasks import Task
 from amber.schemas.variables import VariableSet
 
+ATTRIBUTE_ROLE_PREFIX = "attribute:"
 _INCLUSION_FIELDS = frozenset(Inclusion.model_fields)
 _MENTION_FIELDS = frozenset(Mention.model_fields)
 _MENTION_FAILURE_CODES: Mapping[str, GraphValidationCode] = MappingProxyType(
@@ -80,8 +81,7 @@ def build_context(
 ) -> _GraphContext:
     """Revalidate and defensively capture the authoritative graph context.
 
-    Patient-level variables are reserved. Mention-level variables and section requirements
-    are rejected until their claim checks exist, so no declared rule goes unenforced.
+    Patient-level variables are reserved and rejected.
     """
     if (task is None) == (variables is None):
         _raise("invalid_context")
@@ -105,10 +105,7 @@ def build_context(
     if (
         copied_source.kind is not SourceKind.note
         or source_text is None
-        or any(
-            variable.level != "note" or variable.requires_section
-            for variable in copied_set.variables.values()
-        )
+        or any(variable.level == "patient" for variable in copied_set.variables.values())
         or not isinstance(sensitivity, Sensitivity)
     ):
         _raise("invalid_context")
@@ -350,6 +347,119 @@ def _validate_reading_references(
                 _raise("attribute_outside_scope")
 
 
+def _require_claim_reading(
+    context: _GraphContext,
+    claim: _ClaimRecord,
+    mentions: Mapping[str, Mention],
+    readings: Mapping[str, MentionReading],
+) -> None:
+    """A mention-level claim names one registered reading of a span of a permitted type."""
+    variable = context.variables.variables[claim.variable]
+    if variable.level != "mention":
+        if claim.reading_id is not None:
+            _raise("invalid_context")
+        return
+    if claim.reading_id is None or claim.reading_id not in readings:
+        _raise("missing_reading")
+    reading = readings[claim.reading_id]
+    if claim.status != "rejected" and reading.status == "rejected":
+        _raise("invalid_context")
+    if mentions[reading.mention_id].mention_type not in variable.mention_types:
+        _raise("invalid_context")
+
+
+def _require_attribute_edge(
+    edge: EvidenceEdge,
+    claim: _ClaimRecord,
+    readings: Mapping[str, MentionReading],
+) -> None:
+    """An ``attribute:<category>`` edge cites the cue of that category on the claim's reading."""
+    category = edge.role[len(ATTRIBUTE_ROLE_PREFIX) :] if edge.role is not None else ""
+    reading = readings.get(claim.reading_id) if claim.reading_id is not None else None
+    attribute = None if reading is None else reading.attributes.get(category)
+    if attribute is None or attribute.evidence_id != edge.evidence_id:
+        _raise("invalid_context")
+
+
+def _cited_inclusions(
+    claim_id: str,
+    evidence: Mapping[str, Inclusion | InferenceEvidence],
+    adjacency: Mapping[str, tuple[str, ...]],
+) -> list[Inclusion]:
+    """Inclusions a claim cites directly or through its own inferences, not other claims."""
+    cited: dict[str, Inclusion] = {}
+    visited: set[str] = set()
+    pending = list(adjacency[claim_id])
+    while pending:
+        node_id = pending.pop()
+        if node_id in visited:
+            continue
+        visited.add(node_id)
+        record = evidence.get(node_id)
+        if isinstance(record, Inclusion):
+            cited[node_id] = record
+        elif isinstance(record, InferenceEvidence):
+            pending.extend(adjacency[node_id])
+    return [cited[key] for key in sorted(cited)]
+
+
+def _permitted(value: bool | int | str, values: tuple[bool | int | str, ...] | None) -> bool:
+    if values is None:
+        return True
+    return any(type(value) is type(item) and value == item for item in values)
+
+
+def _require_variable_rules(
+    context: _GraphContext,
+    claims: Mapping[str, _ClaimRecord],
+    evidence: Mapping[str, Inclusion | InferenceEvidence],
+    edges: Sequence[EvidenceEdge],
+    adjacency: Mapping[str, tuple[str, ...]],
+    mentions: Mapping[str, Mention],
+    readings: Mapping[str, MentionReading],
+) -> None:
+    """Check mention citation, required attributes, and sections for each live claim."""
+    attribute_edges: dict[tuple[str, str], set[str]] = {}
+    for edge in edges:
+        if edge.role is not None and edge.role.startswith(ATTRIBUTE_ROLE_PREFIX):
+            key = (edge.claim_id, edge.role[len(ATTRIBUTE_ROLE_PREFIX) :])
+            attribute_edges.setdefault(key, set()).add(edge.evidence_id)
+    sections = context.source.sections
+    for claim_id, claim in claims.items():
+        if claim.status == "rejected":
+            continue
+        variable = context.variables.variables[claim.variable]
+        cited = _cited_inclusions(claim_id, evidence, adjacency)
+        if variable.level == "mention":
+            assert claim.reading_id is not None
+            reading = readings[claim.reading_id]
+            mention = mentions[reading.mention_id]
+            positions = {(item.start, item.end) for item in cited}
+            spans = mention.fragments or ((mention.start, mention.end),)
+            if not positions.issuperset(spans):
+                _raise("uncited_mention")
+            for requirement in variable.requires_attributes:
+                attribute = reading.attributes.get(requirement.category)
+                if attribute is None or not _permitted(attribute.value, requirement.values):
+                    _raise("attribute_value_not_permitted")
+                if requirement.evidence == "required" and (
+                    attribute.evidence_id is None
+                    or attribute_edges.get((claim_id, requirement.category))
+                    != {attribute.evidence_id}
+                ):
+                    _raise("missing_attribute_evidence")
+        if variable.requires_section and any(
+            not any(
+                section.category in variable.requires_section
+                and section.start <= item.start
+                and item.end <= section.end
+                for section in sections
+            )
+            for item in cited
+        ):
+            _raise("citation_outside_section")
+
+
 def _require_declared_dependencies(
     context: _GraphContext,
     claims: Mapping[str, _ClaimRecord],
@@ -446,6 +556,9 @@ def validate_state(
     if {reading.mention_id for reading in reading_records.values()} != set(mention_records):
         _raise("missing_reading")
 
+    for claim_record in claim_records.values():
+        _require_claim_reading(context, claim_record, mention_records, reading_records)
+
     validated_edges: list[EvidenceEdge] = []
     edge_keys: set[tuple[str, str, str | None]] = set()
     adjacency_lists: dict[str, set[str]] = {
@@ -466,14 +579,15 @@ def validate_state(
         edge_keys.add(key)
         if edge.claim_id not in claim_records or edge.evidence_id not in evidence_records:
             _raise("unknown_reference")
-        if edge.role is not None and (
-            edge.role not in field_names[claim_records[edge.claim_id].variable]
-        ):
-            _raise("invalid_context")
+        claim_record = claim_records[edge.claim_id]
+        if edge.role is not None and edge.role.startswith(ATTRIBUTE_ROLE_PREFIX):
+            _require_attribute_edge(edge, claim_record, reading_records)
+        elif edge.role is not None:
+            if edge.role not in field_names[claim_record.variable]:
+                _raise("invalid_context")
+            field_roles[edge.claim_id].add(edge.role)
         validated_edges.append(edge)
         adjacency_lists[edge.claim_id].add(edge.evidence_id)
-        if edge.role is not None:
-            field_roles[edge.claim_id].add(edge.role)
 
     for evidence_id, evidence_record in evidence_records.items():
         if not isinstance(evidence_record, InferenceEvidence):
@@ -535,6 +649,15 @@ def validate_state(
             _raise("source_free_support")
 
     _require_declared_dependencies(context, claim_records, evidence_records, adjacency)
+    _require_variable_rules(
+        context,
+        claim_records,
+        evidence_records,
+        validated_edges,
+        adjacency,
+        mention_records,
+        reading_records,
+    )
 
     minted: dict[str, Claim] = {}
     try:
