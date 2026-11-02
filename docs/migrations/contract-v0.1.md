@@ -48,11 +48,23 @@ with who is affected and how to upgrade. Changes still to be implemented are lis
 - **Upgrade:** recompute `schema_ref` for each answer model. Where it changed, record the new
   value in a new variable-set version.
 
+### `Inclusion.mention_id` is removed; `mention_id` hashes fragments
+
+Inclusions are positions only (§2.3), so `Inclusion` no longer has a `mention_id` field.
+`amber.ids.mention_id` accepts `fragments` and hashes them only when nonempty (§2.2).
+
+- **Affected:** stored evidence graphs and case results whose inclusion payloads carry
+  `mention_id` (always `null` before this change). Such payloads now fail validation with
+  `invalid_schema`. Callers constructing inclusions never set the field, because only grounding
+  can mint one.
+- **Unchanged:** every inclusion `evidence_id`, and every contiguous `mention_id`.
+- **Upgrade:** drop the `mention_id` key from each stored inclusion payload. Link spans to
+  mentions through the `mention()` tool and, once readings land, through `Claim.reading_id`.
+
 ## Still to implement
 
 Each entry moves to "Implemented" in the commit that makes the change:
 
-- `Inclusion.mention_id` removed; `mention_id` hashes `fragments` when present (§2.2).
 - A structured source's `source_id` includes its canonical `record` (§2.6, `amber-ndt.3`).
 - `CaseResult` gains `run_id`, `budget`, `usage`, and variable-set fields, and its case-level
   `outcome` and `final_claim_ids` become null for sets with several final variables (§3.5,

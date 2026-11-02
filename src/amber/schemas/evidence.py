@@ -36,7 +36,6 @@ class Inclusion(BaseModel):
     start: int = Field(ge=0)
     end: int = Field(gt=0)
     quote: str = Field(min_length=1)
-    mention_id: str | None = None
     alignment: Literal["exact", "fuzzy"]
     alignment_score: float = Field(ge=0.0, le=1.0)
 
@@ -77,6 +76,7 @@ class GroundingFailure(BaseModel):
         "ambiguous",
         "hint_out_of_bounds",
         "hint_mismatch",
+        "invalid_fragments",
     ]
     message: str
     match_starts: tuple[int, ...] = ()

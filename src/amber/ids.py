@@ -213,15 +213,25 @@ def source_id(*, patient_id: str, kind: str, external_id: str | None, text: str 
     )
 
 
-def mention_id(*, source_id: str, start: int, end: int, mention_type: str) -> str:
-    return canonical_sha256(
-        {
-            "end": end,
-            "mention_type": mention_type,
-            "source_id": source_id,
-            "start": start,
-        }
-    )
+def mention_id(
+    *,
+    source_id: str,
+    start: int,
+    end: int,
+    mention_type: str,
+    fragments: Sequence[tuple[int, int]] = (),
+) -> str:
+    """Hash a mention span; ``fragments`` enter the hash only when nonempty, so contiguous
+    mention IDs are unchanged and a discontinuous mention never collides with its hull."""
+    fields: dict[str, Any] = {
+        "end": end,
+        "mention_type": mention_type,
+        "source_id": source_id,
+        "start": start,
+    }
+    if fragments:
+        fields["fragments"] = [[start_, end_] for start_, end_ in fragments]
+    return canonical_sha256(fields)
 
 
 def inclusion_id(*, source_id: str, start: int, end: int) -> str:

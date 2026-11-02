@@ -21,7 +21,6 @@ from amber.schemas.sources import Source, SourceKind
 from amber.schemas.tasks import Task
 
 _INCLUSION_FIELDS = frozenset(Inclusion.model_fields)
-_REQUIRED_INCLUSION_FIELDS = _INCLUSION_FIELDS - {"mention_id"}
 
 
 @dataclass(frozen=True)
@@ -117,10 +116,7 @@ def _validate_inclusion(
 ) -> Inclusion:
     payload = _copy_mapping(candidate)
     supplied_fields = set(payload)
-    if (
-        not supplied_fields >= _REQUIRED_INCLUSION_FIELDS
-        or not supplied_fields <= _INCLUSION_FIELDS
-    ):
+    if supplied_fields != _INCLUSION_FIELDS:
         _raise("invalid_schema")
     if payload.get("kind") != "inclusion":
         _raise("unsupported_evidence")
@@ -161,7 +157,6 @@ def _validate_inclusion(
     score = payload.get("alignment_score")
     if (
         payload.get("alignment") != "exact"
-        or payload.get("mention_id") is not None
         or type(score) not in (int, float)
         or type(score) is bool
         or score != 1.0

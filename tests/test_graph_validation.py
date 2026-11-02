@@ -276,7 +276,8 @@ def test_exact_unicode_crlf_and_repeated_occurrence_offsets_are_preserved() -> N
         ({"alignment": "fuzzy"}, "unsupported_evidence"),
         ({"alignment_score": False}, "unsupported_evidence"),
         ({"alignment_score": 0.99}, "unsupported_evidence"),
-        ({"mention_id": "mention-1"}, "unsupported_evidence"),
+        ({"mention_id": "mention-1"}, "invalid_schema"),
+        ({"mention_id": None}, "invalid_schema"),
     ],
 )
 def test_inclusion_payloads_are_independently_revalidated(
@@ -318,19 +319,10 @@ def test_inclusion_requires_every_field() -> None:
     )
 
 
-def test_inclusion_may_omit_its_defaulted_null_mention_id() -> None:
-    context, record, leaf, edge = _valid_graph()
-    payload = leaf.model_dump()
-    payload.pop("mention_id")
+def test_inclusion_payload_has_no_mention_id() -> None:
+    _, _, leaf, _ = _valid_graph()
 
-    state = validate_state(
-        context,
-        claims=[record],
-        evidence=[payload],
-        edges=[edge],
-    )
-
-    assert state.evidence[leaf.evidence_id] == leaf
+    assert "mention_id" not in leaf.model_dump()
 
 
 def test_exclusions_reject_overlap_but_allow_touching_boundaries_and_fragment_gaps() -> None:

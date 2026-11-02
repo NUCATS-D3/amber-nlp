@@ -20,7 +20,8 @@ normalization. Timestamps must be timezone-aware and hash as UTC with six fracti
 |---|---|
 | `source_id` | Canonical SHA-256 of `patient_id`, `kind`, `external_id`, `text` |
 | Inclusion `evidence_id` | Canonical SHA-256 of `source_id`, `start`, `end` |
-| `mention_id`, structured `evidence_id` | Canonical SHA-256 (helpers exist; the models are planned) |
+| `mention_id` | Canonical SHA-256 of `source_id`, `start`, `end`, `mention_type`, and `fragments` only when nonempty |
+| structured `evidence_id` | Canonical SHA-256 (helper exists; the model is deferred) |
 | `claim_id`, inference `evidence_id` | Canonical ULID |
 | `schema_ref` | `module:Class@sha256(model JSON schema)` for an answer model |
 
@@ -45,11 +46,16 @@ refuse scoring a configuration against its own silver references; rule hashes ar
 - **`Claim`**: a validated answer value, `schema_ref`, effective time, confidence, status, and
   provenance. Claims are admitted only through graph validation.
 - **Evidence**:
-  - `Inclusion`: a verified source span. Only the grounding path can mint one.
+  - `Inclusion`: a verified source span. Only the grounding path can mint one. Inclusions are
+    positions only, so one position has one `evidence_id` whatever cites it.
   - `InferenceEvidence`: a rationale with non-empty inputs, which are evidence IDs or
     non-rejected claim IDs.
   - `EvidenceEdge`: a claim → evidence link with an optional field role and weight.
   - `GroundingFailure`: an explicit grounding failure, never evidence.
+- **`Mention`**: a typed, content-addressed span (`mention_type`, hull offsets and quote,
+  optional `fragments` for discontinuous spans, and `section_category` derived from the
+  innermost categorized `Source` section containing the hull). Only the grounding path can
+  mint one. A mention is not evidence; claims cite the inclusions at its position.
 - **`Case`**: one note, one task, and declared sensitivity.
 - **`CaseOutcome`**: one of `answered`, `not_mentioned`, `conflicting_evidence`,
   `insufficient_evidence`, or `failed`, with a reason, a failure kind, review coverage, and
@@ -82,6 +88,10 @@ Pure data and functions; no I/O, credentials, or clock (contract v0.1 §1).
 
 - `amber.grounding.exact_quote` and `amber.tools.quote.quote`: exact matching. Repeated text
   requires a hint, and the result is an `Inclusion` or a `GroundingFailure`.
+- `amber.tools.mention.mention`: grounds a span's hull exactly as `quote` does and returns a
+  `Mention` or a `GroundingFailure`. Fragments must be two or more ordered, separated spans
+  whose hull is the grounded text. `amber.tools.mention.cite` re-grounds a mention and returns
+  the inclusion at its hull, or one per fragment.
 - `amber.graph.EvidenceGraph`: one source, one task, one sensitivity. It offers:
   - atomic registration and claim commits;
   - complete validation: known in-scope references, field roles, acyclicity across edges and
@@ -107,8 +117,8 @@ correctness. Those are measured separately.
 These items are tracked in Beads (`bd list --status=open`):
 
 - the `PolicyGate` protocol and its reference implementation;
-- `Mention` and `MentionReading` (`StructuredEvidence` is deferred to a later minor; contract
-  v0.1 §2.6);
+- `MentionReading`, attributes, and mentions in graphs and results (`StructuredEvidence` is
+  deferred to a later minor; contract v0.1 §2.6);
 - `Example` with reference tiers;
 - annotation events and status transitions;
 - layered variables over multi-task evidence graphs;
