@@ -18,6 +18,7 @@ from pydantic import (
 from amber.schemas._immutable import _FrozenList, freeze_json
 from amber.schemas.claims import Claim
 from amber.schemas.evidence import EvidenceEdge, Inclusion, InferenceEvidence
+from amber.schemas.mentions import Mention, MentionReading
 from amber.schemas.provenance import Provenance, Sensitivity
 
 OutcomeStatus: TypeAlias = Literal[
@@ -133,7 +134,9 @@ class CaseResult(BaseModel):
     edges: list[EvidenceEdge]
     final_claim_ids: list[_Identifier]
     outcome: CaseOutcome
-    mentions: list[Any] = Field(max_length=0)
+    # Mentions, like inclusions, are re-minted by graph validation before reaching this model.
+    mentions: list[SkipValidation[Mention]]
+    mention_readings: list[MentionReading]
     grounding_failures: int = Field(strict=True, ge=0)
     tool_calls: int = Field(strict=True, ge=0)
     escalated: bool = Field(strict=True)
@@ -156,15 +159,10 @@ class CaseResult(BaseModel):
     def freeze_final_ids(cls, value: list[str]) -> list[str]:
         return _freeze_identifiers(value)
 
-    @field_validator("claims", "evidence", "edges")
+    @field_validator("claims", "evidence", "edges", "mentions", "mention_readings")
     @classmethod
     def freeze_nodes(cls, value: list[Any]) -> list[Any]:
         return _FrozenRecords(value)
-
-    @field_validator("mentions")
-    @classmethod
-    def freeze_empty_mentions(cls, value: list[Any]) -> list[Any]:
-        return freeze_json(value)
 
     @classmethod
     def model_construct(  # type: ignore[override]

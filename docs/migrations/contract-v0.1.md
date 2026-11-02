@@ -61,6 +61,19 @@ Inclusions are positions only (§2.3), so `Inclusion` no longer has a `mention_i
 - **Upgrade:** drop the `mention_id` key from each stored inclusion payload. Link spans to
   mentions through the `mention()` tool and, once readings land, through `Claim.reading_id`.
 
+### Graph snapshots and case results carry mentions and readings
+
+`EvidenceGraph.to_payload` now writes `format_version` 2 with `mentions` and
+`mention_readings` lists, and `from_payload` requires them. `CaseResult.mentions` holds
+`Mention` records instead of being forced empty, and `CaseResult` gains a required
+`mention_readings` list (§2.9 decisions 3 and 4).
+
+- **Affected:** stored graph snapshots (version 1) and stored case results, which lack the new
+  keys and fail with `invalid_schema`.
+- **Upgrade:** for a graph snapshot, set `format_version` to 2 and add empty `mentions` and
+  `mention_readings` lists. For a case result, add an empty `mention_readings` list. Results
+  produced before this change never had mentions, so nothing else changes.
+
 ## Still to implement
 
 Each entry moves to "Implemented" in the commit that makes the change:

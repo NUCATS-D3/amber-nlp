@@ -7,15 +7,37 @@ its position.
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Self
+from collections.abc import Mapping
+from typing import Annotated, Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictInt,
+    StrictStr,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from amber.ids import mention_id as make_mention_id
+from amber.ids import parse_producer, validate_ulid
+from amber.schemas._immutable import FrozenMapping
+from amber.schemas.provenance import Provenance
 
 _MENTION_MINT_CONTEXT = object()
 _StrictInt = Annotated[int, Field(strict=True)]
 _Fragment = tuple[_StrictInt, _StrictInt]
+_Text = Annotated[str, Field(strict=True, min_length=1)]
+_FiniteFloat = Annotated[float, Field(strict=True, allow_inf_nan=False)]
+
+
+def _nonblank(value: str | None) -> str | None:
+    if value is not None and not value.strip():
+        raise ValueError("value must not be blank")
+    return value
 
 
 def fragments_error(start: int, end: int, fragments: tuple[tuple[int, int], ...]) -> str | None:
@@ -92,3 +114,107 @@ class Mention(BaseModel):
 def _mint_mention(data: dict[str, Any]) -> Mention:
     """Internal constructor used only after source bounds and quotes are verified."""
     return Mention.model_validate(data, context={"mention_minter": _MENTION_MINT_CONTEXT})
+
+
+class Concept(BaseModel):
+    """An optional terminology concept for a reading (system, code, label, linker score)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    system: _Text
+    code: _Text
+    label: _Text
+    score: _FiniteFloat | None = None
+
+    @field_validator("system", "code", "label")
+    @classmethod
+    def require_nonblank(cls, value: str) -> str | None:
+        return _nonblank(value)
+
+
+class Attribute(BaseModel):
+    """One assessed attribute category of a reading, with its cue and scope evidence."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    value: StrictBool | StrictInt | StrictStr
+    evidence_id: _Text | None = None
+    scope_evidence_id: _Text | None = None
+    assigned_by: _Text | None = None
+
+    @field_validator("value")
+    @classmethod
+    def require_nonblank_value(cls, value: bool | int | str) -> bool | int | str:
+        if isinstance(value, str):
+            _nonblank(value)
+        return value
+
+    @field_validator("evidence_id", "scope_evidence_id")
+    @classmethod
+    def require_nonblank_reference(cls, value: str | None) -> str | None:
+        return _nonblank(value)
+
+    @field_validator("assigned_by")
+    @classmethod
+    def require_producer_reference(cls, value: str | None) -> str | None:
+        if value is not None:
+            parse_producer(value)
+        return value
+
+
+class MentionReading(BaseModel):
+    """One producer's reading of a span; corrections are new readings, never edits."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    reading_id: Annotated[str, Field(strict=True)]
+    mention_id: _Text
+    label: _Text | None = None
+    value: StrictStr | StrictInt | _FiniteFloat | None = None
+    unit: _Text | None = None
+    concept: Concept | None = None
+    attributes: Mapping[str, Attribute] = Field(default_factory=dict)
+    inputs: tuple[_Text, ...] = ()
+    status: Literal["proposed", "verified", "rejected", "gold"] = "proposed"
+    provenance: Provenance
+
+    @field_validator("reading_id")
+    @classmethod
+    def require_canonical_reading_id(cls, value: str) -> str:
+        return validate_ulid(value)
+
+    @field_validator("mention_id", "label", "unit")
+    @classmethod
+    def require_nonblank_text(cls, value: str | None) -> str | None:
+        return _nonblank(value)
+
+    @field_validator("attributes")
+    @classmethod
+    def freeze_attributes(cls, value: Mapping[str, Attribute]) -> Mapping[str, Attribute]:
+        for category in value:
+            if not category.strip() or category != category.strip():
+                raise ValueError("attribute categories must be nonblank and unpadded")
+        return FrozenMapping(value)
+
+    @field_validator("inputs")
+    @classmethod
+    def require_distinct_inputs(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if any(not item.strip() for item in value) or len(value) != len(set(value)):
+            raise ValueError("reading inputs must be distinct and nonblank")
+        return value
+
+    @field_validator("provenance", mode="before")
+    @classmethod
+    def revalidate_provenance(cls, value: Any) -> Provenance:
+        if isinstance(value, Provenance):
+            value = value.model_dump(warnings=False)
+        return Provenance.model_validate(value)
+
+    @model_validator(mode="after")
+    def require_real_assigners(self) -> MentionReading:
+        if any(
+            attribute.assigned_by == self.provenance.producer
+            for attribute in self.attributes.values()
+        ):
+            raise ValueError("assigned_by equal to the reading's producer must be omitted")
+        return self

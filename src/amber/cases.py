@@ -18,6 +18,7 @@ CaseValidationCode: TypeAlias = Literal[
     "unknown_reference",
 ]
 _RESULT_KEYS = frozenset(CaseResult.model_fields)
+_GRAPH_KEYS = ("claims", "evidence", "edges", "mentions", "mention_readings")
 
 
 class CaseValidationError(ValueError):
@@ -115,8 +116,6 @@ def _finish(case: Case, graph: EvidenceGraph, payload: Mapping[str, Any]) -> Cas
         _raise("invalid_final_claims")
     if type(payload["case_id"]) is not str or payload["case_id"] != case.case_id:
         _raise("invalid_context")
-    if payload["mentions"] != [] or type(payload["mentions"]) is not list:
-        _raise("invalid_schema")
     try:
         return _mint_case_result(
             {
@@ -124,6 +123,8 @@ def _finish(case: Case, graph: EvidenceGraph, payload: Mapping[str, Any]) -> Cas
                 "claims": list(graph.claims.values()),
                 "evidence": list(graph.evidence.values()),
                 "edges": list(graph.edges),
+                "mentions": list(graph.mentions.values()),
+                "mention_readings": list(graph.mention_readings.values()),
                 "final_claim_ids": ids,
                 "outcome": outcome,
             }
@@ -164,6 +165,7 @@ def create_case_result(
             "final_claim_ids": final_claim_ids,
             "outcome": outcome,
             "mentions": [],
+            "mention_readings": [],
             "grounding_failures": grounding_failures,
             "tool_calls": tool_calls,
             "escalated": escalated,
@@ -199,7 +201,7 @@ def load_case_result(
     )
     _validate_context(bound_case, graph)
     graph_payload = graph.to_payload()
-    graph_payload.update({key: copied[key] for key in ("claims", "evidence", "edges")})
+    graph_payload.update({key: copied[key] for key in _GRAPH_KEYS})
     graph = EvidenceGraph.from_payload(
         graph_payload,
         source=source,

@@ -40,7 +40,7 @@ def _payload(
     excluded_spans: tuple[tuple[int, int], ...] = (),
 ) -> dict[str, Any]:
     return {
-        "format_version": 1,
+        "format_version": 2,
         "context": {
             "task": task.name,
             "schema_ref": schema_ref(task.answer_model),
@@ -54,6 +54,8 @@ def _payload(
         "claims": [] if claims is None else claims,
         "evidence": [] if evidence is None else evidence,
         "edges": [] if edges is None else edges,
+        "mentions": [],
+        "mention_readings": [],
     }
 
 
@@ -297,7 +299,7 @@ def test_snapshot_uses_the_exact_context_envelope() -> None:
     )
 
     assert graph.to_payload() == {
-        "format_version": 1,
+        "format_version": 2,
         "context": {
             "task": "synthetic_finding",
             "schema_ref": schema_ref(task.answer_model),
@@ -311,10 +313,12 @@ def test_snapshot_uses_the_exact_context_envelope() -> None:
         "claims": [],
         "evidence": [],
         "edges": [],
+        "mentions": [],
+        "mention_readings": [],
     }
 
 
-@pytest.mark.parametrize("version", [True, 1.0, "1", None, 2])
+@pytest.mark.parametrize("version", [True, 2.0, "2", None, 1, 3])
 def test_snapshot_rejects_non_exact_format_versions(version: Any) -> None:
     source = make_source()
     task = make_task()

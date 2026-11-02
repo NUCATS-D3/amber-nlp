@@ -15,6 +15,9 @@ GraphValidationCode: TypeAlias = Literal[
     "missing_field_evidence",
     "cyclic_support",
     "source_free_support",
+    "unsupported_reading_status",
+    "missing_reading",
+    "attribute_outside_scope",
 ]
 
 

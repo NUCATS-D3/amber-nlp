@@ -15,12 +15,15 @@ from amber.graph_errors import GraphValidationCode, GraphValidationError
 from amber.ids import new_ulid
 from amber.schemas.claims import Claim
 from amber.schemas.evidence import EvidenceEdge, Inclusion, InferenceEvidence
+from amber.schemas.mentions import Mention, MentionReading
 from amber.schemas.provenance import Provenance, Sensitivity
 from amber.schemas.sources import Source
 from amber.schemas.tasks import Task
 
-_FORMAT_VERSION = 1
-_PAYLOAD_KEYS = frozenset({"format_version", "context", "claims", "evidence", "edges"})
+_FORMAT_VERSION = 2
+_PAYLOAD_KEYS = frozenset(
+    {"format_version", "context", "claims", "evidence", "edges", "mentions", "mention_readings"}
+)
 _CONTEXT_KEYS = frozenset(
     {
         "task",
@@ -168,13 +171,22 @@ class EvidenceGraph:
     def edges(self) -> tuple[EvidenceEdge, ...]:
         return tuple(edge.model_copy(deep=True) for edge in self._state.edges)
 
-    def _records(
-        self,
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-        claims = [claim.model_dump() for claim in self._state.claims.values()]
-        evidence = [record.model_dump() for record in self._state.evidence.values()]
-        edges = [edge.model_dump() for edge in self._state.edges]
-        return claims, evidence, edges
+    @property
+    def mentions(self) -> Mapping[str, Mention]:
+        return MappingProxyType(dict(self._state.mentions))
+
+    @property
+    def mention_readings(self) -> Mapping[str, MentionReading]:
+        return MappingProxyType(dict(self._state.readings))
+
+    def _records(self) -> dict[str, list[dict[str, Any]]]:
+        return {
+            "claims": [claim.model_dump() for claim in self._state.claims.values()],
+            "evidence": [record.model_dump() for record in self._state.evidence.values()],
+            "edges": [edge.model_dump() for edge in self._state.edges],
+            "mentions": [mention.model_dump() for mention in self._state.mentions.values()],
+            "readings": [reading.model_dump() for reading in self._state.readings.values()],
+        }
 
     def register_evidence(
         self, record: Inclusion | InferenceEvidence
@@ -188,7 +200,8 @@ class EvidenceGraph:
         except (AttributeError, TypeError, ValueError):
             _raise("invalid_schema")
 
-        claims, evidence, edges = self._records()
+        records = self._records()
+        evidence = records["evidence"]
         existing_index = next(
             (
                 index
@@ -202,12 +215,7 @@ class EvidenceGraph:
         else:
             evidence[existing_index] = record_payload
 
-        candidate_state = validate_state(
-            self._context,
-            claims=claims,
-            evidence=evidence,
-            edges=edges,
-        )
+        candidate_state = validate_state(self._context, **records)
         incoming = candidate_state.evidence[record_id]
         current = self._state.evidence.get(record_id)
         if current is not None and incoming != current:
@@ -215,6 +223,80 @@ class EvidenceGraph:
 
         self._state = candidate_state
         return incoming.model_copy(deep=True)
+
+    def register_mention(
+        self, mention: Mention, readings: Sequence[MentionReading]
+    ) -> tuple[Mention, tuple[MentionReading, ...]]:
+        """Atomically register a span with at least one reading of it.
+
+        Register cue and scope inclusions first. Re-registering an identical span or reading is
+        a no-op; a different record under an existing ID is ``duplicate_reference``.
+        """
+        if not isinstance(mention, Mention):
+            _raise("invalid_schema")
+        if (
+            not isinstance(readings, Sequence)
+            or isinstance(readings, (str, bytes, bytearray))
+            or not readings
+        ):
+            _raise("missing_reading")
+        if any(not isinstance(reading, MentionReading) for reading in readings):
+            _raise("invalid_schema")
+        try:
+            mention_payload = mention.model_dump(warnings=False)
+            reading_payloads = [reading.model_dump(warnings=False) for reading in readings]
+        except (AttributeError, TypeError, ValueError):
+            _raise("invalid_schema")
+        if any(payload["mention_id"] != mention.mention_id for payload in reading_payloads):
+            _raise("invalid_context")
+        return self._publish_mention_records(mention_payload, reading_payloads)
+
+    def register_reading(self, reading: MentionReading) -> MentionReading:
+        """Atomically register another reading of an already registered span."""
+        if not isinstance(reading, MentionReading):
+            _raise("invalid_schema")
+        current = self._state.mentions.get(reading.mention_id)
+        if current is None:
+            _raise("unknown_reference")
+        _, published = self._publish_mention_records(
+            current.model_dump(), [reading.model_dump(warnings=False)]
+        )
+        return published[0]
+
+    def _publish_mention_records(
+        self, mention_payload: dict[str, Any], reading_payloads: list[dict[str, Any]]
+    ) -> tuple[Mention, tuple[MentionReading, ...]]:
+        records = self._records()
+        mention_id = mention_payload.get("mention_id")
+        if type(mention_id) is not str:
+            _raise("invalid_schema")
+        if mention_id not in self._state.mentions:
+            records["mentions"].append(mention_payload)
+        reading_ids: list[str] = []
+        for payload in reading_payloads:
+            reading_id = payload.get("reading_id")
+            if type(reading_id) is not str or reading_id in reading_ids:
+                _raise("duplicate_reference")
+            reading_ids.append(reading_id)
+            if reading_id not in self._state.readings:
+                records["readings"].append(payload)
+        candidate_state = validate_state(self._context, **records)
+        incoming_mention = candidate_state.mentions[mention_id]
+        if incoming_mention.model_dump() != mention_payload:
+            _raise("duplicate_reference")
+        published: list[MentionReading] = []
+        for payload, reading_id in zip(reading_payloads, reading_ids, strict=True):
+            current = self._state.readings.get(reading_id)
+            if current is not None:
+                try:
+                    incoming = MentionReading.model_validate(payload)
+                except (TypeError, ValueError, ValidationError):
+                    _raise("invalid_schema")
+                if incoming != current:
+                    _raise("duplicate_reference")
+            published.append(candidate_state.readings[reading_id].model_copy(deep=True))
+        self._state = candidate_state
+        return incoming_mention.model_copy(deep=True), tuple(published)
 
     def commit_claim(
         self,
@@ -328,30 +410,18 @@ class EvidenceGraph:
                 for evidence_id in role_ids
             )
 
-        claims, evidence, edges = self._records()
-        claims.append(claim_payload)
-        evidence.append(inference_payload)
-        edges.extend(new_edges)
-        candidate_state = validate_state(
-            self._context,
-            claims=claims,
-            evidence=evidence,
-            edges=edges,
-        )
+        records = self._records()
+        records["claims"].append(claim_payload)
+        records["evidence"].append(inference_payload)
+        records["edges"].extend(new_edges)
+        candidate_state = validate_state(self._context, **records)
         minted = candidate_state.claims[claim_id].model_copy(deep=True)
         self._state = candidate_state
         return minted
 
     def validate(self) -> None:
         """Revalidate and atomically republish the current complete state."""
-        claims, evidence, edges = self._records()
-        candidate_state = validate_state(
-            self._context,
-            claims=claims,
-            evidence=evidence,
-            edges=edges,
-        )
-        self._state = candidate_state
+        self._state = validate_state(self._context, **self._records())
 
     def support_closure(self, node_id: str) -> tuple[str, ...]:
         """Return the complete validated support closure, including ``node_id``."""
@@ -379,6 +449,32 @@ class EvidenceGraph:
             leaf.model_copy(deep=True) for leaf in sorted(leaves, key=lambda item: item.evidence_id)
         )
 
+    def mentions_at(self, evidence_id: str) -> tuple[Mention, ...]:
+        """Return the registered mentions whose hull or a fragment is this inclusion's span.
+
+        Inclusions are positions only; this is how a source leaf reaches the spans, and through
+        ``readings_of`` the readings, registered at its position.
+        """
+        record = self._state.evidence.get(evidence_id) if type(evidence_id) is str else None
+        if not isinstance(record, Inclusion):
+            _raise("unknown_reference")
+        position = (record.start, record.end)
+        return tuple(
+            mention.model_copy(deep=True)
+            for mention_id, mention in sorted(self._state.mentions.items())
+            if position in (mention.fragments or ((mention.start, mention.end),))
+        )
+
+    def readings_of(self, mention_id: str) -> tuple[MentionReading, ...]:
+        """Return every registered reading of a span, ordered by reading ID."""
+        if type(mention_id) is not str or mention_id not in self._state.mentions:
+            _raise("unknown_reference")
+        return tuple(
+            reading.model_copy(deep=True)
+            for reading_id, reading in sorted(self._state.readings.items())
+            if reading.mention_id == mention_id
+        )
+
     def to_payload(self) -> dict[str, Any]:
         """Return a deterministic, detached, JSON-compatible graph snapshot."""
         claims = sorted(self._state.claims.values(), key=lambda record: record.claim_id)
@@ -387,6 +483,8 @@ class EvidenceGraph:
             self._state.edges,
             key=lambda edge: (edge.claim_id, edge.evidence_id, edge.role or ""),
         )
+        mentions = [self._state.mentions[key] for key in sorted(self._state.mentions)]
+        readings = [self._state.readings[key] for key in sorted(self._state.readings)]
         return {
             "format_version": _FORMAT_VERSION,
             "context": {
@@ -402,6 +500,8 @@ class EvidenceGraph:
             "claims": [record.model_dump(mode="json") for record in claims],
             "evidence": [record.model_dump(mode="json") for record in evidence],
             "edges": [edge.model_dump(mode="json") for edge in edges],
+            "mentions": [record.model_dump(mode="json") for record in mentions],
+            "mention_readings": [record.model_dump(mode="json") for record in readings],
         }
 
     @classmethod
@@ -457,11 +557,15 @@ class EvidenceGraph:
         claims = _strict_record_list(envelope["claims"])
         evidence = _strict_record_list(envelope["evidence"])
         edges = _strict_record_list(envelope["edges"])
+        mentions = _strict_record_list(envelope["mentions"])
+        readings = _strict_record_list(envelope["mention_readings"])
         candidate_state = validate_state(
             graph._context,
             claims=claims,
             evidence=evidence,
             edges=edges,
+            mentions=mentions,
+            readings=readings,
         )
         graph._state = candidate_state
         return graph

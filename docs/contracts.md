@@ -56,12 +56,19 @@ refuse scoring a configuration against its own silver references; rule hashes ar
   optional `fragments` for discontinuous spans, and `section_category` derived from the
   innermost categorized `Source` section containing the hull). Only the grounding path can
   mint one. A mention is not evidence; claims cite the inclusions at its position.
+- **`MentionReading`**: one producer's reading of a span (label, value, unit, optional
+  `Concept`, attributes, producer-side inputs, status, provenance). Disagreement is several
+  readings of one span; a correction is a new reading, never an edit.
+- **`Attribute`**: an assessed category of a reading (`negation`, `temporality`, ...), keyed by
+  category. Its value is a strict `str`, `bool`, or `int`; an absent category means not
+  assessed. It may cite a cue inclusion and a scope inclusion, and `assigned_by` names another
+  producer only when someone other than the reading's producer assigned it.
 - **`Case`**: one note, one task, and declared sensitivity.
 - **`CaseOutcome`**: one of `answered`, `not_mentioned`, `conflicting_evidence`,
   `insufficient_evidence`, or `failed`, with a reason, a failure kind, review coverage, and
   cited evidence.
-- **`CaseResult`**: claims, evidence, edges, explicit `final_claim_ids`, the outcome, counters,
-  and a trace ID. Results are built and loaded only through `amber.cases`.
+- **`CaseResult`**: claims, evidence, edges, mentions and their readings, explicit
+  `final_claim_ids`, the outcome, counters, and a trace ID. Results are built and loaded only through `amber.cases`.
 
 ## Policy (`amber.policy`)
 
@@ -93,11 +100,16 @@ Pure data and functions; no I/O, credentials, or clock (contract v0.1 §1).
   whose hull is the grounded text. `amber.tools.mention.cite` re-grounds a mention and returns
   the inclusion at its hull, or one per fragment.
 - `amber.graph.EvidenceGraph`: one source, one task, one sensitivity. It offers:
-  - atomic registration and claim commits;
+  - atomic registration and claim commits; `register_mention` takes a span with at least one
+    reading, and `register_reading` adds a reading of a registered span;
   - complete validation: known in-scope references, field roles, acyclicity across edges and
-    inference inputs, and source-backed leaves on every branch;
-  - support traversal;
-  - snapshot and restore against authoritative context.
+    inference inputs, and source-backed leaves on every branch. Mentions are re-minted against
+    the source; readings must name a registered span; attribute cues and scopes must be
+    registered inclusions, and a scope must contain the mention's hull. Graphs hold only
+    `proposed` and `rejected` readings and claims;
+  - support traversal, and `mentions_at` / `readings_of` from a source leaf to the spans and
+    readings at its position;
+  - snapshot (format version 2) and restore against authoritative context.
 - `amber.tools.commit.commit_claim`: admits a proposed claim only with valid, complete support.
 - `amber.tools.outcomes.no_claim`: records the three clinical non-answers and never creates a
   null claim. Only runtimes record `failed`.
@@ -117,8 +129,8 @@ correctness. Those are measured separately.
 These items are tracked in Beads (`bd list --status=open`):
 
 - the `PolicyGate` protocol and its reference implementation;
-- `MentionReading`, attributes, and mentions in graphs and results (`StructuredEvidence` is
-  deferred to a later minor; contract v0.1 §2.6);
+- claims that rely on readings and required attributes (`StructuredEvidence` is deferred to a
+  later minor; contract v0.1 §2.6);
 - `Example` with reference tiers;
 - annotation events and status transitions;
 - layered variables over multi-task evidence graphs;

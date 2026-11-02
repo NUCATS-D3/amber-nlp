@@ -12,15 +12,25 @@ from typing import Any, NoReturn
 from pydantic import ValidationError
 
 from amber.graph_errors import GraphValidationCode, GraphValidationError
-from amber.grounding import exact_quote
+from amber.grounding import exact_mention, exact_quote
 from amber.ids import inclusion_id, schema_ref
 from amber.schemas.claims import Claim, _ClaimRecord, _mint_claim
-from amber.schemas.evidence import EvidenceEdge, Inclusion, InferenceEvidence
+from amber.schemas.evidence import EvidenceEdge, GroundingFailure, Inclusion, InferenceEvidence
+from amber.schemas.mentions import Mention, MentionReading
 from amber.schemas.provenance import Sensitivity
 from amber.schemas.sources import Source, SourceKind
 from amber.schemas.tasks import Task
 
 _INCLUSION_FIELDS = frozenset(Inclusion.model_fields)
+_MENTION_FIELDS = frozenset(Mention.model_fields)
+_MENTION_FAILURE_CODES: Mapping[str, GraphValidationCode] = MappingProxyType(
+    {
+        "empty_candidate": "invalid_span",
+        "hint_out_of_bounds": "invalid_span",
+        "invalid_fragments": "invalid_span",
+        "hint_mismatch": "quote_mismatch",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -38,6 +48,8 @@ class _ValidatedState:
     evidence: Mapping[str, Inclusion | InferenceEvidence]
     edges: tuple[EvidenceEdge, ...]
     adjacency: Mapping[str, tuple[str, ...]]
+    mentions: Mapping[str, Mention]
+    readings: Mapping[str, MentionReading]
 
 
 def _raise(code: GraphValidationCode) -> NoReturn:
@@ -212,16 +224,109 @@ def _validate_inference(
     return record
 
 
+def _strict_fragments(value: Any) -> tuple[tuple[int, int], ...]:
+    if not isinstance(value, (list, tuple)):
+        _raise("invalid_schema")
+    fragments: list[tuple[int, int]] = []
+    for item in value:
+        if (
+            not isinstance(item, (list, tuple))
+            or len(item) != 2
+            or any(type(offset) is not int for offset in item)
+        ):
+            _raise("invalid_span")
+        fragments.append((item[0], item[1]))
+    return tuple(fragments)
+
+
+def _validate_mention(context: _GraphContext, candidate: Mapping[str, Any]) -> Mention:
+    """Re-mint a mention payload through grounding and require it to match exactly."""
+    payload = _copy_mapping(candidate)
+    if set(payload) != _MENTION_FIELDS:
+        _raise("invalid_schema")
+    start = payload["start"]
+    end = payload["end"]
+    quote = payload["quote"]
+    mention_type = payload["mention_type"]
+    if type(start) is not int or type(end) is not int or type(quote) is not str:
+        _raise("invalid_span")
+    if type(mention_type) is not str or not mention_type.strip():
+        _raise("invalid_schema")
+    if payload["source_id"] != context.source.source_id:
+        _raise("invalid_context")
+    fragments = _strict_fragments(payload["fragments"])
+    text = context.source.text
+    if text is None:
+        _raise("invalid_context")
+    if not 0 <= start < end <= len(text):
+        _raise("invalid_span")
+    if quote != text[start:end]:
+        _raise("quote_mismatch")
+    verified = exact_mention(context.source, quote, start, mention_type, fragments=fragments)
+    if isinstance(verified, GroundingFailure):
+        _raise(_MENTION_FAILURE_CODES.get(verified.reason, "invalid_context"))
+    if any(start < hi and lo < end for lo, hi in context.excluded_spans):
+        _raise("invalid_context")
+    verified_payload = verified.model_dump()
+    if any(
+        verified_payload[field] != (fragments if field == "fragments" else value)
+        for field, value in payload.items()
+    ):
+        _raise("invalid_context")
+    return verified
+
+
+def _validate_reading(context: _GraphContext, candidate: Mapping[str, Any]) -> MentionReading:
+    try:
+        record = MentionReading.model_validate(_copy_mapping(candidate))
+    except GraphValidationError:
+        raise
+    except (TypeError, ValueError, ValidationError):
+        _raise("invalid_schema")
+    if record.status not in ("proposed", "rejected"):
+        _raise("unsupported_reading_status")
+    if record.provenance.sensitivity is not context.sensitivity:
+        _raise("invalid_context")
+    return record
+
+
+def _validate_reading_references(
+    reading: MentionReading,
+    mentions: Mapping[str, Mention],
+    evidence: Mapping[str, Inclusion | InferenceEvidence],
+) -> None:
+    mention = mentions.get(reading.mention_id)
+    if mention is None:
+        _raise("unknown_reference")
+    for attribute in reading.attributes.values():
+        for evidence_id in (attribute.evidence_id, attribute.scope_evidence_id):
+            if evidence_id is None:
+                continue
+            if evidence_id not in evidence:
+                _raise("unknown_reference")
+            if not isinstance(evidence[evidence_id], Inclusion):
+                _raise("unsupported_evidence")
+        if attribute.scope_evidence_id is not None:
+            scope = evidence[attribute.scope_evidence_id]
+            assert isinstance(scope, Inclusion)
+            if not scope.start <= mention.start or not mention.end <= scope.end:
+                _raise("attribute_outside_scope")
+
+
 def validate_state(
     context: _GraphContext,
     *,
     claims: Sequence[Mapping[str, Any]],
     evidence: Sequence[Mapping[str, Any]],
     edges: Sequence[Mapping[str, Any]],
+    mentions: Sequence[Mapping[str, Any]] = (),
+    readings: Sequence[Mapping[str, Any]] = (),
 ) -> _ValidatedState:
     """Validate every retained component before issuing any accepted Claim."""
     claim_records: dict[str, _ClaimRecord] = {}
     evidence_records: dict[str, Inclusion | InferenceEvidence] = {}
+    mention_records: dict[str, Mention] = {}
+    reading_records: dict[str, MentionReading] = {}
 
     for candidate in claims:
         claim_record = _validate_claim(context, candidate)
@@ -244,6 +349,32 @@ def validate_state(
         ):
             _raise("duplicate_reference")
         evidence_records[evidence_record.evidence_id] = evidence_record
+
+    for candidate in mentions:
+        mention_record = _validate_mention(context, candidate)
+        if (
+            mention_record.mention_id in mention_records
+            or mention_record.mention_id in evidence_records
+            or mention_record.mention_id in claim_records
+        ):
+            _raise("duplicate_reference")
+        mention_records[mention_record.mention_id] = mention_record
+
+    for candidate in readings:
+        reading_record = _validate_reading(context, candidate)
+        reading_id = reading_record.reading_id
+        if (
+            reading_id in reading_records
+            or reading_id in mention_records
+            or reading_id in evidence_records
+            or reading_id in claim_records
+        ):
+            _raise("duplicate_reference")
+        _validate_reading_references(reading_record, mention_records, evidence_records)
+        reading_records[reading_id] = reading_record
+
+    if {reading.mention_id for reading in reading_records.values()} != set(mention_records):
+        _raise("missing_reading")
 
     validated_edges: list[EvidenceEdge] = []
     edge_keys: set[tuple[str, str, str | None]] = set()
@@ -339,4 +470,6 @@ def validate_state(
         evidence=MappingProxyType(dict(evidence_records)),
         edges=tuple(validated_edges),
         adjacency=MappingProxyType(dict(adjacency)),
+        mentions=MappingProxyType(dict(mention_records)),
+        readings=MappingProxyType(dict(reading_records)),
     )
