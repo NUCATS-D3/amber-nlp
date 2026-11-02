@@ -134,10 +134,11 @@ Rules, applied in order; the first failure is the reason:
 refusal carries no source text.
 
 **Payload downgrade is explicit.** A caller may not reclassify `derived_text` as `labels_only`
-by stripping fields on its own judgement. The core provides one function,
-`labels_only_view(result: CaseResult) -> LabelRecord`, that removes quotes, offsets, rationales,
-and free text, and the conformance kit checks that its output contains no string that appears
-in the source. Metrics are aggregates computed by scorers; they are `metrics` by construction.
+by stripping fields on its own judgement. The core provides `labels_only_view`, with two forms:
+`labels_only_view(result: CaseResult) -> LabelRecord` removes quotes, offsets, rationales, and
+free text; `labels_only_view(events)` keeps only who did what and when (§4.4). The conformance
+kit checks that neither output contains a string that appears in the source. Metrics are
+aggregates computed by scorers; they are `metrics` by construction.
 
 **Model weights are payloads.** Parameters or adapters trained on a dataset carry that dataset's
 `DataPolicy` (the most restrictive of all training datasets when several are combined) and pass
@@ -1048,36 +1049,59 @@ class VariableReference(BaseModel):           # frozen
     derived_from_events: tuple[str, ...]      # event IDs whose replay yields this reference
 
 class Example(BaseModel):                     # frozen, extra="forbid"; loaded only through amber.examples
-    example_id: str                           # ULID
+    example_id: str                           # sha256(case_id, variable_set_ref, as_of_event)
     schema_version: str
     case_id: str
     variable_set: str; variable_set_version: str; variable_set_ref: str
+    as_of_event: str                          # last event included in the replay that produced this snapshot
     source_ids: tuple[str, ...]               # one in v0.1
-    split: Literal["train", "dev", "test"] | None
+    split: Literal["train", "dev", "test"] | None   # must equal the Case's split (invariant 4)
     references: Mapping[str, VariableReference]   # one per final variable
-    claims: tuple[Claim, ...]                 # gold and supporting claims (status gold|verified)
+    claims: tuple[Claim, ...]                 # final and supporting claims; status set by tier (invariant 1)
     mentions: tuple[Mention, ...]             # spans of the retained readings
-    mention_readings: tuple[MentionReading, ...]  # reviewed readings, cited or not (status gold|verified)
+    mention_readings: tuple[MentionReading, ...]  # retained readings, cited or not; status set by tier
     evidence: tuple[Evidence, ...]
     edges: tuple[EvidenceEdge, ...]
     created_at: datetime
 ```
 
+**Snapshots.** An Example is the projection of a case's events up to and including
+`as_of_event`. Its `example_id` is derived from `(case_id, variable_set_ref, as_of_event)`, so
+anyone replaying the same events gets the same ID and any earlier snapshot can be rebuilt
+exactly from the event prefix. A rising tier, a correction, or an adjudicator's rejection
+appends events and so yields a new snapshot; old snapshots stay valid and addressable. The
+**current** Example for a case is the snapshot at its latest event. Score reports record the
+`example_id`s they scored against, so a result always names the exact gold it used.
+
 Invariants (validated on load, with the authoritative Source and VariableSet supplied, as
 `load_case_result` does today):
 
-1. The retained graph validates completely under §2–§3 rules; every final claim is `gold`;
-   supporting claims are `gold` or `verified`; no `proposed` or `rejected` claim is retained.
+1. The retained graph validates completely under §2–§3 rules, and claim status follows the
+   tier of the reference a claim serves. Claim status records whether a person reviewed the
+   claim; tier records how good the reference is; the two are never conflated.
+
+   | Tier | Final claims | Supporting claims and cited readings |
+   |---|---|---|
+   | `adjudicated`, `single_review` | `gold` | `gold` or `verified` |
+   | `silver` | `proposed` | `proposed` |
+
+   A silver claim is never `verified` or `gold`, because no one reviewed it. A supporting claim
+   or reading that serves several references meets the strictest of their requirements. No
+   `rejected` claim or reading is retained.
 2. A reference's `outcome` is never `failed`: failed runs are diagnostics, not Examples.
 3. `answered` references have nonempty final IDs naming retained gold claims; the other three
    outcomes have none. An abstention is never translated to a negative answer.
-4. `split` is immutable once set; an Example cannot be re-created with a different split for
-   the same case (the store rejects it; the conformance kit checks the rule).
+4. `split` belongs to the `(dataset, source_id)` pair and is recorded on the `Case`; an
+   Example's (and a LabelRecord's) `split` must equal it. Once set it never changes, and a
+   store rejects two cases with the same `(dataset, source_id)` but different splits, so a
+   note cannot be `train` under one variable set and `test` under another.
 5. `derived_from_events` is nonempty for `adjudicated` and `single_review`; for `silver` it
    names the import event that recorded the producer's result.
 6. Mentions: every mention cited by a retained claim is present, with the reading that claim
-   relies on; uncited reviewed readings may be present (they are span-level gold). Retained
-   readings are `gold` or `verified`; every retained span has at least one retained reading.
+   relies on. Uncited readings may be present with any status except `rejected`; they serve no
+   reference, so their own status says whether a person reviewed them, and span-level scorers
+   treat `gold`/`verified` readings as gold and `proposed` ones as silver. Every retained span
+   has at least one retained reading.
 
 ### 4.4 Annotation events
 
@@ -1114,12 +1138,18 @@ Rules:
 - Events are the record; current state is a **projection** rebuilt by replay. Replay is
   deterministic: the conformance kit replays a random event sequence twice and compares
   projections.
-- `before`/`after` carry `labels_only` views (no quotes or offsets); the spans themselves are
-  referenced by evidence/mention IDs that resolve in the store. This keeps the event log safe
-  to transfer as `labels_only`.
-- Blind review: events from different `stream`s in the same `round` are never visible to each
-  other's actors; the projection for an actor includes only their own stream until
-  `adjudication.resolve`. This is a store/projection rule, checked by the kit.
+- `before`/`after` carry no quotes or offsets; spans are referenced by evidence and mention
+  IDs that resolve in the store. They can still carry source text: a reading's captured
+  `value` or a string answer field. Together with the free-text `reason`, that makes the event
+  log `derived_text`. For uses that need only who did what and when (expert-effort timing,
+  tracking), `labels_only_view(events)` returns one record per event with `event_id`,
+  `case_id`, `variable`, `actor`, `role`, `round`, `stream`, `action`, `target_id`, `at`, and
+  `external_ref`, and drops `before`, `after`, and `reason`; its output is `labels_only`.
+- Blind review: visibility depends on the actor's role, and is a store/projection rule checked
+  by the kit. Until `adjudication.resolve` for the case and round, a `reviewer` in stream S sees
+  events from S and events with no stream (such as imported proposals), and never another
+  stream's; an `adjudicator` sees every stream in the round, since resolving requires it;
+  `system` and `importer` see everything. After resolve, every actor sees every stream.
 - Session timing for expert-effort measurement uses `review.open`/`review.submit` timestamps
   plus optional `review.focus`/`review.idle` events (added to the action set when loupe
   provides them); amber defines the actions, loupe emits them.
@@ -1155,11 +1185,12 @@ not Examples: they cannot satisfy invariant 1. They are `LabelRecord`s:
 ```python
 class LabelRecord(BaseModel):                 # frozen; produced by labels_only_view or by a Labeler
     case_id: str; variable: str
+    variable_set: str; variable_set_version: str; variable_set_ref: str
     tier: Literal["silver"]
     outcome_status: OutcomeStatus
     value: Mapping[str, Any] | None           # the answer value when answered
-    producer: str; producer_version: str
-    split: Literal["train","dev","test"] | None
+    producer: str                             # producer reference (§1.6), version included
+    split: Literal["train","dev","test"] | None   # must equal the Case's split
 ```
 
 Scorers accept Examples and LabelRecords; label correctness, coverage, omissions, and cost can
@@ -1184,8 +1215,9 @@ The review bridge (§6, MLflow plugins) performs the mapping; the contract fixes
 | publication id | `external_ref` on the resolve events; `derived_from_events` of the Example |
 | single-stream workflow (move-on) | `tier.set single_review` by the reviewer on submit; no adjudication events |
 
-The adapter's `build_result`/`validate_result` (§2.5) ensure every revision is a valid amber
-payload before it is accepted, so the event diff never contains an ungrounded span.
+The bridge builds each revision through amber's tools (`quote`, `mention`, `commit_claim`)
+and validates it at amber's load boundary before accepting it (`ReviewBackend`, §6.2), so the
+event diff never contains an ungrounded span.
 
 ### 4.8 Design checks against the stand-in variables
 
@@ -1206,17 +1238,25 @@ payload before it is accepted, so the event diff never contains an ungrounded sp
 
 ### 4.9 Conformance cases (annotated data)
 
-1. An Example with a `failed` outcome, a `proposed` final claim, or a `rejected` retained claim
-   fails to load.
+1. An Example with a `failed` outcome, a `rejected` retained claim or reading, a `proposed`
+   final claim under a human tier, or a `verified`/`gold` claim under a silver reference fails
+   to load; a silver reference with `proposed` claims loads; a supporting claim serving an
+   adjudicated and a silver reference must be `gold` or `verified`.
 2. `answered` with empty final IDs, or a non-answer with final IDs, fails to load.
 3. An Example whose cited mention is missing from `mentions` fails; uncited mentions round-trip.
 4. Tier can rise (`silver` → `single_review` → `adjudicated`) only with new events; a payload
    asserting a higher tier without events fails; a lower tier than the events support fails.
-5. Split change for an existing case is rejected by the store.
+5. Split: a store rejects a second case for the same `(dataset, source_id)` with a different
+   split, a split change for an existing case, and an Example or LabelRecord whose split
+   differs from its case's.
 6. Replay determinism: random event sequences produce identical projections; replaying a
    prefix produces the prefix's projection.
-7. Blind streams: an actor's projection excludes other streams until resolve.
-8. `before`/`after` contain no substring of length ≥ 8 from the source text.
+7. Blind streams: before resolve, a reviewer's projection includes their own stream and
+   stream-less events and excludes other streams; an adjudicator's includes every stream in
+   the round; after resolve every actor sees every stream.
+8. `labels_only_view(events)` contains no `before`, `after`, or `reason`, and no substring of
+   length ≥ 8 from the source text; a reading's captured value appearing in an event's
+   `after` keeps `annotation_events` classified as `derived_text`.
 9. A `gold` claim cannot be edited in place; a correction produces a new claim and a linked
    event.
 10. A claim can be `gold` only if the readings it relies on are `gold` or `verified`; a span
@@ -1228,6 +1268,12 @@ payload before it is accepted, so the event diff never contains an ungrounded sp
 13. loupe mapping fixtures: accepted → adjudicated Example; unresolved → no Example, events
     retained; excluded → no Example; no-mentions confirmation → `not_mentioned`; unsubmitted →
     `insufficient_evidence`.
+14. (Catalog `ANN-15`.) Snapshot identity: replaying the same events gives the same
+    `example_id`; appending an event (a tier rise, a correction) gives a new `example_id`, and
+    replaying the prefix reproduces the old snapshot exactly; a store rejects an Example whose
+    `example_id` does not match its `(case_id, variable_set_ref, as_of_event)`;
+    `current_example` returns the snapshot at the latest event; a `ScoreReport` lists the
+    `example_id`s it scored against.
 
 ### 4.10 Decisions recorded
 
@@ -1240,8 +1286,30 @@ Reviewed and accepted 2026-10-30:
    carrying the decision reference, recorded before scoring.
 3. The loupe bridge derives per-change events from revision diffs and stamps the revision
    checksum on `review.submit`. Fallback, if diffing is unreliable: one `review.submit` per
-   revision carrying the full `labels_only` state. Both replay to the same projection, which
+   revision carrying the full state. Both replay to the same projection, which
    the conformance kit checks.
+
+Reviewed and accepted 2026-11-02 (whole-document review):
+
+4. Claim status records review; tier records reference quality. Under human tiers final claims
+   are `gold` and supporting claims and cited readings `gold`/`verified`; under `silver` they
+   stay `proposed`. A record serving several references meets the strictest requirement.
+   Uncited readings keep their own status. Gold bundles select rows by case, not by status.
+5. An Example is a snapshot: `example_id = sha256(case_id, variable_set_ref, as_of_event)`.
+   New events yield new snapshots; old ones are reproducible from the event prefix. The current
+   Example is the snapshot at the case's latest event (`Store.current_example`), and score
+   reports pin the `example_id`s they used.
+6. Blind-review visibility is by role: reviewers see their own stream and stream-less events,
+   adjudicators see every stream in the round, `system`/`importer` see everything, and
+   everyone sees everything after resolve.
+7. Annotation events are `derived_text` (captured values in `before`/`after`, free-text
+   `reason`); `labels_only_view(events)` keeps who did what and when and is `labels_only`.
+   `mention_readings` is listed as `derived_text` in §5.2.
+8. `split` belongs to `(dataset, source_id)` and lives on `Case`; Examples and LabelRecords
+   must match it, and a source cannot have two splits across variable sets.
+9. `LabelRecord` uses one producer reference (§1.6) and records the variable set's name,
+   version, and `variable_set_ref`. §4.7 cites amber's tools and load boundary instead of the
+   undefined `build_result`/`validate_result`.
 
 ## 5. Wire formats
 
@@ -1262,8 +1330,8 @@ plan is updated (lap-ecc.1).
   `schema_version: "amber/<major>.<minor>"`. v0.1 is `amber/0.1`. Readers reject a different
   major and accept a lower or equal minor (additive changes only). A reader never guesses.
 - **IDs** are strings: content-addressed SHA-256 hex for `source_id`, `mention_id`, inclusion
-  and structured `evidence_id`; ULIDs for `claim_id`, `reading_id`, inference `evidence_id`,
-  `event_id`, `example_id`.
+  and structured `evidence_id`, and `example_id` (§4.3); ULIDs for `claim_id`, `reading_id`,
+  inference `evidence_id`, `event_id`.
 - **Offsets** are end-exclusive Unicode code-point indices into the exact source text. Parquet
   `int64`, JSON integers.
 - **Times** are RFC 3339 with offset in JSON; `timestamp[us, tz=UTC]` in Parquet.
@@ -1274,9 +1342,9 @@ plan is updated (lap-ecc.1).
   strings.
 - **Source text is never stored in tables.** `sources` carries `text_hash`; `quote` columns
   and attribute cue quotes do contain source text and classify the file as `derived_text`
-  (§1). Every other table is `labels_only` by construction, except `annotation_events`, whose
-  `before`/`after` are `labels_only` views and whose `reason` is free text written by a human
-  (treated as `derived_text` conservatively).
+  (§1). `mention_readings` (a captured `value` is source text) and `annotation_events`
+  (`before`/`after` can carry such values, and `reason` is free human text) are `derived_text`
+  as well. Every other table is `labels_only` by construction.
 - **Provenance** is flattened into `provenance_*` columns: `producer`, `model`,
   `prompt_versions` (JSON), `run_id`, `trace_id`, `zone`, `sensitivity`, `destination`,
   `policy_version`, `restriction_ids` (JSON list), `created_at` (timestamp), `version`.
@@ -1367,11 +1435,12 @@ provenance_*.
 target_id?, before (JSON)?, after (JSON)?, reason?, at, external_ref?, provenance_*.
 
 **examples** — **example_id, variable**, case_id, variable_set, variable_set_version,
-variable_set_ref, split?, tier, outcome_status, final_claim_ids (JSON list), annotators (JSON
-list), adjudicator?, derived_from_events (JSON list), created_at.
-The Example's claims, mention readings, evidence, and edges are the rows of the other tables
-whose `case_id` matches and whose status is `gold`/`verified`, and its mentions are the spans
-those readings point to; a gold bundle therefore contains only retained records.
+variable_set_ref, as_of_event →, split?, tier, outcome_status, final_claim_ids (JSON list),
+annotators (JSON list), adjudicator?, derived_from_events (JSON list), created_at.
+A gold bundle contains only retained records (§4.3 invariant 1), so an Example's claims,
+mention readings, evidence, and edges are the rows of the other tables whose `case_id`
+matches, and its mentions are the spans those readings point to. Status is not used to select
+rows: a silver reference's claims are retained as `proposed`.
 
 **decisions** — **decision_id**, checked_at, permitted, reason, restriction_id?, policy_version,
 destination, zone, sensitivity, payload, case_id?, run_id?.
@@ -1598,12 +1667,15 @@ class Store(Protocol):
     def project(self, case_id: str, *, actor: str | None, resolver: SourceResolver) -> CaseResult: ...
     def put_example(self, example: Example) -> None: ...
     def get_example(self, example_id: str, *, resolver: SourceResolver) -> Example: ...
+    def current_example(self, case_id: str, *, resolver: SourceResolver) -> Example | None: ...
 ```
 Contract: every `get_*`/`project` revalidates through amber's load boundaries with the
 resolver; `append_events` is append-only (no update or delete); `project` honors blind
-streams; `put_example` rejects a split change for an existing case and a tier that the events
-do not support. Reference: `InMemoryStore`. First consumer: amber's Parquet bundle store (a
-reference too) and lapidary's run artifacts.
+streams by role (§4.4); `put_example` rejects a split that differs from the case's
+`(dataset, source_id)` split, a tier that the events do not support, and an `example_id` that
+does not match its `(case_id, variable_set_ref, as_of_event)`; `current_example` returns the
+snapshot at the case's latest event (§4.3). Reference: `InMemoryStore`. First consumer:
+amber's Parquet bundle store (a reference too) and lapidary's run artifacts.
 
 ```python
 class Exporter(Protocol):
@@ -1624,12 +1696,13 @@ class Scorer(Protocol):
               *, variables: VariableSet) -> ScoreReport: ...
 ```
 `ScoreReport`: metrics with numerators and denominators, per-variable breakdown, the
-reference **tier mix**, a `provisional: bool` that is true when any reference is below
-`adjudicated`, and `inconclusive` entries for metrics the reference tier cannot support. A
-scorer refuses (`self_reference`) when a silver reference's producer provenance matches the
-predicted results' configuration. Scorers never see source text unless `needs` includes
-`mentions` (span overlap requires offsets, not text). Reference: `StructuralValidityScorer`,
-`LabelCorrectScorer`. First consumer: lapidary `lap eval` (lap-ecc.12).
+`example_id`s scored against, the reference **tier mix**, a `provisional: bool` that is true
+when any reference is below `adjudicated`, and `inconclusive` entries for metrics the reference
+tier cannot support. A scorer refuses (`self_reference`) when a silver reference's producer
+provenance matches the predicted results' configuration. Scorers never see source text unless
+`needs` includes `mentions` (span overlap requires offsets, not text). Reference:
+`StructuralValidityScorer`, `LabelCorrectScorer`. First consumer: lapidary `lap eval`
+(lap-ecc.12).
 
 ```python
 class ReviewBackend(Protocol):
@@ -1710,7 +1783,7 @@ Reviewed and accepted 2026-10-30:
 
 The catalog is the complete list of checks that define conformance to contract v0.1. It is
 implemented as the pytest plugin `amber.conformance` (Phase 2) and its IDs are stable: a
-consumer reports "amber conformance 0.1: 82/88, failing MEN-09, WIR-04". Changing a case's
+consumer reports "amber conformance 0.1: 83/89, failing MEN-09, WIR-04". Changing a case's
 meaning requires a new ID; retired IDs are never reused.
 
 Each case has a **level**:
@@ -1727,7 +1800,7 @@ Each case has a **level**:
 "Applies to" names the interfaces or adapters the case checks; `—` means it checks contract
 objects only.
 
-The catalog contains 88 cases. Every case uses invented data; no fixture contains clinical
+The catalog contains 89 cases. Every case uses invented data; no fixture contains clinical
 text. Fixtures include Unicode (non-BMP, combining marks), CRLF, repeated quotes, empty and
 whitespace-only sources, and the three stand-in variable sets.
 
@@ -1802,20 +1875,21 @@ whitespace-only sources, and the three stand-in variable sets.
 
 | ID | Level | Applies to | Case |
 |---|---|---|---|
-| `ANN-01` | core | — | An Example with a `failed` outcome, a `proposed` final claim, or a `rejected` retained claim fails to load. |
+| `ANN-01` | core | — | An Example with a `failed` outcome, a `rejected` retained claim or reading, a `proposed` final claim under a human tier, or a `verified`/`gold` claim under a silver reference fails to load; a silver reference with `proposed` claims loads; a supporting claim serving an adjudicated and a silver reference must be `gold` or `verified`. |
 | `ANN-02` | core | — | `answered` with empty final IDs, or a non-answer with final IDs, fails to load. |
 | `ANN-03` | implementation | — | An Example whose cited mention is missing from `mentions` fails; uncited mentions round-trip. |
 | `ANN-04` | core | ReviewBackend | Tier can rise (`silver` → `single_review` → `adjudicated`) only with new events; a payload asserting a higher tier without events fails; a lower tier than the events support fails. |
-| `ANN-05` | implementation | Store | Split change for an existing case is rejected by the store. |
+| `ANN-05` | implementation | Store | Split: a store rejects a second case for the same `(dataset, source_id)` with a different split, a split change for an existing case, and an Example or LabelRecord whose split differs from its case's. |
 | `ANN-06` | implementation | — | Replay determinism: random event sequences produce identical projections; replaying a prefix produces the prefix's projection. |
-| `ANN-07` | core | — | Blind streams: an actor's projection excludes other streams until resolve. |
-| `ANN-08` | core | — | `before`/`after` contain no substring of length ≥ 8 from the source text. |
+| `ANN-07` | core | — | Blind streams: before resolve, a reviewer's projection includes their own stream and stream-less events and excludes other streams; an adjudicator's includes every stream in the round; after resolve every actor sees every stream. |
+| `ANN-08` | core | — | `labels_only_view(events)` contains no `before`, `after`, or `reason`, and no substring of length ≥ 8 from the source text; a reading's captured value appearing in an event's `after` keeps `annotation_events` classified as `derived_text`. |
 | `ANN-09` | core | — | A `gold` claim cannot be edited in place; a correction produces a new claim and a linked event. |
 | `ANN-10` | core | — | A claim can be `gold` only if the readings it relies on are `gold` or `verified`; a span is never updated or deleted, and a reading correction produces a new linked reading. |
 | `ANN-11` | implementation | Scorer | A `LabelRecord` cannot be loaded as an Example; a scorer scoring evidence metrics against LabelRecords reports `inconclusive`. |
 | `ANN-12` | implementation | Scorer | Scoring a configuration against silver Examples produced by the same configuration is refused. |
 | `ANN-13` | implementation | ReviewBackend | loupe mapping fixtures: accepted → adjudicated Example; unresolved → no Example, events retained; excluded → no Example; no-mentions confirmation → `not_mentioned`; unsubmitted → `insufficient_evidence`. |
 | `ANN-14` | implementation | ReviewBackend | Per-change events derived from a revision diff and a single full-state `review.submit` event replay to the same projection. |
+| `ANN-15` | core | Store, Scorer | Snapshot identity: replaying the same events gives the same `example_id`; appending an event (a tier rise, a correction) gives a new `example_id`, and replaying the prefix reproduces the old snapshot exactly; a store rejects an Example whose `example_id` does not match its `(case_id, variable_set_ref, as_of_event)`; `current_example` returns the snapshot at the latest event; a `ScoreReport` lists the `example_id`s it scored against. |
 
 ### 7.6 Wire formats (§5)
 
