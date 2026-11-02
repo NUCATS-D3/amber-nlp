@@ -443,8 +443,14 @@ def test_load_rechecks_outcome_final_consistency_and_review_scope() -> None:
         (_outcome("conflicting_evidence", evidence_ids=["foreign"]), [], "unknown_reference"),
     ):
         payload = result.model_dump(mode="json")
-        payload.update(outcome=outcome.model_dump(mode="json"), final_claim_ids=final_ids)
+        changes = {"outcome": outcome.model_dump(mode="json"), "final_claim_ids": final_ids}
+        payload.update(changes)
+        payload["variable_outcomes"][case.task].update(changes)
         with pytest.raises(CaseValidationError, match=code):
+            _load(payload, case, graph)
+        payload = result.model_dump(mode="json")
+        payload.update(changes)
+        with pytest.raises(CaseValidationError, match="invalid_outcome"):
             _load(payload, case, graph)
 
 

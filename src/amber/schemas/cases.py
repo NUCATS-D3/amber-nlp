@@ -15,7 +15,7 @@ from pydantic import (
     model_validator,
 )
 
-from amber.schemas._immutable import _FrozenList, freeze_json
+from amber.schemas._immutable import FrozenMapping, _FrozenList, freeze_json
 from amber.schemas.claims import Claim
 from amber.schemas.evidence import EvidenceEdge, Inclusion, InferenceEvidence
 from amber.schemas.mentions import Mention, MentionReading
@@ -121,19 +121,66 @@ class CaseOutcome(BaseModel):
         return self
 
 
+class VariableOutcome(BaseModel):
+    """The outcome and final claims of one final variable of a case."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    variable: _Identifier
+    outcome: CaseOutcome
+    final_claim_ids: list[_Identifier] = Field(default_factory=list, validate_default=True)
+
+    @field_validator("variable")
+    @classmethod
+    def require_nonblank_variable(cls, value: str) -> str:
+        return _nonblank(value)
+
+    @field_validator("outcome", mode="before")
+    @classmethod
+    def revalidate_outcome(cls, value: Any) -> CaseOutcome:
+        if isinstance(value, CaseOutcome):
+            value = value.model_dump(warnings=False)
+        return CaseOutcome.model_validate(value)
+
+    @field_validator("final_claim_ids")
+    @classmethod
+    def freeze_final_ids(cls, value: list[str]) -> list[str]:
+        return _freeze_identifiers(value)
+
+    @model_validator(mode="after")
+    def require_final_ids_iff_answered(self) -> VariableOutcome:
+        if (self.outcome.status == "answered") != bool(self.final_claim_ids):
+            raise ValueError("final_claim_ids are required exactly for answered outcomes")
+        return self
+
+
+_SEVERITY: tuple[OutcomeStatus, ...] = (
+    "failed",
+    "conflicting_evidence",
+    "insufficient_evidence",
+    "not_mentioned",
+    "answered",
+)
+
+
 class CaseResult(BaseModel):
     """Detached run result issued only after complete source and outcome validation."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     case_id: _Identifier
+    variable_set: _Identifier
+    variable_set_version: _Identifier
+    variable_set_ref: _Identifier
     claims: list[Claim]
     # The guarded result boundary supplies records from a fully revalidated graph.
     # Re-running Inclusion's minter validator here would require a third minting path.
     evidence: list[SkipValidation[Inclusion | InferenceEvidence]]
     edges: list[EvidenceEdge]
-    final_claim_ids: list[_Identifier]
-    outcome: CaseOutcome
+    variable_outcomes: Mapping[str, VariableOutcome]
+    # Present exactly when the set has one final variable, and equal to its VariableOutcome.
+    final_claim_ids: list[_Identifier] | None
+    outcome: CaseOutcome | None
     # Mentions, like inclusions, are re-minted by graph validation before reaching this model.
     mentions: list[SkipValidation[Mention]]
     mention_readings: list[MentionReading]
@@ -156,8 +203,29 @@ class CaseResult(BaseModel):
 
     @field_validator("final_claim_ids")
     @classmethod
-    def freeze_final_ids(cls, value: list[str]) -> list[str]:
-        return _freeze_identifiers(value)
+    def freeze_final_ids(cls, value: list[str] | None) -> list[str] | None:
+        return None if value is None else _freeze_identifiers(value)
+
+    @field_validator("variable_outcomes")
+    @classmethod
+    def freeze_variable_outcomes(
+        cls, value: Mapping[str, VariableOutcome]
+    ) -> Mapping[str, VariableOutcome]:
+        if not value or any(key != item.variable for key, item in value.items()):
+            raise ValueError("variable outcomes must be nonempty and keyed by variable")
+        return FrozenMapping(value)
+
+    @model_validator(mode="after")
+    def require_consistent_case_level_fields(self) -> CaseResult:
+        if (self.outcome is None) != (self.final_claim_ids is None):
+            raise ValueError("outcome and final_claim_ids are both present or both null")
+        if self.outcome is not None:
+            if len(self.variable_outcomes) != 1:
+                raise ValueError("case-level outcome requires exactly one final variable")
+            (single,) = self.variable_outcomes.values()
+            if single.outcome != self.outcome or single.final_claim_ids != self.final_claim_ids:
+                raise ValueError("case-level outcome must equal the variable outcome")
+        return self
 
     @field_validator("claims", "evidence", "edges", "mentions", "mention_readings")
     @classmethod
@@ -169,6 +237,13 @@ class CaseResult(BaseModel):
         cls, _fields_set: set[str] | None = None, **values: Any
     ) -> Self:
         raise TypeError(_RESULT_GUARD_MESSAGE)
+
+
+def case_status(result: CaseResult) -> OutcomeStatus:
+    """The most severe variable status: failed, conflicting, insufficient, not_mentioned,
+    answered. Computed on demand and never stored."""
+    statuses = {item.outcome.status for item in result.variable_outcomes.values()}
+    return next(status for status in _SEVERITY if status in statuses)
 
 
 def _mint_case_result(data: Mapping[str, Any]) -> CaseResult:

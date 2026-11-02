@@ -91,12 +91,27 @@ required `variable` (§3.3). Graph snapshots move to `format_version` 3, whose `
   `variable_set` (the task name), `variable_set_version` (`"task"`), and `variable_set_ref`
   (`VariableSet.from_task(task).schema_ref`).
 
+### Case results record their variable set and per-variable outcomes
+
+`CaseResult` gains `variable_set`, `variable_set_version`, `variable_set_ref`, and
+`variable_outcomes` (one `VariableOutcome` per final variable). `outcome` and
+`final_claim_ids` become nullable: they equal the single final variable's outcome when the set
+has one, and are null otherwise (§3.5). `create_case_result` takes `outcome` and
+`final_claim_ids` as before, or `variable_outcomes`.
+
+- **Affected:** stored case results, which lack the new keys and fail with `invalid_schema`,
+  and readers that assume `outcome` is never null.
+- **Upgrade:** for a result of a `Task`, add `variable_set` (the task name),
+  `variable_set_version` (`"task"`), `variable_set_ref`
+  (`VariableSet.from_task(task).schema_ref`), and `variable_outcomes` as
+  `{task: {"variable": task, "outcome": <outcome>, "final_claim_ids": <ids>}}`. Use
+  `amber.cases.case_status` instead of `result.outcome.status` where several final variables
+  are possible.
+
 ## Still to implement
 
 Each entry moves to "Implemented" in the commit that makes the change:
 
 - A structured source's `source_id` includes its canonical `record` (§2.6, `amber-ndt.3`).
-- `CaseResult` gains `run_id`, `budget`, `usage`, and variable-set fields, and its case-level
-  `outcome` and `final_claim_ids` become null for sets with several final variables (§3.5,
-  §5.4, §6.6).
+- `CaseResult` gains `run_id`, `budget`, and `usage` (§5.4, §6.6).
 - `example_id` becomes content-addressed (§4.3).

@@ -77,8 +77,14 @@ refuse scoring a configuration against its own silver references; rule hashes ar
 - **`CaseOutcome`**: one of `answered`, `not_mentioned`, `conflicting_evidence`,
   `insufficient_evidence`, or `failed`, with a reason, a failure kind, review coverage, and
   cited evidence.
-- **`CaseResult`**: claims, evidence, edges, mentions and their readings, explicit
-  `final_claim_ids`, the outcome, counters, and a trace ID. Results are built and loaded only through `amber.cases`.
+- **`VariableOutcome`**: one final variable's `CaseOutcome` and its `final_claim_ids`
+  (nonempty exactly when answered).
+- **`CaseResult`**: the variable set's name, version, and `variable_set_ref`; claims,
+  evidence, edges, mentions and their readings; one `VariableOutcome` per final variable;
+  counters; and a trace ID. When the set has one final variable, `outcome` and
+  `final_claim_ids` equal its `VariableOutcome`; otherwise both are null.
+  `amber.cases.case_status` returns the most severe variable status (failed, conflicting,
+  insufficient, not mentioned, answered) and is never stored. Results are built and loaded only through `amber.cases`.
 
 ## Policy (`amber.policy`)
 
@@ -136,8 +142,10 @@ Pure data and functions; no I/O, credentials, or clock (contract v0.1 §1).
 - `amber.tools.outcomes.no_claim`: records the three clinical non-answers and never creates a
   null claim. Only runtimes record `failed`.
 - `amber.cases.create_case_result` / `load_case_result`: build and revalidate results against
-  caller-supplied `Case`, `Source`, and `Task` or one-variable `VariableSet`. Sets with several
-  variables are refused until per-variable outcomes land.
+  caller-supplied `Case`, `Source`, and `Task` or `VariableSet`. Final claims must be
+  non-rejected claims of their own variable; a mention-level variable never reports
+  `conflicting_evidence`; loading against a set whose name, version, or `schema_ref` differs
+  from the result's is `variable_set_mismatch`.
 - `amber.graph_errors`: stable, source-free diagnostic codes.
 
 Structural validity and source traceability do not establish semantic support or clinical
@@ -156,7 +164,7 @@ These items are tracked in Beads (`bd list --status=open`):
   later minor; contract v0.1 §2.6);
 - `Example` with reference tiers;
 - annotation events and status transitions;
-- per-variable outcomes and derivations;
+- derivations and rule replay;
 - interfaces (`Extractor`, `Store`, `Exporter`, `Scorer`, `ReviewBackend`, `Labeler`);
 - the conformance kit;
 - MLflow plugins for evaluation, datasets, the loupe bridge, and deployment.

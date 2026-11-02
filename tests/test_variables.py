@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from pydantic import Field, ValidationError
 
-from amber.cases import CaseValidationError, create_case_result, load_case_result
+from amber.cases import create_case_result, load_case_result
 from amber.graph import EvidenceGraph
 from amber.graph_errors import GraphValidationError
 from amber.grounding import exact_quote
@@ -600,21 +600,3 @@ def test_case_results_accept_a_task_or_its_variable_set() -> None:
         payload, case=case, source=source, variables=VariableSet.from_task(task)
     )
     assert by_task == by_set == result
-
-
-def test_case_results_refuse_multi_variable_sets_until_per_variable_outcomes() -> None:
-    graph, _, _ = _multi_graph()
-    case = Case(
-        case_id="synthetic-case-1",
-        task="synthetic_set",
-        patient_id=graph.source.patient_id,
-        source_ids=[graph.source.source_id],
-        sensitivity=Sensitivity.synthetic,
-    )
-    outcome = CaseOutcome(
-        status="insufficient_evidence",
-        reason="Synthetic partial review.",
-        provenance=make_provenance(),
-    )
-    with pytest.raises(CaseValidationError, match="invalid_context"):
-        create_case_result(case, graph=graph, outcome=outcome, final_claim_ids=[])
