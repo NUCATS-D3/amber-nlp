@@ -1,4 +1,4 @@
-"""commit_claim(...) -> Claim. Validate the task's AnswerModel, field evidence, case scope,
+"""commit_claim(...) -> Claim. Validate the variable's AnswerModel, field evidence, case scope,
 and the full source-backed support DAG. Shared by fixed pipelines and optional agents.
 Unanswered outcomes are recorded by ``amber.tools.outcomes.no_claim``.
 """
@@ -14,7 +14,7 @@ from amber.schemas import Claim, Provenance, Task
 
 
 def commit_claim(
-    task: Task,
+    task: Task | str,
     value: dict[str, Any],
     evidence_ids: Sequence[str],
     rationale: str,

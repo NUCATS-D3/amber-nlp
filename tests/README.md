@@ -8,6 +8,7 @@ The suite is flat and grouped by the boundary under test. All inputs are invente
 | `test_invariants.py` | Source identity and immutability, IDs, exact grounding, minting rejection |
 | `test_mentions.py` | `mention()` and `cite()`: span grounding, fragments, sections, mention IDs, minting rejection |
 | `test_mention_readings.py` | Readings and attributes; mention registration, payload revalidation, results |
+| `test_variables.py` | Variable sets: validation, identity, `Task` sugar, multi-variable claims, dependencies |
 | `test_answer_schemas.py` | Frozen, closed, strict `AnswerModel` subclasses |
 | `test_claim_schemas.py` | Task, claim, inference, and edge records; canonical IDs; immutability; wire shapes |
 | `test_graph_validation.py` | Full graph, context, and source validation; field citations; cycles; deep chains |

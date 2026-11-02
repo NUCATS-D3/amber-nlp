@@ -9,6 +9,7 @@ from amber.graph import EvidenceGraph
 from amber.schemas.cases import Case, CaseOutcome, CaseResult, _mint_case_result
 from amber.schemas.sources import Source
 from amber.schemas.tasks import Task
+from amber.schemas.variables import VariableSet
 
 CaseValidationCode: TypeAlias = Literal[
     "invalid_schema",
@@ -55,8 +56,11 @@ def _validate_context(case: Case, graph: EvidenceGraph) -> None:
     if not isinstance(graph, EvidenceGraph):
         _raise("invalid_context")
     source = graph.source
+    variables = graph.variables
+    # Results carry one case-level outcome until per-variable outcomes land (contract v0.1 3.5).
     if (
-        case.task != graph.task.name
+        len(variables.variables) != 1
+        or case.task != variables.name
         or case.patient_id != source.patient_id
         or case.source_ids != [source.source_id]
         or case.sensitivity is not graph.sensitivity
@@ -89,7 +93,7 @@ def validate_case_outcome(*, case: Case, graph: EvidenceGraph, outcome: CaseOutc
     graph = EvidenceGraph.from_payload(
         graph.to_payload(),
         source=graph.source,
-        task=graph.task,
+        variables=graph.variables,
         sensitivity=graph.sensitivity,
         excluded_spans=graph.excluded_spans,
     )
@@ -150,7 +154,7 @@ def create_case_result(
     validated_graph = EvidenceGraph.from_payload(
         graph.to_payload(),
         source=graph.source,
-        task=graph.task,
+        variables=graph.variables,
         sensitivity=graph.sensitivity,
         excluded_spans=graph.excluded_spans,
     )
@@ -179,13 +183,15 @@ def load_case_result(
     *,
     case: Case,
     source: Source,
-    task: Task,
+    task: Task | None = None,
+    variables: VariableSet | None = None,
     excluded_spans: Sequence[tuple[int, int]] = (),
 ) -> CaseResult:
     """Revalidate a wire result against caller-supplied authoritative context.
 
-    The payload never supplies an answer model or authoritative source. No import,
-    source lookup, provider access, or file I/O is performed.
+    Supply exactly one of ``task`` or ``variables``. The payload never supplies an answer
+    model or authoritative source. No import, source lookup, provider access, or file I/O is
+    performed.
     """
     bound_case = _case(case)
     if not isinstance(payload, Mapping):
@@ -197,7 +203,11 @@ def load_case_result(
     if set(copied) != _RESULT_KEYS:
         _raise("invalid_schema")
     graph = EvidenceGraph(
-        source=source, task=task, sensitivity=bound_case.sensitivity, excluded_spans=excluded_spans
+        source=source,
+        task=task,
+        variables=variables,
+        sensitivity=bound_case.sensitivity,
+        excluded_spans=excluded_spans,
     )
     _validate_context(bound_case, graph)
     graph_payload = graph.to_payload()
@@ -206,6 +216,7 @@ def load_case_result(
         graph_payload,
         source=source,
         task=task,
+        variables=variables,
         sensitivity=bound_case.sensitivity,
         excluded_spans=excluded_spans,
     )

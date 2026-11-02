@@ -14,8 +14,8 @@ import pytest
 from amber.graph import EvidenceGraph
 from amber.graph_errors import GraphValidationError
 from amber.grounding import exact_quote
-from amber.ids import schema_ref
 from amber.schemas import Inclusion, Sensitivity
+from amber.schemas.variables import VariableSet
 
 from ._claim_helpers import make_claim_record, make_inference_record, make_source, make_task
 
@@ -40,12 +40,11 @@ def _payload(
     excluded_spans: tuple[tuple[int, int], ...] = (),
 ) -> dict[str, Any]:
     return {
-        "format_version": 2,
+        "format_version": 3,
         "context": {
-            "task": task.name,
-            "schema_ref": schema_ref(task.answer_model),
-            "evidence_policy": task.evidence_policy,
-            "scope": task.scope,
+            "variable_set": task.name,
+            "variable_set_version": "task",
+            "variable_set_ref": VariableSet.from_task(task).schema_ref,
             "source_id": source.source_id,
             "patient_id": source.patient_id,
             "sensitivity": sensitivity.value,
@@ -299,12 +298,11 @@ def test_snapshot_uses_the_exact_context_envelope() -> None:
     )
 
     assert graph.to_payload() == {
-        "format_version": 2,
+        "format_version": 3,
         "context": {
-            "task": "synthetic_finding",
-            "schema_ref": schema_ref(task.answer_model),
-            "evidence_policy": "field",
-            "scope": "note",
+            "variable_set": "synthetic_finding",
+            "variable_set_version": "task",
+            "variable_set_ref": VariableSet.from_task(task).schema_ref,
             "source_id": source.source_id,
             "patient_id": "synthetic-patient-1",
             "sensitivity": "synthetic",
@@ -318,7 +316,7 @@ def test_snapshot_uses_the_exact_context_envelope() -> None:
     }
 
 
-@pytest.mark.parametrize("version", [True, 2.0, "2", None, 1, 3])
+@pytest.mark.parametrize("version", [True, 3.0, "3", None, 1, 2, 4])
 def test_snapshot_rejects_non_exact_format_versions(version: Any) -> None:
     source = make_source()
     task = make_task()
@@ -343,7 +341,7 @@ def test_snapshot_requires_exact_envelope_keys(level: str, operation: str) -> No
     payload = _payload(source=source, task=task)
     target = payload if level == "payload" else payload["context"]
     if operation == "missing":
-        target.pop("edges" if level == "payload" else "scope")
+        target.pop("edges" if level == "payload" else "variable_set_ref")
     else:
         target["unexpected"] = "value"
 
@@ -360,10 +358,9 @@ def test_snapshot_requires_exact_envelope_keys(level: str, operation: str) -> No
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("task", "other-task"),
-        ("schema_ref", "missing.module:Answer@unsafe"),
-        ("evidence_policy", "claim"),
-        ("scope", "patient"),
+        ("variable_set", "other-task"),
+        ("variable_set_version", "1.0.0"),
+        ("variable_set_ref", "0" * 64),
         ("source_id", "other-source"),
         ("patient_id", "other-patient"),
         ("sensitivity", "deidentified"),

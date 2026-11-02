@@ -63,16 +63,33 @@ Inclusions are positions only (§2.3), so `Inclusion` no longer has a `mention_i
 
 ### Graph snapshots and case results carry mentions and readings
 
-`EvidenceGraph.to_payload` now writes `format_version` 2 with `mentions` and
-`mention_readings` lists, and `from_payload` requires them. `CaseResult.mentions` holds
+`EvidenceGraph.to_payload` writes `mentions` and `mention_readings` lists (introduced in
+`format_version` 2, now 3; see below), and `from_payload` requires them. `CaseResult.mentions` holds
 `Mention` records instead of being forced empty, and `CaseResult` gains a required
 `mention_readings` list (§2.9 decisions 3 and 4).
 
 - **Affected:** stored graph snapshots (version 1) and stored case results, which lack the new
   keys and fail with `invalid_schema`.
-- **Upgrade:** for a graph snapshot, set `format_version` to 2 and add empty `mentions` and
-  `mention_readings` lists. For a case result, add an empty `mention_readings` list. Results
+- **Upgrade:** for a graph snapshot, add empty `mentions` and `mention_readings` lists and
+  follow the next entry. For a case result, add an empty `mention_readings` list. Results
   produced before this change never had mentions, so nothing else changes.
+
+### `Task` is a one-variable `VariableSet`; claims name their variable
+
+`EvidenceGraph`, `from_payload`, and `load_case_result` accept `task=` or `variables=`; a
+`Task` is wrapped by `VariableSet.from_task` (version label `task`) (§3.2). `Claim` gains a
+required `variable` (§3.3). Graph snapshots move to `format_version` 3, whose `context` holds
+`variable_set`, `variable_set_version`, and `variable_set_ref` instead of `task`,
+`schema_ref`, `evidence_policy`, and `scope`. `commit_claim` takes a `Task` or a variable name.
+
+- **Affected:** stored claims and graph snapshots, and any code reading the old snapshot
+  context keys. Call sites passing `task=` keep working.
+- **Unchanged:** every claim's `task` and `schema_ref`, and every existing validation result
+  for single-task graphs.
+- **Upgrade:** add `"variable": <task name>` to every stored claim. For a snapshot, set
+  `format_version` to 3 and replace the four task keys in `context` with
+  `variable_set` (the task name), `variable_set_version` (`"task"`), and `variable_set_ref`
+  (`VariableSet.from_task(task).schema_ref`).
 
 ## Still to implement
 
@@ -82,5 +99,4 @@ Each entry moves to "Implemented" in the commit that makes the change:
 - `CaseResult` gains `run_id`, `budget`, `usage`, and variable-set fields, and its case-level
   `outcome` and `final_claim_ids` become null for sets with several final variables (§3.5,
   §5.4, §6.6).
-- `Task` becomes the one-variable case of `VariableSet` (§3.2).
 - `example_id` becomes content-addressed (§4.3).

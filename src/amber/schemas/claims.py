@@ -40,6 +40,7 @@ class _ClaimRecord(BaseModel):
     source_id: _StrictString
     patient_id: _StrictString
     task: _StrictString
+    variable: _StrictString
     schema_ref: _StrictString
     value: dict[str, Any]
     effective_datetime: datetime | None
@@ -52,7 +53,7 @@ class _ClaimRecord(BaseModel):
     def require_canonical_claim_id(cls, value: str) -> str:
         return validate_ulid(value)
 
-    @field_validator("source_id", "patient_id", "task", "schema_ref")
+    @field_validator("source_id", "patient_id", "task", "variable", "schema_ref")
     @classmethod
     def require_nonblank_identifier(cls, value: str) -> str:
         if not value.strip():

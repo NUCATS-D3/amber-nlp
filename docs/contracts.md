@@ -42,9 +42,16 @@ refuse scoring a configuration against its own silver references; rule hashes ar
 - **`AnswerModel`**: a frozen, closed base class for task answers. Task-specific answer models
   live in the projects that define the tasks.
 - **`Task`**: name, answer model, instructions, `evidence_policy` (`claim` or `field`), and
-  `scope`. Only `note` is accepted today.
-- **`Claim`**: a validated answer value, `schema_ref`, effective time, confidence, status, and
-  provenance. Claims are admitted only through graph validation.
+  `scope`. A task is the one-variable case of a `VariableSet` (`VariableSet.from_task`).
+- **`Variable`**, **`VariableSet`**, **`AttributeRequirement`**: named questions with their own
+  answer models, a level (`note`, `mention`, or the reserved `patient`), declared `inputs`,
+  mention types, attribute and section requirements, and a `final` flag. A set has unique
+  names, known and acyclic inputs, and at least one final variable. Its `schema_ref` is the
+  canonical SHA-256 of its name and every variable field (answer models as JSON Schema), and
+  never of its `version`, which is a label. Permitted attribute values are a tuple compared
+  with strict types, so `True` and `1` stay distinct.
+- **`Claim`**: a validated answer value, the set name (`task`) and `variable` it answers,
+  that variable's `schema_ref`, effective time, confidence, status, and provenance. Claims are admitted only through graph validation.
 - **Evidence**:
   - `Inclusion`: a verified source span. Only the grounding path can mint one. Inclusions are
     positions only, so one position has one `evidence_id` whatever cites it.
@@ -99,22 +106,29 @@ Pure data and functions; no I/O, credentials, or clock (contract v0.1 §1).
   `Mention` or a `GroundingFailure`. Fragments must be two or more ordered, separated spans
   whose hull is the grounded text. `amber.tools.mention.cite` re-grounds a mention and returns
   the inclusion at its hull, or one per fragment.
-- `amber.graph.EvidenceGraph`: one source, one task, one sensitivity. It offers:
+- `amber.graph.EvidenceGraph`: one source, one variable set (`task=` or `variables=`), one
+  sensitivity. Graphs accept note-level variables only for now: patient level is reserved,
+  and mention-level variables and section requirements are refused until their claim checks
+  exist. It offers:
   - atomic registration and claim commits; `register_mention` takes a span with at least one
     reading, and `register_reading` adds a reading of a registered span;
   - complete validation: known in-scope references, field roles, acyclicity across edges and
     inference inputs, and source-backed leaves on every branch. Mentions are re-minted against
     the source; readings must name a registered span; attribute cues and scopes must be
     registered inclusions, and a scope must contain the mention's hull. Graphs hold only
-    `proposed` and `rejected` readings and claims;
+    `proposed` and `rejected` readings and claims. Each claim validates against its own
+    variable; a claim's inferences may consume claims of its own variable or of declared
+    `inputs` only (`undeclared_dependency`);
   - support traversal, and `mentions_at` / `readings_of` from a source leaf to the spans and
     readings at its position;
-  - snapshot (format version 2) and restore against authoritative context.
+  - snapshot (format version 3, bound to the set's name, version, and `schema_ref`) and
+    restore against authoritative context.
 - `amber.tools.commit.commit_claim`: admits a proposed claim only with valid, complete support.
 - `amber.tools.outcomes.no_claim`: records the three clinical non-answers and never creates a
   null claim. Only runtimes record `failed`.
 - `amber.cases.create_case_result` / `load_case_result`: build and revalidate results against
-  caller-supplied `Case`, `Source`, and `Task`.
+  caller-supplied `Case`, `Source`, and `Task` or one-variable `VariableSet`. Sets with several
+  variables are refused until per-variable outcomes land.
 - `amber.graph_errors`: stable, source-free diagnostic codes.
 
 Structural validity and source traceability do not establish semantic support or clinical
@@ -133,7 +147,7 @@ These items are tracked in Beads (`bd list --status=open`):
   later minor; contract v0.1 §2.6);
 - `Example` with reference tiers;
 - annotation events and status transitions;
-- layered variables over multi-task evidence graphs;
+- mention-level variables, section requirements, per-variable outcomes, and derivations;
 - interfaces (`Extractor`, `Store`, `Exporter`, `Scorer`, `ReviewBackend`, `Labeler`);
 - the conformance kit;
 - MLflow plugins for evaluation, datasets, the loupe bridge, and deployment.

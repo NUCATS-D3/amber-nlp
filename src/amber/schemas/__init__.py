@@ -12,6 +12,7 @@ from amber.schemas.mentions import Attribute, Concept, Mention, MentionReading
 from amber.schemas.provenance import Provenance, Sensitivity, Zone
 from amber.schemas.sources import Section, Source, SourceKind
 from amber.schemas.tasks import Task
+from amber.schemas.variables import AttributeRequirement, Variable, VariableSet
 
 __all__ = [
     "Case",
@@ -21,6 +22,7 @@ __all__ = [
     "Inclusion",
     "InferenceEvidence",
     "AnswerModel",
+    "AttributeRequirement",
     "Attribute",
     "Claim",
     "Concept",
@@ -33,5 +35,7 @@ __all__ = [
     "Source",
     "SourceKind",
     "Task",
+    "Variable",
+    "VariableSet",
     "Zone",
 ]

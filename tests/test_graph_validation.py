@@ -22,6 +22,7 @@ from amber.schemas import (
     SourceKind,
     Task,
 )
+from amber.schemas.variables import VariableSet
 
 from ._claim_helpers import (
     make_claim_record,
@@ -128,10 +129,10 @@ def test_context_revalidates_source_and_task_and_breaks_mutable_aliases() -> Non
     source.meta["nested"]["value"] = "changed"
 
     assert context.source is not source
-    assert context.task is not task
     assert context.source.meta == {"nested": {"value": "original"}}
     assert context.excluded_spans == ((0, 2), (2, 4))
-    assert context.schema_ref == schema_ref(task.answer_model)
+    assert context.variables == VariableSet.from_task(task)
+    assert context.schema_refs == {task.name: schema_ref(task.answer_model)}
 
 
 def test_context_copies_arbitrary_mutable_source_metadata() -> None:

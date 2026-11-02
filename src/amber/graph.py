@@ -10,7 +10,13 @@ from typing import Any, NoReturn
 
 from pydantic import ValidationError
 
-from amber._graph_validation import _GraphContext, _ValidatedState, build_context, validate_state
+from amber._graph_validation import (
+    _GraphContext,
+    _ValidatedState,
+    build_context,
+    copy_variable_set,
+    validate_state,
+)
 from amber.graph_errors import GraphValidationCode, GraphValidationError
 from amber.ids import new_ulid
 from amber.schemas.claims import Claim
@@ -19,17 +25,17 @@ from amber.schemas.mentions import Mention, MentionReading
 from amber.schemas.provenance import Provenance, Sensitivity
 from amber.schemas.sources import Source
 from amber.schemas.tasks import Task
+from amber.schemas.variables import VariableSet
 
-_FORMAT_VERSION = 2
+_FORMAT_VERSION = 3
 _PAYLOAD_KEYS = frozenset(
     {"format_version", "context", "claims", "evidence", "edges", "mentions", "mention_readings"}
 )
 _CONTEXT_KEYS = frozenset(
     {
-        "task",
-        "schema_ref",
-        "evidence_policy",
-        "scope",
+        "variable_set",
+        "variable_set_version",
+        "variable_set_ref",
         "source_id",
         "patient_id",
         "sensitivity",
@@ -112,7 +118,10 @@ def _validated_identifiers(value: Any) -> list[str]:
 
 
 class EvidenceGraph:
-    """An atomically published, validated evidence graph for one source and task."""
+    """An atomically published, validated evidence graph for one source and variable set.
+
+    Pass ``task=`` for the one-variable case or ``variables=`` for a ``VariableSet``.
+    """
 
     __slots__ = ("_context", "_state")
 
@@ -120,13 +129,15 @@ class EvidenceGraph:
         self,
         *,
         source: Source,
-        task: Task,
+        task: Task | None = None,
+        variables: VariableSet | None = None,
         sensitivity: Sensitivity,
         excluded_spans: Sequence[tuple[int, int]] = (),
     ) -> None:
         context = build_context(
             source=source,
             task=task,
+            variables=variables,
             sensitivity=sensitivity,
             excluded_spans=excluded_spans,
         )
@@ -141,8 +152,19 @@ class EvidenceGraph:
 
     @property
     def task(self) -> Task:
-        """Return a detached, independently validated task copy."""
-        return _copy_task(self._context.task)
+        """Return the task a one-variable set stands for; ``invalid_context`` otherwise."""
+        task = self._context.variables.task()
+        if task is None:
+            _raise("invalid_context")
+        return _copy_task(task)
+
+    @property
+    def variables(self) -> VariableSet:
+        """Return a detached, independently validated copy of the graph's variable set."""
+        try:
+            return copy_variable_set(self._context.variables)
+        except (TypeError, ValueError):
+            _raise("invalid_context")
 
     @property
     def sensitivity(self) -> Sensitivity:
@@ -300,7 +322,7 @@ class EvidenceGraph:
 
     def commit_claim(
         self,
-        task: Task,
+        task: Task | str,
         value: dict[str, Any],
         evidence_ids: Sequence[str],
         rationale: str,
@@ -310,22 +332,18 @@ class EvidenceGraph:
         effective_datetime: datetime | None = None,
         confidence: float | None = None,
     ) -> Claim:
-        """Atomically validate and publish one evidence-backed proposed claim."""
-        try:
-            if not isinstance(task, Task):
-                _raise("invalid_context")
-            bound_task = Task.model_validate(task.model_dump(warnings=False))
-        except GraphValidationError:
-            raise
-        except (AttributeError, TypeError, ValueError, ValidationError):
-            _raise("invalid_context")
-        if bound_task != self._context.task:
-            _raise("invalid_context")
+        """Atomically validate and publish one evidence-backed proposed claim.
+
+        ``task`` is the graph's ``Task`` (one-variable sets) or the name of a variable in the
+        graph's set.
+        """
+        variable_name = self._variable_name(task)
+        variable = self._context.variables.variables[variable_name]
 
         try:
             if not isinstance(value, Mapping):
                 _raise("invalid_schema")
-            answer = bound_task.answer_model.model_validate(dict(value))
+            answer = variable.answer_model.model_validate(dict(value))
             normalized_value = answer.model_dump(mode="json", warnings=False)
         except GraphValidationError:
             raise
@@ -356,7 +374,7 @@ class EvidenceGraph:
                 role_items = list(field_roles.items())
             except (AttributeError, TypeError, ValueError):
                 _raise("invalid_schema")
-            known_fields = frozenset(bound_task.answer_model.model_fields)
+            known_fields = self._context.field_names[variable_name]
             for role, role_ids in role_items:
                 if type(role) is not str or role not in known_fields:
                     _raise("invalid_context")
@@ -372,8 +390,9 @@ class EvidenceGraph:
             "claim_id": claim_id,
             "source_id": self._context.source.source_id,
             "patient_id": self._context.source.patient_id,
-            "task": self._context.task.name,
-            "schema_ref": self._context.schema_ref,
+            "task": self._context.variables.name,
+            "variable": variable_name,
+            "schema_ref": self._context.schema_refs[variable_name],
             "value": normalized_value,
             "effective_datetime": (
                 self._context.source.datetime if effective_datetime is None else effective_datetime
@@ -418,6 +437,24 @@ class EvidenceGraph:
         minted = candidate_state.claims[claim_id].model_copy(deep=True)
         self._state = candidate_state
         return minted
+
+    def _variable_name(self, task: Task | str) -> str:
+        variables = self._context.variables
+        if isinstance(task, str):
+            if task not in variables.variables:
+                _raise("invalid_context")
+            return task
+        if not isinstance(task, Task):
+            _raise("invalid_context")
+        try:
+            bound = VariableSet.from_task(_copy_task(task))
+        except GraphValidationError:
+            raise
+        except (AttributeError, TypeError, ValueError, ValidationError):
+            _raise("invalid_context")
+        if bound.name != variables.name or bound.schema_ref != variables.schema_ref:
+            _raise("invalid_context")
+        return task.name
 
     def validate(self) -> None:
         """Revalidate and atomically republish the current complete state."""
@@ -488,10 +525,9 @@ class EvidenceGraph:
         return {
             "format_version": _FORMAT_VERSION,
             "context": {
-                "task": self._context.task.name,
-                "schema_ref": self._context.schema_ref,
-                "evidence_policy": self._context.task.evidence_policy,
-                "scope": self._context.task.scope,
+                "variable_set": self._context.variables.name,
+                "variable_set_version": self._context.variables.version,
+                "variable_set_ref": self._context.variables.schema_ref,
                 "source_id": self._context.source.source_id,
                 "patient_id": self._context.source.patient_id,
                 "sensitivity": self._context.sensitivity.value,
@@ -510,7 +546,8 @@ class EvidenceGraph:
         payload: Mapping[str, Any],
         *,
         source: Source,
-        task: Task,
+        task: Task | None = None,
+        variables: VariableSet | None = None,
         sensitivity: Sensitivity,
         excluded_spans: Sequence[tuple[int, int]] = (),
     ) -> EvidenceGraph:
@@ -518,6 +555,7 @@ class EvidenceGraph:
         graph = cls(
             source=source,
             task=task,
+            variables=variables,
             sensitivity=sensitivity,
             excluded_spans=excluded_spans,
         )
@@ -532,10 +570,9 @@ class EvidenceGraph:
         if set(snapshot_context) != _CONTEXT_KEYS:
             _raise("invalid_schema")
         expected = {
-            "task": graph._context.task.name,
-            "schema_ref": graph._context.schema_ref,
-            "evidence_policy": graph._context.task.evidence_policy,
-            "scope": graph._context.task.scope,
+            "variable_set": graph._context.variables.name,
+            "variable_set_version": graph._context.variables.version,
+            "variable_set_ref": graph._context.variables.schema_ref,
             "source_id": graph._context.source.source_id,
             "patient_id": graph._context.source.patient_id,
             "sensitivity": graph._context.sensitivity.value,

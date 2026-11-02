@@ -18,6 +18,7 @@ GraphValidationCode: TypeAlias = Literal[
     "unsupported_reading_status",
     "missing_reading",
     "attribute_outside_scope",
+    "undeclared_dependency",
 ]
 
 

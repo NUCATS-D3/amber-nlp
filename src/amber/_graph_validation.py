@@ -20,6 +20,7 @@ from amber.schemas.mentions import Mention, MentionReading
 from amber.schemas.provenance import Sensitivity
 from amber.schemas.sources import Source, SourceKind
 from amber.schemas.tasks import Task
+from amber.schemas.variables import VariableSet
 
 _INCLUSION_FIELDS = frozenset(Inclusion.model_fields)
 _MENTION_FIELDS = frozenset(Mention.model_fields)
@@ -36,10 +37,11 @@ _MENTION_FAILURE_CODES: Mapping[str, GraphValidationCode] = MappingProxyType(
 @dataclass(frozen=True)
 class _GraphContext:
     source: Source
-    task: Task
+    variables: VariableSet
     sensitivity: Sensitivity
     excluded_spans: tuple[tuple[int, int], ...]
-    schema_ref: str
+    schema_refs: Mapping[str, str]
+    field_names: Mapping[str, frozenset[str]]
 
 
 @dataclass(frozen=True)
@@ -63,19 +65,37 @@ def _copy_mapping(value: Mapping[str, Any]) -> dict[str, Any]:
         _raise("invalid_schema")
 
 
+def copy_variable_set(variables: VariableSet) -> VariableSet:
+    """Return an independently revalidated copy of a variable set."""
+    return VariableSet.model_validate(variables.model_dump(warnings=False))
+
+
 def build_context(
     *,
     source: Source,
-    task: Task,
+    task: Task | None = None,
+    variables: VariableSet | None = None,
     sensitivity: Sensitivity,
     excluded_spans: Sequence[tuple[int, int]] = (),
 ) -> _GraphContext:
-    """Revalidate and defensively capture the authoritative graph context."""
+    """Revalidate and defensively capture the authoritative graph context.
+
+    Patient-level variables are reserved. Mention-level variables and section requirements
+    are rejected until their claim checks exist, so no declared rule goes unenforced.
+    """
+    if (task is None) == (variables is None):
+        _raise("invalid_context")
     try:
-        if not isinstance(source, Source) or not isinstance(task, Task):
+        if not isinstance(source, Source):
+            _raise("invalid_context")
+        if task is not None:
+            if not isinstance(task, Task):
+                _raise("invalid_context")
+            variables = VariableSet.from_task(Task.model_validate(task.model_dump(warnings=False)))
+        if not isinstance(variables, VariableSet):
             _raise("invalid_context")
         copied_source = Source.model_validate(deepcopy(source.model_dump(warnings=False)))
-        copied_task = Task.model_validate(task.model_dump(warnings=False))
+        copied_set = copy_variable_set(variables)
     except GraphValidationError:
         raise
     except (AttributeError, TypeError, ValueError, ValidationError):
@@ -85,7 +105,10 @@ def build_context(
     if (
         copied_source.kind is not SourceKind.note
         or source_text is None
-        or copied_task.scope != "note"
+        or any(
+            variable.level != "note" or variable.requires_section
+            for variable in copied_set.variables.values()
+        )
         or not isinstance(sensitivity, Sensitivity)
     ):
         _raise("invalid_context")
@@ -113,10 +136,21 @@ def build_context(
     try:
         return _GraphContext(
             source=copied_source,
-            task=copied_task,
+            variables=copied_set,
             sensitivity=sensitivity,
             excluded_spans=tuple(spans),
-            schema_ref=schema_ref(copied_task.answer_model),
+            schema_refs=MappingProxyType(
+                {
+                    name: schema_ref(variable.answer_model)
+                    for name, variable in copied_set.variables.items()
+                }
+            ),
+            field_names=MappingProxyType(
+                {
+                    name: frozenset(variable.answer_model.model_fields)
+                    for name, variable in copied_set.variables.items()
+                }
+            ),
         )
     except (TypeError, ValueError):
         _raise("invalid_schema")
@@ -193,16 +227,19 @@ def _validate_claim(context: _GraphContext, candidate: Mapping[str, Any]) -> _Cl
         _raise("invalid_schema")
     if record.status not in ("proposed", "rejected"):
         _raise("unsupported_claim_status")
+    if record.variable not in context.variables.variables:
+        _raise("invalid_schema")
     if (
         record.source_id != context.source.source_id
         or record.patient_id != context.source.patient_id
-        or record.task != context.task.name
-        or record.schema_ref != context.schema_ref
+        or record.task != context.variables.name
+        or record.schema_ref != context.schema_refs[record.variable]
         or record.provenance.sensitivity is not context.sensitivity
     ):
         _raise("invalid_context")
     try:
-        answer = context.task.answer_model.model_validate(record.value)
+        variable = context.variables.variables[record.variable]
+        answer = variable.answer_model.model_validate(record.value)
         normalized = answer.model_dump(mode="json")
         return _ClaimRecord.model_validate({**record.model_dump(), "value": normalized})
     except (TypeError, ValueError, ValidationError):
@@ -313,6 +350,39 @@ def _validate_reading_references(
                 _raise("attribute_outside_scope")
 
 
+def _require_declared_dependencies(
+    context: _GraphContext,
+    claims: Mapping[str, _ClaimRecord],
+    evidence: Mapping[str, Inclusion | InferenceEvidence],
+    adjacency: Mapping[str, tuple[str, ...]],
+) -> None:
+    """Every claim a claim's inferences consume belongs to its own variable or a declared input.
+
+    Same-variable supporting claims are permitted, as in single-task graphs.
+    """
+    for claim_id, claim in claims.items():
+        if claim.status == "rejected":
+            continue
+        permitted = {claim.variable, *context.variables.variables[claim.variable].inputs}
+        visited: set[str] = set()
+        pending = [
+            child
+            for child in adjacency[claim_id]
+            if isinstance(evidence.get(child), InferenceEvidence)
+        ]
+        while pending:
+            node_id = pending.pop()
+            if node_id in visited:
+                continue
+            visited.add(node_id)
+            for input_id in adjacency[node_id]:
+                if input_id in claims:
+                    if claims[input_id].variable not in permitted:
+                        _raise("undeclared_dependency")
+                elif isinstance(evidence.get(input_id), InferenceEvidence):
+                    pending.append(input_id)
+
+
 def validate_state(
     context: _GraphContext,
     *,
@@ -381,7 +451,7 @@ def validate_state(
     adjacency_lists: dict[str, set[str]] = {
         node_id: set() for node_id in (*claim_records, *evidence_records)
     }
-    field_names = frozenset(context.task.answer_model.model_fields)
+    field_names = context.field_names
     field_roles: dict[str, set[str]] = {claim_id: set() for claim_id in claim_records}
     for candidate in edges:
         try:
@@ -396,7 +466,9 @@ def validate_state(
         edge_keys.add(key)
         if edge.claim_id not in claim_records or edge.evidence_id not in evidence_records:
             _raise("unknown_reference")
-        if edge.role is not None and edge.role not in field_names:
+        if edge.role is not None and (
+            edge.role not in field_names[claim_records[edge.claim_id].variable]
+        ):
             _raise("invalid_context")
         validated_edges.append(edge)
         adjacency_lists[edge.claim_id].add(edge.evidence_id)
@@ -419,7 +491,11 @@ def validate_state(
             continue
         if not adjacency_lists[claim_id]:
             _raise("missing_evidence")
-        if context.task.evidence_policy == "field" and field_roles[claim_id] != field_names:
+        variable = context.variables.variables[claim_record.variable]
+        if (
+            variable.evidence_policy == "field"
+            and field_roles[claim_id] != field_names[claim_record.variable]
+        ):
             _raise("missing_field_evidence")
 
     adjacency = {node_id: tuple(sorted(children)) for node_id, children in adjacency_lists.items()}
@@ -457,6 +533,8 @@ def validate_state(
     for claim_id, claim_record in claim_records.items():
         if claim_record.status != "rejected" and not backed[claim_id]:
             _raise("source_free_support")
+
+    _require_declared_dependencies(context, claim_records, evidence_records, adjacency)
 
     minted: dict[str, Claim] = {}
     try:

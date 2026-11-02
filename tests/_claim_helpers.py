@@ -71,6 +71,7 @@ def make_claim_record(
         "source_id": source.source_id,
         "patient_id": source.patient_id,
         "task": bound_task.name,
+        "variable": bound_task.name,
         "schema_ref": schema_ref(bound_task.answer_model),
         "value": value,
         "effective_datetime": source.datetime,
