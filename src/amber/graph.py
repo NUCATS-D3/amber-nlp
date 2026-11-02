@@ -211,6 +211,16 @@ class EvidenceGraph:
             "readings": [reading.model_dump() for reading in self._state.readings.values()],
         }
 
+    def _validated(self, records: dict[str, list[dict[str, Any]]]) -> _ValidatedState:
+        return validate_state(
+            self._context,
+            claims=records["claims"],
+            evidence=records["evidence"],
+            edges=records["edges"],
+            mentions=records["mentions"],
+            readings=records["readings"],
+        )
+
     def register_evidence(
         self, record: Inclusion | InferenceEvidence
     ) -> Inclusion | InferenceEvidence:
@@ -238,7 +248,7 @@ class EvidenceGraph:
         else:
             evidence[existing_index] = record_payload
 
-        candidate_state = validate_state(self._context, **records)
+        candidate_state = self._validated(records)
         incoming = candidate_state.evidence[record_id]
         current = self._state.evidence.get(record_id)
         if current is not None and incoming != current:
@@ -303,7 +313,7 @@ class EvidenceGraph:
             reading_ids.append(reading_id)
             if reading_id not in self._state.readings:
                 records["readings"].append(payload)
-        candidate_state = validate_state(self._context, **records)
+        candidate_state = self._validated(records)
         incoming_mention = candidate_state.mentions[mention_id]
         if incoming_mention.model_dump() != mention_payload:
             _raise("duplicate_reference")
@@ -442,7 +452,7 @@ class EvidenceGraph:
         records["claims"].append(claim_payload)
         records["evidence"].append(inference_payload)
         records["edges"].extend(new_edges)
-        candidate_state = validate_state(self._context, **records)
+        candidate_state = self._validated(records)
         minted = candidate_state.claims[claim_id].model_copy(deep=True)
         self._state = candidate_state
         return minted
@@ -467,7 +477,7 @@ class EvidenceGraph:
 
     def validate(self) -> None:
         """Revalidate and atomically republish the current complete state."""
-        self._state = validate_state(self._context, **self._records())
+        self._state = self._validated(self._records())
 
     def support_closure(self, node_id: str) -> tuple[str, ...]:
         """Return the complete validated support closure, including ``node_id``."""

@@ -114,4 +114,3 @@ Each entry moves to "Implemented" in the commit that makes the change:
 
 - A structured source's `source_id` includes its canonical `record` (§2.6, `amber-ndt.3`).
 - `CaseResult` gains `run_id`, `budget`, and `usage` (§5.4, §6.6).
-- `example_id` becomes content-addressed (§4.3).

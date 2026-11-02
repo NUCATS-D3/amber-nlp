@@ -23,6 +23,8 @@ from amber.schemas.tasks import Task
 from amber.schemas.variables import VariableSet
 
 ATTRIBUTE_ROLE_PREFIX = "attribute:"
+GRAPH_STATUSES = frozenset({"proposed", "rejected"})
+RETAINED_STATUSES = frozenset({"proposed", "verified", "gold"})
 _INCLUSION_FIELDS = frozenset(Inclusion.model_fields)
 _MENTION_FIELDS = frozenset(Mention.model_fields)
 _MENTION_FAILURE_CODES: Mapping[str, GraphValidationCode] = MappingProxyType(
@@ -215,14 +217,16 @@ def _validate_inclusion(
     return verified
 
 
-def _validate_claim(context: _GraphContext, candidate: Mapping[str, Any]) -> _ClaimRecord:
+def _validate_claim(
+    context: _GraphContext, candidate: Mapping[str, Any], statuses: frozenset[str]
+) -> _ClaimRecord:
     try:
         record = _ClaimRecord.model_validate(_copy_mapping(candidate))
     except GraphValidationError:
         raise
     except (TypeError, ValueError, ValidationError):
         _raise("invalid_schema")
-    if record.status not in ("proposed", "rejected"):
+    if record.status not in statuses:
         _raise("unsupported_claim_status")
     if record.variable not in context.variables.variables:
         _raise("invalid_schema")
@@ -310,14 +314,16 @@ def _validate_mention(context: _GraphContext, candidate: Mapping[str, Any]) -> M
     return verified
 
 
-def _validate_reading(context: _GraphContext, candidate: Mapping[str, Any]) -> MentionReading:
+def _validate_reading(
+    context: _GraphContext, candidate: Mapping[str, Any], statuses: frozenset[str]
+) -> MentionReading:
     try:
         record = MentionReading.model_validate(_copy_mapping(candidate))
     except GraphValidationError:
         raise
     except (TypeError, ValueError, ValidationError):
         _raise("invalid_schema")
-    if record.status not in ("proposed", "rejected"):
+    if record.status not in statuses:
         _raise("unsupported_reading_status")
     if record.provenance.sensitivity is not context.sensitivity:
         _raise("invalid_context")
@@ -501,15 +507,20 @@ def validate_state(
     edges: Sequence[Mapping[str, Any]],
     mentions: Sequence[Mapping[str, Any]] = (),
     readings: Sequence[Mapping[str, Any]] = (),
+    statuses: frozenset[str] = GRAPH_STATUSES,
 ) -> _ValidatedState:
-    """Validate every retained component before issuing any accepted Claim."""
+    """Validate every retained component before issuing any accepted Claim.
+
+    Working graphs hold ``proposed`` and ``rejected`` claims and readings; reviewed
+    statuses are admitted only by the annotated-data boundary through ``statuses``.
+    """
     claim_records: dict[str, _ClaimRecord] = {}
     evidence_records: dict[str, Inclusion | InferenceEvidence] = {}
     mention_records: dict[str, Mention] = {}
     reading_records: dict[str, MentionReading] = {}
 
     for candidate in claims:
-        claim_record = _validate_claim(context, candidate)
+        claim_record = _validate_claim(context, candidate, statuses)
         if claim_record.claim_id in claim_records:
             _raise("duplicate_reference")
         claim_records[claim_record.claim_id] = claim_record
@@ -541,7 +552,7 @@ def validate_state(
         mention_records[mention_record.mention_id] = mention_record
 
     for candidate in readings:
-        reading_record = _validate_reading(context, candidate)
+        reading_record = _validate_reading(context, candidate, statuses)
         reading_id = reading_record.reading_id
         if (
             reading_id in reading_records

@@ -73,7 +73,8 @@ refuse scoring a configuration against its own silver references; rule hashes ar
   category. Its value is a strict `str`, `bool`, or `int`; an absent category means not
   assessed. It may cite a cue inclusion and a scope inclusion, and `assigned_by` names another
   producer only when someone other than the reading's producer assigned it.
-- **`Case`**: one note, one task, and declared sensitivity.
+- **`Case`**: one note, one task (the variable set's name), declared sensitivity, and the
+  optional `split` (`train`, `dev`, `test`) of its `(dataset, source)` pair.
 - **`CaseOutcome`**: one of `answered`, `not_mentioned`, `conflicting_evidence`,
   `insufficient_evidence`, or `failed`, with a reason, a failure kind, review coverage, and
   cited evidence.
@@ -85,6 +86,35 @@ refuse scoring a configuration against its own silver references; rule hashes ar
   `final_claim_ids` equal its `VariableOutcome`; otherwise both are null.
   `amber.cases.case_status` returns the most severe variable status (failed, conflicting,
   insufficient, not mentioned, answered) and is never stored. Results are built and loaded only through `amber.cases`.
+
+## Annotated data (`amber.schemas.examples`, `amber.examples`)
+
+- **`ReferenceTier`**: `adjudicated`, `single_review`, or `silver`. Tier records how good a
+  reference is; claim status records whether a person reviewed a claim.
+- **`VariableReference`**: one final variable's reference: tier, outcome (never `failed`),
+  final claim IDs (nonempty exactly when answered), annotators and adjudicator as producer
+  references, and the event IDs whose replay yields it. `adjudicated` needs two or more human
+  annotators and a human adjudicator; `single_review` one human annotator and no
+  adjudicator; `silver` no human at all.
+- **`Example`**: the single annotated-data format. A snapshot of a case's annotations as of
+  one event: `example_id` (canonical SHA-256 of `case_id`, `variable_set_ref`,
+  `as_of_event`), the variable set, `split`, one reference per final variable, and the
+  retained claims, mentions, readings, evidence, and edges. Issued only by
+  `amber.examples.load_example`, which revalidates the graph against the authoritative
+  `Case`, `Source`, and `VariableSet` and checks that:
+  - every final variable has a reference, and its outcome, citations, and final claims are
+    consistent (non-answers have no final claims; mention-level references are never
+    `conflicting_evidence`; `not_mentioned` needs full review);
+  - claim and reading status follow the tier: under a human tier final claims are `gold` and
+    supporting claims and cited readings `gold` or `verified`; under `silver` all are
+    `proposed`; a record serving several references meets the strictest; no `rejected`
+    record is retained, uncited readings keep their own status, and every retained claim
+    serves a reference;
+  - `split` equals the case's, `example_id` matches, and referenced events precede
+    `as_of_event`.
+- **`LabelRecord`**: a silver label without evidence (outcome status, value, one non-human
+  producer, split). `load_label_record` checks it against the case and set and validates the
+  value against the final variable's answer model. A LabelRecord never loads as an Example.
 
 ## Policy (`amber.policy`)
 
@@ -162,8 +192,8 @@ These items are tracked in Beads (`bd list --status=open`):
 - the `PolicyGate` protocol and its reference implementation;
 - claims that rely on readings and required attributes (`StructuredEvidence` is deferred to a
   later minor; contract v0.1 §2.6);
-- `Example` with reference tiers;
-- annotation events and status transitions;
+- annotation events, status transitions, replay to a projection, and building Examples from
+  projections;
 - derivations and rule replay;
 - interfaces (`Extractor`, `Store`, `Exporter`, `Scorer`, `ReviewBackend`, `Labeler`);
 - the conformance kit;

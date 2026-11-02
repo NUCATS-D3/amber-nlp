@@ -242,6 +242,13 @@ def structured_evidence_id(*, source_id: str, field: str, value: Any) -> str:
     return canonical_sha256({"field": field, "source_id": source_id, "value": value})
 
 
+def example_id(*, case_id: str, variable_set_ref: str, as_of_event: str) -> str:
+    """Identity of an Example snapshot: the same events replayed give the same ID."""
+    return canonical_sha256(
+        {"as_of_event": as_of_event, "case_id": case_id, "variable_set_ref": variable_set_ref}
+    )
+
+
 def new_ulid() -> str:
     """Return a lexicographically sortable identifier for non-deterministic nodes."""
     return str(ULID())

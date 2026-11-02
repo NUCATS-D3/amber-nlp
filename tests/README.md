@@ -11,6 +11,7 @@ The suite is flat and grouped by the boundary under test. All inputs are invente
 | `test_variables.py` | Variable sets: validation, identity, `Task` sugar, multi-variable claims, dependencies |
 | `test_mention_claims.py` | Mention-level claims: readings, span citation, required attributes, sections |
 | `test_variable_outcomes.py` | Per-variable outcomes, `case_status`, case-level mirroring, variable-set binding |
+| `test_examples.py` | Examples and label records: tiers and claim status, references, identity, split, mentions |
 | `test_answer_schemas.py` | Frozen, closed, strict `AnswerModel` subclasses |
 | `test_claim_schemas.py` | Task, claim, inference, and edge records; canonical IDs; immutability; wire shapes |
 | `test_graph_validation.py` | Full graph, context, and source validation; field citations; cycles; deep chains |

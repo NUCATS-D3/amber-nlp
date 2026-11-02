@@ -27,6 +27,7 @@ OutcomeStatus: TypeAlias = Literal[
 UnansweredStatus: TypeAlias = Literal[
     "not_mentioned", "conflicting_evidence", "insufficient_evidence"
 ]
+Split: TypeAlias = Literal["train", "dev", "test"]
 FailureKind: TypeAlias = Literal[
     "policy", "provider", "parse", "grounding", "validation", "budget", "internal"
 ]
@@ -69,6 +70,8 @@ class Case(BaseModel):
     patient_id: _Identifier
     source_ids: list[_Identifier] = Field(min_length=1, max_length=1)
     sensitivity: Sensitivity
+    # The split of the (dataset, source) pair; Examples and LabelRecords must match it.
+    split: Split | None = None
 
     @field_validator("case_id", "task", "patient_id")
     @classmethod
