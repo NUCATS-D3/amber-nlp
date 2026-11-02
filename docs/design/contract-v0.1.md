@@ -297,6 +297,9 @@ tool's output is not trusted to set `sensitivity` on the original.
     prefix, `rule:` without `@<version>`, or an empty segment is rejected in every field that
     takes one; `rule:a@1+h1` and `rule:a@1+h2` are equal for `self_reference` and unequal
     otherwise.
+15. (Catalog `POL-15`.) Each transfer is checked separately: a recording gate sees one
+    decision per destination and payload kind, and a decision permitting a model call is
+    never reused for a tracking or export transfer.
 
 ### 1.11 Decisions recorded
 
@@ -1252,8 +1255,9 @@ event diff never contains an ungrounded span.
 5. Split: a store rejects a second case for the same `(dataset, source_id)` with a different
    split, a split change for an existing case, and an Example or LabelRecord whose split
    differs from its case's.
-6. Replay determinism: random event sequences produce identical projections; replaying a
-   prefix produces the prefix's projection.
+6. Replay determinism: amber's replay of a random event sequence gives identical projections
+   on every run, and replaying a prefix gives the prefix's projection. (Catalog `ANN-16` adds:
+   a store's `project` matches amber's replay for every actor and `as_of_event`.)
 7. Blind streams: before resolve, a reviewer's projection includes their own stream and
    stream-less events and excludes other streams; an adjudicator's includes every stream in
    the round; after resolve every actor sees every stream.
@@ -1273,10 +1277,13 @@ event diff never contains an ungrounded span.
     `insufficient_evidence`.
 14. (Catalog `ANN-15`.) Snapshot identity: replaying the same events gives the same
     `example_id`; appending an event (a tier rise, a correction) gives a new `example_id`, and
-    replaying the prefix reproduces the old snapshot exactly; a store rejects an Example whose
-    `example_id` does not match its `(case_id, variable_set_ref, as_of_event)`;
-    `current_example` returns the snapshot at the latest event; a `ScoreReport` lists the
-    `example_id`s it scored against.
+    replaying the prefix reproduces the old snapshot exactly.
+15. (Catalog `ANN-17`.) A store rejects an Example whose `example_id` does not match its
+    `(case_id, variable_set_ref, as_of_event)`; `current_example` returns the snapshot at the
+    latest event; a `ScoreReport` lists the `example_id`s it scored against.
+16. (Catalog `ANN-18`.) A move-on `tier.set` must have `role=system` and a decision reference,
+    or it is rejected; a `single_review` snapshot scored under move-on must include that event
+    (`as_of_event` at or after it).
 
 ### 4.10 Decisions recorded
 
@@ -1609,7 +1616,8 @@ Rules:
     `usage` exceeds its `budget` loads only if it records `failed` with
     `failure_kind="budget"`, and otherwise fails with `budget_exceeded`; loading never changes
     an outcome.
-
+14. (Catalog `WIR-14`.) Each §5.3 record's JSON form has exactly its required top-level keys
+    and matches its fixture byte-for-byte; parsing and re-serializing gives the same bytes.
 
 ### 5.10 Decisions recorded
 
@@ -1913,6 +1921,10 @@ construction except `ProviderRequest` (`source_text`, never persisted by amber) 
     stored and retrievable, and `runs(case_id)` lists both; a second result with the same
     `(case_id, run_id)` is rejected; a result whose nodes' `provenance.run_id` differs from its
     `run_id`, or a bundle row whose `run_id` differs from the manifest's, is rejected.
+12. (Catalog `IFC-12`.) Every declared capability works on a synthetic fixture; a request that
+    needs an undeclared capability is refused, never partly served.
+13. (Catalog `IFC-13`.) With `batch` declared, `run_many` returns exactly one result per case,
+    in input order, each equal to what `run` gives for that case.
 
 ### 6.6 Decisions recorded
 
@@ -1957,7 +1969,7 @@ Reviewed and accepted 2026-11-02 (whole-document review):
 
 The catalog is the complete list of checks that define conformance to contract v0.1. It is
 implemented as the pytest plugin `amber.conformance` (Phase 2) and its IDs are stable: a
-consumer reports "amber conformance 0.1: 85/91, failing MEN-09, WIR-04". Changing a case's
+consumer reports "amber conformance 0.1: 92/98, failing MEN-09, WIR-04". Changing a case's
 meaning requires a new ID; retired IDs are never reused.
 
 Each case has a **level**:
@@ -1971,10 +1983,21 @@ Each case has a **level**:
   passed.
 - **bundle**: exercised against a written bundle plus a resolver; usable on any run output.
 
-"Applies to" names the interfaces or adapters the case checks; `—` means it checks contract
-objects only.
+**Selectable targets.** A consumer declares which of these it implements: the ten §6
+protocols (`PolicyGate`, `SourceResolver`, `Provider`, `Extractor`, `Rule`, `Labeler`, `Store`,
+`Exporter`, `Scorer`, `ReviewBackend`) and the **copal adapter** (§2.4).
 
-The catalog contains 91 cases. Every case uses invented data; no fixture contains clinical
+**"Applies to"** follows the level, so every case has exactly one level:
+
+- a `core` case shows `—`: it tests amber's own code, and no consumer selects or fails it;
+- an `implementation` case names the selectable targets whose fixtures run it, and is reported
+  `not_applicable` unless the consumer declared at least one of them;
+- a `bundle` case shows `—`, or `SourceResolver` when it needs one.
+
+A check that touches both amber and an implementation is split into a `core` case and an
+`implementation` case.
+
+The catalog contains 98 cases. Every case uses invented data; no fixture contains clinical
 text. Fixtures include Unicode (non-BMP, combining marks), CRLF, repeated quotes, empty and
 whitespace-only sources, and the three stand-in variable sets.
 
@@ -1982,20 +2005,21 @@ whitespace-only sources, and the three stand-in variable sets.
 
 | ID | Level | Applies to | Case |
 |---|---|---|---|
-| `POL-01` | core | PolicyGate | Every cell of the default matrix: permitted and refused combinations. |
-| `POL-02` | core | PolicyGate | A widened matrix without the explicit flag fails validation. |
-| `POL-03` | core | PolicyGate | Payload not accepted by destination is refused even when the zone is allowed. |
-| `POL-04` | core | Rule | Each restriction rule refuses independently, with the matching `restriction_id`. |
-| `POL-05` | core | PolicyGate | Restrictions apply in order; the first failure is reported. |
+| `POL-01` | core | — | Every cell of the default matrix: permitted and refused combinations. |
+| `POL-02` | core | — | A widened matrix without the explicit flag fails validation. |
+| `POL-03` | core | — | Payload not accepted by destination is refused even when the zone is allowed. |
+| `POL-04` | core | — | Each restriction rule refuses independently, with the matching `restriction_id`. |
+| `POL-05` | core | — | Restrictions apply in order; the first failure is reported. |
 | `POL-06` | core | — | `labels_only_view` output shares no substring of length ≥ 8 with the source text, across Unicode and CRLF sources. |
 | `POL-07` | core | — | A `Provenance` without `destination`/`policy_version` is rejected. |
 | `POL-08` | implementation | Extractor | A `failed` outcome from a refusal has `failure_kind="policy"` and no claims. |
-| `POL-09` | core | PolicyGate | `check` never raises and never includes source text in a `Decision`. |
-| `POL-10` | core | PolicyGate | A deidentified derivative cannot be created with a sensitivity lower than its declared `DataPolicy` without a new dataset identity. |
-| `POL-11` | core | PolicyGate | An expired restriction refuses with `restriction_expired`; the same call with an earlier `now` is permitted. |
-| `POL-12` | core | PolicyGate | `model_weights` to an `external` destination is refused for `phi` data, and weights trained on two datasets carry the more restrictive policy. |
+| `POL-09` | core | — | `check` never raises and never includes source text in a `Decision`. |
+| `POL-10` | core | — | A deidentified derivative cannot be created with a sensitivity lower than its declared `DataPolicy` without a new dataset identity. |
+| `POL-11` | core | — | An expired restriction refuses with `restriction_expired`; the same call with an earlier `now` is permitted. |
+| `POL-12` | core | — | `model_weights` to an `external` destination is refused for `phi` data, and weights trained on two datasets carry the more restrictive policy. |
 | `POL-13` | core | — | A serialized `Decision` contains no source text and is accepted as a `labels_only` payload. |
 | `POL-14` | core | — | Producer references: each of the four forms parses; an unprefixed name, an unknown prefix, `rule:` without `@<version>`, or an empty segment is rejected in every field that takes one; `rule:a@1+h1` and `rule:a@1+h2` are equal for `self_reference` and unequal otherwise. |
+| `POL-15` | implementation | Extractor, Exporter | Each transfer is checked separately: a recording gate sees one decision per destination and payload kind, and a decision permitting a model call is never reused for a tracking or export transfer. |
 
 ### 7.3 Mentions and structured evidence (§2)
 
@@ -2014,7 +2038,7 @@ whitespace-only sources, and the three stand-in variable sets.
 | `MEN-11` | implementation | Extractor | Model-proposed offsets with a quote mismatch are counted as grounding failures, not dropped silently and not repaired. |
 | `MEN-12` | core | — | `StructuredEvidence` with a value differing from the record's field is rejected; an undeclared field is rejected; a structured Source with `text` is rejected. |
 | `MEN-13` | core | — | A claim supported only by a `StructuredEvidence` leaf validates; a claim supported only by a mention with no inclusion fails `source_free_support`. |
-| `MEN-14` | implementation | — | A CaseResult whose cited mention is missing from `mentions` fails to load; uncited mentions survive a round trip. |
+| `MEN-14` | core | — | A CaseResult whose cited mention is missing from `mentions` fails to load; uncited mentions survive a round trip. |
 | `MEN-15` | core | — | A reading whose `mention_id` is not registered is rejected; a `Mention` with no reading in a graph or result is rejected. |
 | `MEN-16` | core | — | `mention_id`: a contiguous mention hashes exactly as `(source_id, start, end, mention_type)`; a discontinuous mention with the same hull and type has a different ID; two discontinuous mentions differing only in fragments have different IDs. |
 | `MEN-17` | core | — | An attribute whose `scope_evidence_id` does not contain the mention's hull is rejected with `attribute_outside_scope`; a scope that contains the mention but not the cue (post-negation) is accepted; an attribute without a scope is not checked. |
@@ -2036,13 +2060,13 @@ whitespace-only sources, and the three stand-in variable sets.
 | `VAR-07` | core | — | An inference citing a claim from an undeclared input variable fails `undeclared_dependency`. |
 | `VAR-08` | core | — | A derivation whose `inputs` are not a subset of the inference's inputs is rejected. |
 | `VAR-09` | implementation | Rule | Replay: a registered rule recomputes the derived value; a tampered derived value fails `derivation_mismatch`; an unregistered rule validates structurally and is not replayed. |
-| `VAR-10` | core | Rule | `on_missing`: `refuse` yields `insufficient_evidence` naming the role; `default` records the assumed value in `defaults_used`; `pass_none` invokes the rule with `None` (empty tuple for `many`). |
-| `VAR-11` | core | Rule | Reduction of a `one` role: candidates with different values make the derived variable `conflicting_evidence`, citing the evidence of every conflicting claim, and no derived claim is created; the conflict propagates through an intermediate variable to the final one. Equal values reduce to the lowest-ID candidate and the derivation lists all of them. A `many` role receives every candidate in ID order. Rejected claims are never candidates. |
+| `VAR-10` | core | — | `on_missing`: `refuse` yields `insufficient_evidence` naming the role; `default` records the assumed value in `defaults_used`; `pass_none` invokes the rule with `None` (empty tuple for `many`). |
+| `VAR-11` | core | — | Reduction of a `one` role: candidates with different values make the derived variable `conflicting_evidence`, citing the evidence of every conflicting claim, and no derived claim is created; the conflict propagates through an intermediate variable to the final one. Equal values reduce to the lowest-ID candidate and the derivation lists all of them. A `many` role receives every candidate in ID order. Rejected claims are never candidates. |
 | `VAR-12` | core | — | One-variable set: a payload whose `outcome` or `final_claim_ids` differs from the variable's `VariableOutcome`, or is `null`, fails to load. Several final variables: a payload with a non-null `outcome` or `final_claim_ids` fails to load. `case_status` follows the fixed severity order. |
 | `VAR-13` | core | — | Two final variables, one answered and one `not_mentioned`: `variable_outcomes` carries both, with final IDs only on the answered one; case-level fields are `null`; `case_status` is `not_mentioned`. |
 | `VAR-14` | core | — | A mention-level `conflicting_evidence` outcome is rejected. |
-| `VAR-15` | core | ReviewBackend | Zero mention claims without declared full review cannot load as `not_mentioned`. |
-| `VAR-16` | core | Rule | `defaults_used`: a defaulted role with non-empty `inputs`, defaults on a model or human derivation, or (for a registered rule) a role whose `on_missing` is not `default` or whose value differs from `RuleSpec.defaults` is rejected; replay supplies the recorded default and the rule never receives `defaults_used`; an unregistered rule's defaults round-trip unchanged. |
+| `VAR-15` | core | — | Zero mention claims without declared full review cannot load as `not_mentioned`. |
+| `VAR-16` | core | — | `defaults_used`: a defaulted role with non-empty `inputs`, defaults on a model or human derivation, or (for a registered rule) a role whose `on_missing` is not `default` or whose value differs from `RuleSpec.defaults` is rejected; replay supplies the recorded default and the rule never receives `defaults_used`; an unregistered rule's defaults round-trip unchanged. |
 | `VAR-17` | core | — | Set identity: `schema_ref` changes when any variable field or answer model changes and not when `version` alone changes; loading a result against a set with the same name and version but a different `schema_ref` fails with `variable_set_mismatch`; a store seeing one `name@version` with two `schema_ref`s fails with `variable_set_version_conflict`. A `patient`-level variable or `Task(scope="patient")` is constructible, and building a graph with it fails with `invalid_context`. |
 
 ### 7.5 Annotated data (§4)
@@ -2051,10 +2075,10 @@ whitespace-only sources, and the three stand-in variable sets.
 |---|---|---|---|
 | `ANN-01` | core | — | An Example with a `failed` outcome, a `rejected` retained claim or reading, a `proposed` final claim under a human tier, or a `verified`/`gold` claim under a silver reference fails to load; a silver reference with `proposed` claims loads; a supporting claim serving an adjudicated and a silver reference must be `gold` or `verified`. |
 | `ANN-02` | core | — | `answered` with empty final IDs, or a non-answer with final IDs, fails to load. |
-| `ANN-03` | implementation | — | An Example whose cited mention is missing from `mentions` fails; uncited mentions round-trip. |
-| `ANN-04` | core | ReviewBackend | Tier can rise (`silver` → `single_review` → `adjudicated`) only with new events; a payload asserting a higher tier without events fails; a lower tier than the events support fails. |
+| `ANN-03` | core | — | An Example whose cited mention is missing from `mentions` fails; uncited mentions round-trip. |
+| `ANN-04` | core | — | Tier can rise (`silver` → `single_review` → `adjudicated`) only with new events; a payload asserting a higher tier without events fails; a lower tier than the events support fails. |
 | `ANN-05` | implementation | Store | Split: a store rejects a second case for the same `(dataset, source_id)` with a different split, a split change for an existing case, and an Example or LabelRecord whose split differs from its case's. |
-| `ANN-06` | implementation | — | Replay determinism: random event sequences produce identical projections; replaying a prefix produces the prefix's projection. |
+| `ANN-06` | core | — | Replay determinism: amber's replay of a random event sequence gives identical projections on every run, and replaying a prefix gives the prefix's projection. |
 | `ANN-07` | core | — | Blind streams: before resolve, a reviewer's projection includes their own stream and stream-less events and excludes other streams; an adjudicator's includes every stream in the round; after resolve every actor sees every stream. |
 | `ANN-08` | core | — | `labels_only_view(events)` contains no `before`, `after`, or `reason`, and no substring of length ≥ 8 from the source text; a reading's captured value appearing in an event's `after` keeps `annotation_events` classified as `derived_text`. |
 | `ANN-09` | core | — | A `gold` claim cannot be edited in place; a correction produces a new claim and a linked event. |
@@ -2063,7 +2087,10 @@ whitespace-only sources, and the three stand-in variable sets.
 | `ANN-12` | implementation | Scorer | Scoring a configuration against silver Examples produced by the same configuration is refused. |
 | `ANN-13` | implementation | ReviewBackend | loupe mapping fixtures: accepted → adjudicated Example; unresolved → no Example, events retained; excluded → no Example; no-mentions confirmation → `not_mentioned`; unsubmitted → `insufficient_evidence`. |
 | `ANN-14` | implementation | ReviewBackend | Per-change events derived from a revision diff and a single full-state `review.submit` event replay to the same projection. |
-| `ANN-15` | core | Store, Scorer | Snapshot identity: replaying the same events gives the same `example_id`; appending an event (a tier rise, a correction) gives a new `example_id`, and replaying the prefix reproduces the old snapshot exactly; a store rejects an Example whose `example_id` does not match its `(case_id, variable_set_ref, as_of_event)`; `current_example` returns the snapshot at the latest event; a `ScoreReport` lists the `example_id`s it scored against. |
+| `ANN-15` | core | — | Snapshot identity: replaying the same events gives the same `example_id`; appending an event (a tier rise, a correction) gives a new `example_id`, and replaying the prefix reproduces the old snapshot exactly. |
+| `ANN-16` | implementation | Store | A store's `project` returns the same projection as amber's replay of the events it holds, for every actor and every `as_of_event`. |
+| `ANN-17` | implementation | Store, Scorer | A store rejects an Example whose `example_id` does not match its `(case_id, variable_set_ref, as_of_event)`; `current_example` returns the snapshot at the latest event; a `ScoreReport` lists the `example_id`s it scored against. |
+| `ANN-18` | core | — | A move-on `tier.set` must have `role=system` and a decision reference, or it is rejected; a `single_review` snapshot scored under move-on must include that event (`as_of_event` at or after it). |
 
 ### 7.6 Wire formats (§5)
 
@@ -2081,13 +2108,14 @@ whitespace-only sources, and the three stand-in variable sets.
 | `WIR-10` | bundle | — | A claim row with null `value` is rejected. |
 | `WIR-11` | bundle | — | The manifest's recomputed `payload_kinds` must equal the declared ones. |
 | `WIR-12` | bundle | — | Migration: the `amber/0.1` fixture migrated to a synthetic `amber/0.2` fixture by the test migrator equals the hand-written target. |
-| `WIR-13` | bundle | Extractor | A `CaseResult` written to a bundle and read back equals the original, including `run_id`, `grounding_failures`, `tool_calls`, `escalated`, `trace_id`, `budget`, and `usage`; a run bundle without `results.parquet` is rejected; a result whose `usage` exceeds its `budget` loads only if it records `failed` with `failure_kind="budget"`, and otherwise fails with `budget_exceeded`; loading never changes an outcome. |
+| `WIR-13` | bundle | — | A `CaseResult` written to a bundle and read back equals the original, including `run_id`, `grounding_failures`, `tool_calls`, `escalated`, `trace_id`, `budget`, and `usage`; a run bundle without `results.parquet` is rejected; a result whose `usage` exceeds its `budget` loads only if it records `failed` with `failure_kind="budget"`, and otherwise fails with `budget_exceeded`; loading never changes an outcome. |
+| `WIR-14` | core | — | Each §5.3 record's JSON form has exactly its required top-level keys and matches its fixture byte-for-byte; parsing and re-serializing gives the same bytes. |
 
 ### 7.7 Interfaces (§6)
 
 | ID | Level | Applies to | Case |
 |---|---|---|---|
-| `IFC-01` | implementation | — | Each reference implementation satisfies its protocol under `typing` checks and passes the kit; a stub that constructs an `Inclusion` or `Claim` directly fails. |
+| `IFC-01` | core | — | Each reference implementation satisfies its protocol under `typing` checks and passes the kit; a stub that constructs an `Inclusion` or `Claim` directly fails. |
 | `IFC-02` | implementation | Extractor, Provider | `Extractor` returns a `failed` result (never raises) on provider failure, parse failure, policy refusal, and budget exhaustion, each with the right `failure_kind`; an over-budget result records `failed(budget)` itself; contacting a destination not in `destinations` fails; every node's provenance carries the `RunContext`'s `run_id` and `policy_version`. |
 | `IFC-03` | implementation | Extractor | `Extractor` declaring `mentions` must emit at least one mention on a fixture containing a known span; declaring `derivations` must emit a `Derivation` on the stage fixture. |
 | `IFC-04` | implementation | Provider | `Provider` without `schema_constrained` rejects a schema request with `ProviderFailure` rather than returning unparsed text. |
@@ -2096,14 +2124,26 @@ whitespace-only sources, and the three stand-in variable sets.
 | `IFC-07` | implementation | Store | `Store.append_events` rejects updates/deletes; `project` for a stream actor excludes other streams; `put_example` rejects split change and unsupported tier; `project` returns a `Projection` that may fail the Example invariants (an unsubmitted review) while `Example.from_projection` names the failing invariant, and for a finished case `from_projection(project(...))` equals the stored Example. |
 | `IFC-08` | implementation | Exporter, PolicyGate | `Exporter` must gate every output file (checked with a recording gate); if one file is refused, nothing is written and every decision is reported; `ExportReceipt` lists each file's payload kind, decision, and `content_sha256`, matching what was written; an `amber-labels/0.1` export containing any `derived_text` file is rejected. |
 | `IFC-09` | implementation | Scorer | `Scorer` sets `provisional` iff any reference tier is below adjudicated; evidence metrics over `LabelRecord`s are `inconclusive`; `self_reference` fires when the predicted and silver configurations share a `model:` or `rule:` reference (rule hash ignored), including one that appears only in an attribute's `assigned_by`, and does not fire on shared `human:` or `tool:` references. |
-| `IFC-10` | implementation | Exporter, ReviewBackend | `ReviewBackend` round trip on the file reference: exported cases → simulated reviews → imported Examples whose events replay to the same projection. |
+| `IFC-10` | implementation | ReviewBackend | `ReviewBackend` round trip on the file reference: exported cases → simulated reviews → imported Examples whose events replay to the same projection. |
 | `IFC-11` | implementation | Store | Runs: two results for one case with different `run_id`s are both stored and retrievable, and `runs(case_id)` lists both; a second result with the same `(case_id, run_id)` is rejected; a result whose nodes' `provenance.run_id` differs from its `run_id`, or a bundle row whose `run_id` differs from the manifest's, is rejected. |
+| `IFC-12` | implementation | Provider, Extractor, Store | Every declared capability works on a synthetic fixture; a request that needs an undeclared capability is refused, never partly served. |
+| `IFC-13` | implementation | Extractor | With `batch` declared, `run_many` returns exactly one result per case, in input order, each equal to what `run` gives for that case. |
 
 ### 7.8 Reporting
 
-The plugin emits a `ConformanceReport` (labels_only): amber version, catalog version, the
-consumer's declared interfaces, and per-case `passed | failed | not_applicable` with a
-source-free diagnostic code on failure. lapidary logs it as a run artifact; loupe publishes it
+The plugin emits a `ConformanceReport` (labels_only):
+
+- `subject`: what was tested, either `{kind: "implementation", name, version}` or
+  `{kind: "bundle", manifest_content_sha256}`;
+- the amber version and the consumer's declared targets (§7.1);
+- `catalog_version` (the contract minor) and `catalog_revision`, the SHA-256 of the canonical
+  JSON (§5.2) of every case's ID, level, targets, and text;
+- `fixtures_ref`, the SHA-256 of the fixture set;
+- per case `passed | failed | not_applicable`, with a source-free diagnostic code on failure.
+
+Two reports are comparable only when their `catalog_revision` and `fixtures_ref` match, so
+cases can still be added within a minor without two "0.1" reports silently meaning different
+things. lapidary logs it as a run artifact; loupe publishes it
 with a release. A consumer claims conformance only for interfaces with zero failures.
 
 ### 7.9 Decisions recorded
@@ -2114,3 +2154,16 @@ Reviewed and accepted 2026-10-30:
    reported as `not_applicable`. There is no auto-detection.
 2. The catalog version equals the contract minor. Cases may be added within a minor;
    consumers report against the catalog version they ran.
+
+Reviewed and accepted 2026-11-02 (whole-document review):
+
+3. Level determines "Applies to": `core` cases show `—`, `implementation` cases name the
+   selectable targets that run them, `bundle` cases show `—` or `SourceResolver`. §7.1 lists
+   the selectable targets (ten protocols and the copal adapter). Mixed checks are split: ANN-06
+   and ANN-15 are core, with their store and scorer halves in ANN-16 and ANN-17. IDs were
+   edited in place because no report against them exists yet.
+4. Five promised checks gain cases: `WIR-14` (JSON record fixtures), `IFC-12` (every declared
+   capability), `IFC-13` (`run_many` order and parity), `POL-15` (each transfer gated
+   separately), and `ANN-18` (move-on `tier.set` by `system`, included in scored snapshots).
+5. `ConformanceReport` names its `subject` and carries `catalog_revision` and `fixtures_ref`
+   content hashes; reports are comparable only when both match.
