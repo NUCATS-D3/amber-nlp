@@ -1,8 +1,9 @@
 # Contract v0.1 design
 
 Status: complete draft, 2026-10-30; all seven sections accepted individually. Whole-document
-review in progress (2026-11-02): mention and attribute revisions recorded in §1.11 and §2.9.
-Implementation issues are filed after the review completes. Written in dependency order. The
+review, 2026-11-02: every section reviewed and its revisions recorded in that section's
+"Decisions recorded" list. Awaiting the owner's sign-off on the revised whole before
+implementation issues are filed against it. Written in dependency order. The
 [plan](../plan.md) describes the phases; the [charter](../charter.md) sets scope.
 
 Examples use invented data only. Stand-in variables for the design checks are: CORAL current
@@ -394,9 +395,8 @@ A mention has two parts with different identities:
   of readings; disagreement between producers is several readings of one span, and a human
   correction is a new reading, never an edit.
 
-**Structured evidence** is a verified row or field from a structured source (a lab value, a
-medication order, a registry field). It is the second kind of source-backed leaf in the
-evidence graph, alongside `Inclusion`.
+**Structured evidence**, a cited field of a structured row (a lab value, a medication order),
+is deferred to a later minor (§2.6). In v0.1 the only source-backed leaf is `Inclusion`.
 
 ### 2.2 Mention model
 
@@ -582,33 +582,26 @@ or UTF-16 units. The conformance kit includes emoji, combining marks, and CRLF s
   evidence. loupe's current `loupe-annotation-v1` (concept, four context axes, supporting
   text) maps directly: supporting text → attribute `evidence_id`.
 
-### 2.6 Structured evidence
+### 2.6 Structured evidence (deferred)
 
-```python
-class StructuredSourceMapping(BaseModel):    # frozen; declared per structured Source kind
-    source_kind: SourceKind                  # lab | medication | problem | imaging | other
-    fields: Mapping[str, Literal["string", "number", "datetime", "code"]]
-    key_fields: tuple[str, ...]              # which fields identify a row
+Structured evidence, a cited field of a structured row such as a lab value or a medication
+order, is **deferred to a later minor**. No v0.1 stand-in uses it, and a v0.1 case cannot cite
+it: a case holds exactly one note and all evidence must come from the case's sources. Following
+the charter's "experimental until used" rule, its details are designed when a consumer needs
+them. v0.1 reserves what that design must not have to undo:
 
-class StructuredEvidence(BaseModel):         # frozen; minted only through the structured path
-    kind: Literal["structured"] = "structured"
-    evidence_id: str                         # sha256(source_id, field, canonical value)
-    source_id: str                           # a Source with record != None and text == None
-    field: str
-    value: Any                               # must equal Source.record[field] exactly
-    datetime: datetime | None                # the row's effective time
-```
-
-- A structured `Source` holds the row as `record` (immutable JSON) and no `text`. Its
-  `source_id` hashes the canonical record, so a changed row is a new source.
-- `StructuredEvidence` is minted only by `structured_cite(source, field)` after checking that
-  `field` is declared in the mapping for that `source_kind` and that `value` equals the
-  record's field exactly. No code path constructs one directly, matching the `Inclusion` guard.
-- The provider that fetched the row is a `structured_source` destination (§1); its policy
-  decision is stamped on the row's `Provenance`. Fetching is implementation work (lapidary);
-  amber only validates the result.
-- Graph validation accepts `StructuredEvidence` as a source-backed leaf. `source_leaves()`
-  returns both kinds.
+- **Evidence kind.** `structured` is reserved in the evidence discriminated union. In 0.1 a
+  `structured` evidence payload is rejected with `unsupported_evidence`, as any other
+  unsupported evidence is today.
+- **Sources.** `Source.record` stays: a structured `Source` holds its row as immutable JSON in
+  `record` and has no `text`. Its `source_id` includes the canonical `record` (§5.2) whenever
+  `record` is set, so a changed row is a new source and two rows never share an ID. Note
+  sources hash exactly as before.
+- **Case scope.** The expected shape is a case with one note plus `structured_source_ids` (rows
+  of the same patient that may be cited), leaving the one-note rule intact.
+- **Still to design** when a consumer appears: how a row's schema is identified and linked to
+  its `Source`, field types (including codes), the exact value comparison, the effective time,
+  and where the fetch's policy decision is recorded.
 
 ### 2.7 Design checks against the stand-in variables
 
@@ -630,8 +623,8 @@ class StructuredEvidence(BaseModel):         # frozen; minted only through the s
   `pathologic_T` claim relies on one of them.
 - **CORAL progression:** unchanged; the task has no mentions, cites inclusions directly.
   Mentions are optional at the contract level.
-- **A lab-backed variable (future):** `StructuredEvidence` over a lab row with
-  `field="value"`; the mapping declares `value: number`, `datetime` from the row.
+- **A lab-backed variable (deferred, §2.6):** not expressible in v0.1; the reserved shape is a
+  case with the note plus the lab row in `structured_source_ids`, citing the row's `value`.
 
 ### 2.8 Conformance cases (mentions and structured evidence)
 
@@ -653,10 +646,11 @@ class StructuredEvidence(BaseModel):         # frozen; minted only through the s
     match copal's `get_span(...).quote`.
 11. Model-proposed offsets with a quote mismatch are counted as grounding failures, not
     dropped silently and not repaired.
-12. `StructuredEvidence` with a value differing from the record's field is rejected; an
-    undeclared field is rejected; a structured Source with `text` is rejected.
-13. A claim supported only by a `StructuredEvidence` leaf validates; a claim supported only by
-    a mention with no inclusion fails `source_free_support`.
+12. Structured evidence is deferred: an evidence payload with `kind="structured"` is rejected
+    with `unsupported_evidence`; a structured `Source` (with `record`) whose `source_id` does
+    not include its canonical record is rejected, and two rows differing only in `record` get
+    different `source_id`s; note-source IDs are unchanged.
+13. A claim supported only by a mention with no inclusion fails `source_free_support`.
 14. (Catalog `MEN-15`.) A reading whose `mention_id` is not registered is rejected; a
     `Mention` with no reading in a graph or result is rejected.
 15. (Catalog `MEN-16`.) `mention_id`: a contiguous mention hashes exactly as
@@ -719,6 +713,13 @@ Reviewed and accepted 2026-11-02 (whole-document review):
     variables, forbidden for note-level ones). Attribute cues are cited with edge role
     `attribute:<category>`, a namespace separate from answer-field roles that does not count
     toward field coverage.
+12. Structured evidence is deferred to a later minor (§2.6): v0.1 cannot cite it because a
+    case holds one note. The `structured` evidence kind, `Source.record`, and the
+    `structured_source_ids` case shape are reserved; 0.1 rejects structured evidence with
+    `unsupported_evidence`. MEN-12 and MEN-13 test the 0.1 behaviour.
+13. A structured `Source`'s `source_id` includes its canonical `record` whenever `record` is
+    set; note-source IDs are unchanged. Today's `ids.source_id` omits the record, so all rows
+    of one patient, kind, and external ID collide; this is a code bug, tracked in Beads.
 
 ## 3. Layered variables
 
@@ -800,7 +801,7 @@ Graph validation changes from "every claim matches the graph's task" to:
    with one of those categories; otherwise `citation_outside_section`.
 4. For a claim with `InferenceEvidence` inputs that are claims: each input claim's `variable`
    must be in this variable's declared `inputs`; otherwise `undeclared_dependency`. Inputs
-   that are evidence IDs (inclusions, structured) are always permitted.
+   that are evidence IDs (inclusions) are always permitted.
 5. Existing rules are unchanged: edges, field roles, acyclicity across edges and inference
    inputs, source-backed leaves on every branch, case scope, one note.
 
@@ -854,9 +855,9 @@ Rules for derivations:
   never replayed.
 - A **human** derivation records the review revision; never replayed.
 
-A rule may also accept **structured evidence** and **inclusions** as inputs (role → evidence
-id), so a rule such as "ECOG from an explicit score mention, else from functional-status
-mentions" is expressible.
+A rule may also accept **inclusions** as inputs (role → evidence IDs), and structured
+evidence once it lands (§2.6), so a rule such as "ECOG from an explicit score mention, else
+from functional-status mentions" is expressible.
 
 ### 3.5 Outcomes per variable
 
@@ -902,7 +903,7 @@ none, is **declared in the rule's registration**, not improvised:
 
 ```python
 class RoleSpec(BaseModel):                   # frozen
-    source: str                              # a variable name, or "evidence:<kind>" (inclusion | structured)
+    source: str                              # a variable name, or "evidence:inclusion" ("evidence:structured" reserved)
     cardinality: Literal["one", "many"] = "one"
     on_missing: Literal["refuse", "default", "pass_none"] = "refuse"
 
@@ -1180,7 +1181,7 @@ class AnnotationEvent(BaseModel):             # frozen, append-only; ULID ids ar
         "mention.create",
         "reading.create", "reading.update", "reading.set_status",
         "claim.create", "claim.update", "claim.set_status",
-        "evidence.cite", "evidence.attach_structured", "edge.add", "edge.remove",
+        "evidence.cite", "edge.add", "edge.remove",   # "evidence.attach_structured" reserved (§2.6)
         "outcome.set",
         "review.open", "review.submit", "review.reopen",
         "adjudication.resolve", "import.result", "tier.set",
@@ -1395,7 +1396,7 @@ plan is updated (lap-ecc.1).
   `schema_version: "amber/<major>.<minor>"`. v0.1 is `amber/0.1`. Readers reject a different
   major and accept a lower or equal minor (additive changes only). A reader never guesses.
 - **IDs** are strings: content-addressed SHA-256 hex for `source_id`, `mention_id`, inclusion
-  and structured `evidence_id`, and `example_id` (§4.3); ULIDs for `claim_id`, `reading_id`,
+  `evidence_id`, and `example_id` (§4.3); ULIDs for `claim_id`, `reading_id`,
   inference `evidence_id`, `event_id`.
 - **Offsets** are end-exclusive Unicode code-point indices into the exact source text. Parquet
   `int64`, JSON integers.
@@ -1458,8 +1459,9 @@ fixed points that the conformance kit checks byte-for-byte on fixtures:
 
 Rules:
 
-- Evidence records are a discriminated union on `kind` (`inclusion`, `structured`,
-  `inference`); unknown kinds are rejected.
+- Evidence records are a discriminated union on `kind` (`inclusion`, `inference`); unknown
+  kinds are rejected, and the reserved `structured` kind is rejected with
+  `unsupported_evidence` in 0.1 (§2.6).
 - `Derivation`, `Attribute`, and `VariableOutcome` are nested objects, not flattened.
 - `CaseResult.outcome` and `final_claim_ids` are always present as keys; they are `null` when
   the variable set has several final variables (§3.5).
@@ -1513,8 +1515,10 @@ confidence?, status, provenance_*.
 `value` is never null: a missing answer is a `variable_outcomes` row, not a null claim.
 
 **evidence** — **evidence_id**, kind, source_id →?, start?, end?, quote?, alignment?,
-alignment_score?, field?, value (JSON)?, datetime?, rationale?, inputs (JSON
-list)?, derivation (JSON)?, trace_id?, span_id?, provenance_*.
+alignment_score?, field?, value (JSON)?, datetime?, rationale?, inputs (JSON list)?,
+derivation (JSON)?, trace_id?, span_id?, provenance_*.
+`field`, `value`, and `datetime` are reserved for structured evidence (§2.6) and are null in
+0.1.
 
 **evidence_edges** — **claim_id →, evidence_id →, role?**, weight?.
 `role` is an answer-field name or `attribute:<category>`.
@@ -1609,7 +1613,7 @@ Rules:
   `migrate(bundle, to=...)` function for every supported path, updated fixtures in the
   conformance kit, and a conformance case that the old fixture migrated equals the new fixture.
 - ID derivations are part of the format: changing the inputs of any content-addressed ID
-  (`source_id`, `mention_id`, inclusion and structured `evidence_id`, `example_id`, the set's
+  (`source_id`, `mention_id`, inclusion `evidence_id`, `example_id`, the set's
   `schema_ref`) or the canonical JSON rules (§5.2) is a major change, because stored
   references would stop resolving. The answer-model `schema_ref` keeps today's form,
   `module:qualname@digest`; because it includes the Python import path, renaming a module
@@ -2097,8 +2101,8 @@ whitespace-only sources, and the three stand-in variable sets.
 | `MEN-09` | implementation | copal adapter | copal adapter: emoji, combining marks, and CRLF sources round-trip offsets exactly; a source with normalized whitespace fails mapping with a source-free diagnostic. |
 | `MEN-10` | implementation | copal adapter | copal adapter: modifier `trigger_id`/`scope_id` become cue/scope inclusions whose quotes match copal's `get_span(...).quote`. |
 | `MEN-11` | implementation | Extractor | Model-proposed offsets with a quote mismatch are counted as grounding failures, not dropped silently and not repaired. |
-| `MEN-12` | core | — | `StructuredEvidence` with a value differing from the record's field is rejected; an undeclared field is rejected; a structured Source with `text` is rejected. |
-| `MEN-13` | core | — | A claim supported only by a `StructuredEvidence` leaf validates; a claim supported only by a mention with no inclusion fails `source_free_support`. |
+| `MEN-12` | core | — | Structured evidence is deferred: an evidence payload with `kind="structured"` is rejected with `unsupported_evidence`; a structured `Source` (with `record`) whose `source_id` does not include its canonical record is rejected, and two rows differing only in `record` get different `source_id`s; note-source IDs are unchanged. |
+| `MEN-13` | core | — | A claim supported only by a mention with no inclusion fails `source_free_support`. |
 | `MEN-14` | core | — | A CaseResult whose cited mention is missing from `mentions` fails to load; uncited mentions survive a round trip. |
 | `MEN-15` | core | — | A reading whose `mention_id` is not registered is rejected; a `Mention` with no reading in a graph or result is rejected. |
 | `MEN-16` | core | — | `mention_id`: a contiguous mention hashes exactly as `(source_id, start, end, mention_type)`; a discontinuous mention with the same hull and type has a different ID; two discontinuous mentions differing only in fragments have different IDs. |

@@ -43,7 +43,7 @@ that will test it.
 2. **Mentions and structured evidence** (`amber-bpr.8`):
    - `Mention` fields and attributes;
    - how a mention becomes cited evidence;
-   - `StructuredEvidence` against a declared structured-source mapping;
+   - `StructuredEvidence`: deferred to a later minor (contract v0.1 §2.6);
    - how copal annotations map into mentions.
 3. **Annotated data** (`amber-bpr.2`):
    - `Example`, with reference tiers (`adjudicated`, `single_review`, `silver`) and split;
@@ -81,7 +81,7 @@ and lapidary and loupe confirm that their planned use fits it.
 Implement in this order, with adversarial tests for each step:
 
 1. policy gate and provenance stamping;
-2. `Mention` and `StructuredEvidence`;
+2. `Mention` and `MentionReading` (structured evidence is deferred);
 3. layered-variable graphs, keeping single-task graphs as the simple case;
 4. annotation events, status transitions, and `Example` with tiers;
 5. wire formats, the source resolver, and load-time revalidation.

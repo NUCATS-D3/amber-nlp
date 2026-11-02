@@ -74,7 +74,8 @@ correctness. Those are measured separately.
 These items are tracked in Beads (`bd list --status=open`):
 
 - the policy gate: `Provider`, the policy matrix, and destination checks;
-- `Mention` and `StructuredEvidence`;
+- `Mention` and `MentionReading` (`StructuredEvidence` is deferred to a later minor; contract
+  v0.1 §2.6);
 - `Example` with reference tiers;
 - annotation events and status transitions;
 - layered variables over multi-task evidence graphs;
