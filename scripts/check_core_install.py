@@ -15,6 +15,7 @@ from pydantic import Field
 import amber
 from amber.cases import create_case_result, load_case_result
 from amber.graph import EvidenceGraph
+from amber.policy import DEFAULT_MATRIX, DataPolicy, Destination, check
 from amber.schemas import (
     AnswerModel,
     Case,
@@ -145,7 +146,25 @@ def main() -> None:
     diagnostic = create_case_result(case, graph=graph, outcome=unanswered, final_claim_ids=[])
     assert diagnostic.final_claim_ids == []
     assert diagnostic.claims[0].value["finding_present"] is False
-    print("Core-only installed grounding, claim commit, case results, and restore checks passed.")
+
+    external = Destination(
+        name="synthetic-external",
+        kind="model",
+        zone=Zone.external,
+        accepts=frozenset({"source_text"}),
+    )
+    refused = check(
+        DEFAULT_MATRIX,
+        DataPolicy(sensitivity=Sensitivity.phi),
+        external,
+        "source_text",
+        now=datetime(2026, 1, 2, tzinfo=UTC),
+    )
+    assert (refused.permitted, refused.reason) == (False, "zone_not_allowed")
+    print(
+        "Core-only installed grounding, claim commit, case results, restore, and policy checks "
+        "passed."
+    )
 
 
 if __name__ == "__main__":

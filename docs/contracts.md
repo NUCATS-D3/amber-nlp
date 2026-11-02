@@ -57,6 +57,27 @@ refuse scoring a configuration against its own silver references; rule hashes ar
 - **`CaseResult`**: claims, evidence, edges, explicit `final_claim_ids`, the outcome, counters,
   and a trace ID. Results are built and loaded only through `amber.cases`.
 
+## Policy (`amber.policy`)
+
+Pure data and functions; no I/O, credentials, or clock (contract v0.1 §1).
+
+- **`Destination`** (name, kind, zone, accepted payload kinds, retention, vendor training,
+  tags) and **`ProviderDestination`** (adds capabilities and the model). Destination kinds
+  include `training`, so training on a dataset is checked like any other transfer.
+- **`Restriction`** and **`DataPolicy`**: a dataset's declared sensitivity and obligations;
+  restrictions may expire against the caller's clock.
+- **`PolicyMatrix`**: permitted zones per sensitivity. `DEFAULT_MATRIX` permits `synthetic`
+  everywhere, `deidentified` up to `external_baa`, and `limited` and `phi` only `local` and
+  `institution`. A matrix may narrow the default freely; widening needs
+  `widened_from_default` and a note.
+- **`check`**: total and deterministic; returns a **`Decision`** (the audit record, with a
+  content-hash `decision_id`) and never raises on refusal. Rules apply in order: policy
+  version against the `RunContext`, sensitivity, zone, accepted payload, then each restriction
+  in declared order. `require` raises **`PolicyViolation`** carrying the decision.
+- **`combine`**: the policy of data from several datasets (highest sensitivity, every
+  restriction). **`stamp_provenance`**: `Provenance` for a node produced through a permitted
+  transfer. **`RunContext`**: run ID, policy version, data policy, and dataset identity.
+
 ## Validation and operations
 
 - `amber.grounding.exact_quote` and `amber.tools.quote.quote`: exact matching. Repeated text
@@ -85,7 +106,7 @@ correctness. Those are measured separately.
 
 These items are tracked in Beads (`bd list --status=open`):
 
-- the policy gate: `Provider`, the policy matrix, and destination checks;
+- the `PolicyGate` protocol and its reference implementation;
 - `Mention` and `MentionReading` (`StructuredEvidence` is deferred to a later minor; contract
   v0.1 §2.6);
 - `Example` with reference tiers;

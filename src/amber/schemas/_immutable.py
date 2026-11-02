@@ -69,6 +69,31 @@ class _FrozenList(list[Any]):
         return self
 
 
+class FrozenMapping(dict[Any, Any]):
+    """A read-only mapping for already-immutable values (frozensets, enums, models)."""
+
+    def __init__(self, value: Mapping[Any, Any]) -> None:
+        if getattr(self, "_initialized", False):
+            raise TypeError(_MUTATION_ERROR)
+        dict.__init__(self, value)
+        self._initialized = True
+
+    __setitem__ = _reject_mutation
+    __delitem__ = _reject_mutation
+    clear = _reject_mutation
+    pop = _reject_mutation
+    popitem = _reject_mutation
+    setdefault = _reject_mutation
+    update = _reject_mutation
+    __ior__ = _reject_mutation
+
+    def __copy__(self) -> FrozenMapping:
+        return self
+
+    def __deepcopy__(self, _memo: dict[int, Any]) -> FrozenMapping:
+        return self
+
+
 def freeze_json(value: Any) -> Any:
     """Copy a JSON-shaped value into recursively immutable containers."""
     if value is None or isinstance(value, (str, bool, int)):

@@ -11,8 +11,9 @@ def test_importing_core_does_not_import_optional_stacks() -> None:
         [
             sys.executable,
             "-c",
-            "import amber, amber.cases, amber.graph, amber.schemas, "
+            "import amber, amber.cases, amber.graph, amber.schemas, amber.policy, "
             "amber.tools.commit, amber.tools.quote, amber.tools.outcomes, sys; "
+            "from amber.policy import DEFAULT_MATRIX, check, combine; "
             "from amber.graph import EvidenceGraph; "
             "from amber.schemas import Case, CaseOutcome, CaseResult, Claim, Provenance, Task; "
             "from amber.tools.commit import commit_claim; "
