@@ -682,7 +682,7 @@ class AttributeRequirement(BaseModel):       # frozen
 
 class Variable(BaseModel):                   # frozen, extra="forbid"
     name: str                                # unique within the set: "pathologic_T", "stage_group"
-    level: Literal["mention", "note"]        # "patient" reserved, not accepted in v0.1
+    level: Literal["mention", "note", "patient"]   # "patient" reserved: constructible, rejected by graphs in v0.1
     answer_model: type[AnswerModel]
     instructions: str
     evidence_policy: Literal["claim", "field"] = "claim"
@@ -694,19 +694,30 @@ class Variable(BaseModel):                   # frozen, extra="forbid"
 
 class VariableSet(BaseModel):                # frozen
     name: str                                # "pathologic_staging"
-    version: str                             # semver; changing any variable changes the version
+    version: str                             # semver label for people; schema_ref is the identity
     variables: Mapping[str, Variable]
-    schema_ref: str                          # sha256 over the canonical serialization of the set
+    schema_ref: str                          # sha256 over the canonical JSON of the set without schema_ref
 ```
 
 Validation of a `VariableSet`: names unique; every `inputs` name exists; the `inputs` relation
 is acyclic; a mention-level variable has nonempty `mention_types` and no `inputs` from
-note-level variables; at least one variable is `final`.
+note-level variables; at least one variable is `final`. A set containing a `patient`-level
+variable can be constructed, but building a graph with it fails with `invalid_context`, as a
+patient-scope `Task` does today.
+
+**Identity.** `schema_ref` identifies a set's content: answer models enter it as their JSON
+Schema (§5.3), and every other field as canonical JSON. `version` is a label for people.
+`CaseResult`, `Example`, and `cases.parquet` record `variable_set_ref` alongside name and
+version; loading with a supplied set whose `schema_ref` differs fails with
+`variable_set_mismatch`, even when name and version match. A store, registry, or bundle reader
+that sees one `name@version` with two different `schema_ref`s rejects the second with
+`variable_set_version_conflict`, so editing a set without bumping its version is always caught.
 
 `Task` becomes the one-variable special case: `Task(name, answer_model, instructions,
-evidence_policy)` is sugar for a `VariableSet` with one final note-level variable of that name.
-Existing call sites keep working; `EvidenceGraph(source, task=...)` and
-`EvidenceGraph(source, variables=...)` are both accepted, the first wrapping into the second.
+evidence_policy, scope)` is sugar for a `VariableSet` with one final variable of that name
+whose `level` is the task's `scope`. Existing call sites keep working;
+`EvidenceGraph(source, task=...)` and `EvidenceGraph(source, variables=...)` are both
+accepted, the first wrapping into the second.
 
 ### 3.3 Claims in a multi-variable graph
 
@@ -747,9 +758,9 @@ class Derivation(BaseModel):                 # frozen
     kind: Literal["rule", "model", "human"]
     name: str                                # bare name: "ajcc_breast_stage_group", "gpt-x", "<user>"
     version: str                             # rule table version, prompt version, or review revision
-    inputs: Mapping[str, str]                # role -> input id: {"T": claim_id, "N": claim_id, "M": claim_id}
-    parameters: Mapping[str, Any] = {}       # frozen JSON; e.g. {"edition": 8, "site": "breast"}
-    replayable: bool                         # True only for kind == "rule"
+    inputs: Mapping[str, tuple[str, ...]]    # role -> every input id the role consumed (§3.6)
+    parameters: Mapping[str, Any] = {}       # rule configuration only; e.g. {"edition": 8, "site": "breast"}
+    defaults_used: Mapping[str, Any] = {}    # role -> default value actually applied (rule only)
 
 class InferenceEvidence(...):
     ...
@@ -758,17 +769,28 @@ class InferenceEvidence(...):
 
 Rules for derivations:
 
-- `inputs` values must be a subset of the inference's existing `inputs` list (so the graph
-  rules still apply) and the role names must be exactly those the deriving variable's rule
-  expects; the rule's expected roles are part of the rule's registration (below).
+- Every ID in `inputs` must be in the inference's existing `inputs` list (so the graph rules
+  still apply) and the role names must be exactly those the deriving variable's rule expects;
+  the rule's expected roles are part of the rule's registration (§3.6).
 - A **rule** derivation is replayable: amber defines a `Rule` protocol,
-  `apply(inputs: Mapping[str, Claim | None], parameters) -> RuleResult`, where `RuleResult` is
-  either a value for the deriving variable or an outcome status with a reason. Rule
+  `apply(inputs: Mapping[str, RoleInput], parameters) -> RuleResult`, where `RoleInput` is
+  `Claim | Evidence | None` for a `one` role and `tuple[Claim | Evidence, ...]` for a `many`
+  role (§3.6), and `RuleResult` is either a value for the deriving variable or an outcome
+  status with a reason. Rule
   implementations live with the consumer (lapidary, a rule pack) and are registered by
   `name@version`; amber's conformance kit can **replay** a derivation when the rule is
   registered and checks that the replayed value equals the claim's value. A mismatch is
   `derivation_mismatch`. Unregistered rules are not replayed; the record is still validated
-  structurally.
+  structurally. Replay applies exactly when `kind == "rule"` and the rule is registered; there
+  is no separate flag.
+- **Defaults are part of the record, not the configuration.** `parameters` holds only what
+  configures the rule; `defaults_used` holds, per defaulted role, the value that was assumed.
+  A role may appear in `defaults_used` only if its `inputs` tuple is empty, and only rule
+  derivations use defaults. When the rule is registered, the role's `on_missing` must be
+  `default` and the value must equal `RuleSpec.defaults[role]`, otherwise
+  `derivation_mismatch`. Replay calls `apply(inputs, parameters)` with each defaulted role
+  set to its recorded value; the rule never sees `defaults_used` itself. An unregistered
+  rule's record still shows what was assumed.
 - A **model** derivation records prompt/model versions through `Provenance` as today and is
   never replayed.
 - A **human** derivation records the review revision; never replayed.
@@ -791,45 +813,76 @@ class VariableOutcome(BaseModel):            # frozen
 class CaseResult(...):
     ...
     variable_outcomes: Mapping[str, VariableOutcome]   # one per final variable in the set
-    outcome: CaseOutcome                     # case-level: answered iff every final variable answered;
-                                             # failed iff any failed; otherwise the most severe non-answer
-    final_claim_ids: ...                     # union of the per-variable final IDs (kept for compatibility)
+    outcome: CaseOutcome | None              # one-variable sets only: that variable's outcome
+    final_claim_ids: tuple[str, ...] | None  # one-variable sets only: that variable's final IDs
 ```
 
-The case-level outcome is **derived** from the per-variable outcomes by a fixed rule (failed >
-conflicting_evidence > insufficient_evidence > not_mentioned > answered) and validated on load;
-it cannot be set independently. For a one-variable set this reduces to today's behaviour.
+`variable_outcomes` is the record of what was answered. For a one-variable set (every `Task`),
+`outcome` and `final_claim_ids` must equal that variable's `VariableOutcome` exactly, so
+today's code and payloads keep working. For a set with several final variables both are `null`:
+a case-level `CaseOutcome` would need a reason, failure kind, evidence, and provenance that no
+producer created, and `final_claim_ids` cannot be both a union and "non-empty iff answered".
+
+For filtering, a pure helper `case_status(result) -> OutcomeStatus` returns the most severe
+variable status by a fixed order (failed > conflicting_evidence > insufficient_evidence >
+not_mentioned > answered). It is computed on demand and never stored, so no stored field can
+disagree with it.
 
 Intermediate (non-final) variables do not get a `VariableOutcome`; their absence is visible
 through the derivation that needed them (§3.6).
 
 ### 3.6 Outcome propagation through rules
 
-When a rule's input variable has no claim (its mention-level question was `not_mentioned`,
-`insufficient_evidence`, or the mention-level work was never run), the rule receives `None`
-for that role. The rule itself decides, and that decision is **declared in the rule's
-registration**, not improvised:
+A mention-level variable has one claim per mention, so a role can match zero, one, or several
+claims in a case (a note stating `pT2` in the final diagnosis and again in a synoptic table
+has two `pathologic_T` claims). How many claims a role takes, and what happens when it has
+none, is **declared in the rule's registration**, not improvised:
 
 ```python
+class RoleSpec(BaseModel):                   # frozen
+    source: str                              # a variable name, or "evidence:<kind>" (inclusion | structured)
+    cardinality: Literal["one", "many"] = "one"
+    on_missing: Literal["refuse", "default", "pass_none"] = "refuse"
+
 class RuleSpec(BaseModel):                   # frozen; registered with the rule implementation
     name: str; version: str
-    roles: Mapping[str, RoleSpec]            # RoleSpec: variable name or evidence kind, required: bool,
-                                             #           on_missing: Literal["refuse", "default", "pass_none"]
+    roles: Mapping[str, RoleSpec]
     outputs: str                             # the deriving variable name
     defaults: Mapping[str, Any] = {}         # role -> default value when on_missing == "default"
 ```
 
-- `refuse`: a missing required input makes the derived variable `insufficient_evidence` with
-  reason naming the role. The rule is not applied.
+**Reduction.** Before applying a rule, amber gathers each role's candidates: the non-rejected
+claims of the role's variable in the case (or the evidence named for an evidence role). For a
+`many` role the rule receives all of them as a tuple, ordered by ID; an empty tuple counts as
+missing. For a `one` role amber reduces them by a fixed rule:
+
+| Candidates | Result for the role |
+|---|---|
+| none | **missing**: `on_missing` applies |
+| one, or several whose values are equal (canonical JSON of `Claim.value`) | **one input**: the rule receives the candidate with the lowest ID; the derivation lists every candidate under the role |
+| several with different values | **conflict**: the rule is not applied |
+
+Rules never see a conflict and never resolve one. A derived variable with a conflicting role is
+`conflicting_evidence`, and its outcome cites the evidence of every conflicting claim. The
+conflict propagates: a rule whose input variable is itself conflicting treats that role as a
+conflict, so a final variable reports `conflicting_evidence` citing the original evidence even
+when intermediate variables sit in between. This is where conflicts between mentions surface;
+mention-level variables themselves never carry `conflicting_evidence` (§3.10 decision 3).
+
+**Missing inputs.** A role is missing when it has no candidates (the mention-level question was
+`not_mentioned` or `insufficient_evidence`, or the mention-level work was never run):
+
+- `refuse`: the derived variable is `insufficient_evidence` with reason naming the role. The
+  rule is not applied.
 - `default`: the declared default is used (the AJCC edition 8 breast table treats absent
-  clinical M as `cM0`), and the derivation records that the default was used
-  (`parameters["defaults_used"] = ["M"]`), so the derived claim's provenance shows it.
-- `pass_none`: the rule receives `None` and handles it (ECOG fallback).
+  clinical M as `cM0`), and the derivation records the value it assumed
+  (`defaults_used={"M": "M0"}`), so the derived claim's provenance shows it.
+- `pass_none`: the rule receives `None` (or an empty tuple for a `many` role) and handles it
+  (ECOG fallback).
 
 A derived claim whose derivation used a default is still a valid answered claim; scorers can
-stratify by `defaults_used`. A derived claim can never be produced from an input variable that
-ended in `conflicting_evidence`; that propagates as `conflicting_evidence` on the derived
-variable, citing the same evidence.
+stratify by the roles in `defaults_used`. A derived claim is never produced when any role is
+in conflict.
 
 ### 3.7 Final claims and reporting
 
@@ -853,10 +906,13 @@ variable.
 - **Stage group:** four mention-level variables (`pathologic_T`, `pathologic_N`,
   `pathologic_M`, `ajcc_edition`) with `requires_section={"final_diagnosis"}`, and one
   note-level final variable `stage_group` with `inputs={T, N, M, ajcc_edition}`. The rule
-  `ajcc_breast_stage_group@8.0` declares roles T, N (required, refuse), M (default `M0`),
-  edition (required, refuse). The derived claim's `InferenceEvidence.derivation` names the
-  rule, the four input claim IDs, and `defaults_used=["M"]` when M was absent. Replay in the
-  conformance kit recomputes the stage from the input claims and matches. A `T2` cited from the
+  `ajcc_breast_stage_group@8.0` declares roles T, N, and edition (`one`, `refuse`) and M
+  (`one`, `default` `M0`). The derived claim's `InferenceEvidence.derivation` names the rule,
+  the input claim IDs per role, and `defaults_used={"M": "M0"}` when M was absent. Replay in the
+  conformance kit recomputes the stage from the input claims and matches. Two `pathologic_T`
+  claims both `T2` reduce to one input and the derivation lists both; `T2` and `T3` make
+  `stage_group` `conflicting_evidence`, citing the evidence of both T claims, and no stage is
+  derived. A `T2` cited from the
   clinical history fails `citation_outside_section`; a claim citing a mention of type
   `tnm_n` for `pathologic_T` fails the mention-type check; an inference citing a
   `pathologic_T` claim from a `stage_group` variable whose `inputs` omit `pathologic_T` fails
@@ -882,13 +938,31 @@ variable.
 9. Replay: a registered rule recomputes the derived value; a tampered derived value fails
    `derivation_mismatch`; an unregistered rule validates structurally and is not replayed.
 10. `on_missing`: `refuse` yields `insufficient_evidence` naming the role; `default` records
-    `defaults_used`; `pass_none` invokes the rule with `None`.
-11. A `conflicting_evidence` input propagates to the derived variable and cites the same
-    evidence; the derived claim is never created.
-12. Case-level outcome is derived from variable outcomes by the fixed severity order; a
-    payload asserting a different case-level outcome fails to load.
-13. Two final variables, one answered and one `not_mentioned`: `final_claim_ids` contains only
-    the answered one; `variable_outcomes` carries both.
+    the assumed value in `defaults_used`; `pass_none` invokes the rule with `None` (empty
+    tuple for `many`).
+11. Reduction of a `one` role: candidates with different values make the derived variable
+    `conflicting_evidence`, citing the evidence of every conflicting claim, and no derived
+    claim is created; the conflict propagates through an intermediate variable to the final
+    one. Equal values reduce to the lowest-ID candidate and the derivation lists all of them.
+    A `many` role receives every candidate in ID order. Rejected claims are never candidates.
+12. One-variable set: a payload whose `outcome` or `final_claim_ids` differs from the
+    variable's `VariableOutcome`, or is `null`, fails to load. Several final variables: a
+    payload with a non-null `outcome` or `final_claim_ids` fails to load. `case_status`
+    follows the fixed severity order.
+13. Two final variables, one answered and one `not_mentioned`: `variable_outcomes` carries
+    both, with final IDs only on the answered one; case-level fields are `null`; `case_status`
+    is `not_mentioned`.
+14. (Catalog `VAR-16`.) `defaults_used`: a defaulted role with non-empty `inputs`, defaults on
+    a model or human derivation, or (for a registered rule) a role whose `on_missing` is not
+    `default` or whose value differs from `RuleSpec.defaults` is rejected; replay supplies the
+    recorded default and the rule never receives `defaults_used`; an unregistered rule's
+    defaults round-trip unchanged.
+15. (Catalog `VAR-17`.) Set identity: `schema_ref` changes when any variable field or answer
+    model changes and not when `version` alone changes; loading a result against a set with the
+    same name and version but a different `schema_ref` fails with `variable_set_mismatch`; a
+    store seeing one `name@version` with two `schema_ref`s fails with
+    `variable_set_version_conflict`. A `patient`-level variable or `Task(scope="patient")` is
+    constructible, and building a graph with it fails with `invalid_context`.
 
 ### 3.10 Decisions recorded
 
@@ -906,6 +980,28 @@ Reviewed and accepted 2026-10-30:
    "no target mentions" confirmation versus an unsubmitted review. Conformance adds: a
    mention-level `conflicting_evidence` outcome is rejected; zero claims without declared full
    review cannot load as `not_mentioned`.
+
+Reviewed and accepted 2026-11-02 (whole-document review):
+
+4. Rule roles declare `cardinality` (`one` or `many`). For `one`, amber reduces the role's
+   candidates by a fixed rule: none → missing (`on_missing`), equal values → one input,
+   different values → conflict. A conflict makes the derived variable `conflicting_evidence` and propagates
+   through intermediate variables; rules never resolve conflicts. `Derivation.inputs` maps each
+   role to a tuple of IDs. `RoleSpec` is a model (`source`, `cardinality`, `on_missing`); its
+   former `required` flag is dropped because `on_missing="refuse"` expresses it. `Rule.apply`
+   takes `RoleInput` values in both §3.4 and §6.2.
+5. `CaseResult.outcome` and `final_claim_ids` exist only for one-variable sets, where they
+   equal that variable's `VariableOutcome`; with several final variables they are `null` and
+   `variable_outcomes` is the only record. `case_status(result)` computes the severity summary
+   on demand and is never stored.
+6. `Derivation.defaults_used` maps each defaulted role to the value assumed; `parameters` holds
+   only rule configuration; `replayable` is removed (replay applies exactly to registered
+   rule derivations).
+7. `Task.scope` maps to `Variable.level`, which gains `patient` as a reserved value:
+   constructible, rejected by graphs with `invalid_context`, matching today's code.
+8. A set's `schema_ref` is its identity and `version` is a label. Results, Examples, and
+   `cases.parquet` record `variable_set_ref`; a mismatch on load is `variable_set_mismatch`, and
+   one `name@version` with two refs is `variable_set_version_conflict`.
 
 ## 4. Annotated data
 
@@ -955,7 +1051,7 @@ class Example(BaseModel):                     # frozen, extra="forbid"; loaded o
     example_id: str                           # ULID
     schema_version: str
     case_id: str
-    variable_set: str; variable_set_version: str
+    variable_set: str; variable_set_version: str; variable_set_ref: str
     source_ids: tuple[str, ...]               # one in v0.1
     split: Literal["train", "dev", "test"] | None
     references: Mapping[str, VariableReference]   # one per final variable
@@ -1194,7 +1290,7 @@ fixed points that the conformance kit checks byte-for-byte on fixtures:
 
 | Record | Required top-level keys |
 |---|---|
-| `CaseResult` | `schema_version, case_id, variable_set, variable_set_version, claims, mentions, mention_readings, evidence, edges, variable_outcomes, outcome, final_claim_ids, grounding_failures, tool_calls, escalated, trace_id` |
+| `CaseResult` | `schema_version, case_id, variable_set, variable_set_version, variable_set_ref, claims, mentions, mention_readings, evidence, edges, variable_outcomes, outcome, final_claim_ids, grounding_failures, tool_calls, escalated, trace_id` |
 | `Example` | as §4.3 plus `schema_version` |
 | `AnnotationEvent` | as §4.4 |
 | `LabelRecord` | as §4.6 plus `schema_version` |
@@ -1206,6 +1302,8 @@ Rules:
 - Evidence records are a discriminated union on `kind` (`inclusion`, `structured`,
   `inference`); unknown kinds are rejected.
 - `Derivation`, `Attribute`, and `VariableOutcome` are nested objects, not flattened.
+- `CaseResult.outcome` and `final_claim_ids` are always present as keys; they are `null` when
+  the variable set has several final variables (§3.5).
 - A JSON record is **self-describing but not self-validating**: loading requires the
   authoritative `Source` (via the resolver, §5.6) and the `VariableSet`, exactly as
   `load_case_result` requires them today. Readers that lack them may parse but must not mark
@@ -1268,9 +1366,9 @@ provenance_*.
 **annotation_events** — **event_id**, case_id, variable?, actor, role, round, stream?, action,
 target_id?, before (JSON)?, after (JSON)?, reason?, at, external_ref?, provenance_*.
 
-**examples** — **example_id, variable**, case_id, variable_set, variable_set_version, split?,
-tier, outcome_status, final_claim_ids (JSON list), annotators (JSON list), adjudicator?,
-derived_from_events (JSON list), created_at.
+**examples** — **example_id, variable**, case_id, variable_set, variable_set_version,
+variable_set_ref, split?, tier, outcome_status, final_claim_ids (JSON list), annotators (JSON
+list), adjudicator?, derived_from_events (JSON list), created_at.
 The Example's claims, mention readings, evidence, and edges are the rows of the other tables
 whose `case_id` matches and whose status is `gold`/`verified`, and its mentions are the spans
 those readings point to; a gold bundle therefore contains only retained records.
@@ -1339,9 +1437,9 @@ Rules:
   conformance kit, and a conformance case that the old fixture migrated equals the new fixture.
 - ID derivations are part of the format: changing `source_id` or `mention_id` inputs is a
   major change, because stored references would stop resolving.
-- The `schema_ref` of an answer model is content-addressed; a changed answer model is a new
-  `variable_set_version`, not a format change. Old bundles remain valid against their recorded
-  set.
+- The `schema_ref` of an answer model, and the set's `schema_ref`, are content-addressed; a
+  changed variable is a new set `schema_ref` and needs a new `variable_set_version` (§3.2), not
+  a format change. Old bundles remain valid against their recorded set.
 - Readers must preserve unknown `x_` columns and keys when rewriting a bundle.
 
 ### 5.8 Design checks against the stand-in variables
@@ -1388,7 +1486,7 @@ Reviewed and accepted 2026-10-30:
    `(dataset, source_id, variable_set)` triple, which is the join key across runs; ID reuse is
    a consumer choice, not a requirement. `cases` therefore joins the table set: **case_id**,
    dataset, dataset_manifest_hash, source_id →, patient_id, variable_set, variable_set_version,
-   sensitivity, split?, created_at.
+   variable_set_ref, sensitivity, split?, created_at.
 2. Annotation events are always exported as `annotation_events.parquet`; no event database is
    part of the contract. loupe revisions in MLflow are the review store; the bridge derives the
    table.
@@ -1469,7 +1567,7 @@ lapidary methods (lap-ecc.7).
 ```python
 class Rule(Protocol):                        # §3.4
     spec: RuleSpec
-    def apply(self, inputs: Mapping[str, Claim | Evidence | None],
+    def apply(self, inputs: Mapping[str, RoleInput],   # RoleInput, reduction: §3.6
               parameters: Mapping[str, Any]) -> RuleResult: ...
 ```
 `RuleResult` is a value for the deriving variable, or an outcome status with reason. Rules are
@@ -1612,7 +1710,7 @@ Reviewed and accepted 2026-10-30:
 
 The catalog is the complete list of checks that define conformance to contract v0.1. It is
 implemented as the pytest plugin `amber.conformance` (Phase 2) and its IDs are stable: a
-consumer reports "amber conformance 0.1: 80/86, failing MEN-09, WIR-04". Changing a case's
+consumer reports "amber conformance 0.1: 82/88, failing MEN-09, WIR-04". Changing a case's
 meaning requires a new ID; retired IDs are never reused.
 
 Each case has a **level**:
@@ -1629,7 +1727,7 @@ Each case has a **level**:
 "Applies to" names the interfaces or adapters the case checks; `—` means it checks contract
 objects only.
 
-The catalog contains 86 cases. Every case uses invented data; no fixture contains clinical
+The catalog contains 88 cases. Every case uses invented data; no fixture contains clinical
 text. Fixtures include Unicode (non-BMP, combining marks), CRLF, repeated quotes, empty and
 whitespace-only sources, and the three stand-in variable sets.
 
@@ -1691,12 +1789,14 @@ whitespace-only sources, and the three stand-in variable sets.
 | `VAR-07` | core | — | An inference citing a claim from an undeclared input variable fails `undeclared_dependency`. |
 | `VAR-08` | core | — | A derivation whose `inputs` are not a subset of the inference's inputs is rejected. |
 | `VAR-09` | implementation | Rule | Replay: a registered rule recomputes the derived value; a tampered derived value fails `derivation_mismatch`; an unregistered rule validates structurally and is not replayed. |
-| `VAR-10` | core | Rule | `on_missing`: `refuse` yields `insufficient_evidence` naming the role; `default` records `defaults_used`; `pass_none` invokes the rule with `None`. |
-| `VAR-11` | core | PolicyGate | A `conflicting_evidence` input propagates to the derived variable and cites the same evidence; the derived claim is never created. |
-| `VAR-12` | core | — | Case-level outcome is derived from variable outcomes by the fixed severity order; a payload asserting a different case-level outcome fails to load. |
-| `VAR-13` | core | — | Two final variables, one answered and one `not_mentioned`: `final_claim_ids` contains only the answered one; `variable_outcomes` carries both. |
+| `VAR-10` | core | Rule | `on_missing`: `refuse` yields `insufficient_evidence` naming the role; `default` records the assumed value in `defaults_used`; `pass_none` invokes the rule with `None` (empty tuple for `many`). |
+| `VAR-11` | core | Rule | Reduction of a `one` role: candidates with different values make the derived variable `conflicting_evidence`, citing the evidence of every conflicting claim, and no derived claim is created; the conflict propagates through an intermediate variable to the final one. Equal values reduce to the lowest-ID candidate and the derivation lists all of them. A `many` role receives every candidate in ID order. Rejected claims are never candidates. |
+| `VAR-12` | core | — | One-variable set: a payload whose `outcome` or `final_claim_ids` differs from the variable's `VariableOutcome`, or is `null`, fails to load. Several final variables: a payload with a non-null `outcome` or `final_claim_ids` fails to load. `case_status` follows the fixed severity order. |
+| `VAR-13` | core | — | Two final variables, one answered and one `not_mentioned`: `variable_outcomes` carries both, with final IDs only on the answered one; case-level fields are `null`; `case_status` is `not_mentioned`. |
 | `VAR-14` | core | — | A mention-level `conflicting_evidence` outcome is rejected. |
 | `VAR-15` | core | ReviewBackend | Zero mention claims without declared full review cannot load as `not_mentioned`. |
+| `VAR-16` | core | Rule | `defaults_used`: a defaulted role with non-empty `inputs`, defaults on a model or human derivation, or (for a registered rule) a role whose `on_missing` is not `default` or whose value differs from `RuleSpec.defaults` is rejected; replay supplies the recorded default and the rule never receives `defaults_used`; an unregistered rule's defaults round-trip unchanged. |
+| `VAR-17` | core | — | Set identity: `schema_ref` changes when any variable field or answer model changes and not when `version` alone changes; loading a result against a set with the same name and version but a different `schema_ref` fails with `variable_set_mismatch`; a store seeing one `name@version` with two `schema_ref`s fails with `variable_set_version_conflict`. A `patient`-level variable or `Task(scope="patient")` is constructible, and building a graph with it fails with `invalid_context`. |
 
 ### 7.5 Annotated data (§4)
 
