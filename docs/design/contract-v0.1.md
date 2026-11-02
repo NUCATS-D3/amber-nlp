@@ -51,7 +51,7 @@ class Destination(BaseModel):                # frozen, extra="forbid"
     trains_on_inputs: bool = False           # vendor may use inputs for training
     tags: frozenset[str] = frozenset()       # free labels matched by restrictions, e.g. "nm-azure-baa"
 
-class Provider(Destination):                 # kind == "model" or "structured_source"
+class ProviderDestination(Destination):      # kind == "model" or "structured_source"
     capabilities: frozenset[Literal["schema_constrained", "tools", "logprobs",
                                     "batch", "adapters"]]
     model: str | None                        # model identifier; None for structured sources
@@ -814,6 +814,7 @@ class VariableOutcome(BaseModel):            # frozen
 class CaseResult(...):
     ...
     variable_outcomes: Mapping[str, VariableOutcome]   # one per final variable in the set
+    run_id: str                              # ULID minted by the runner; equals provenance.run_id on every node
     budget: Budget | None                    # limits the run was given (§6.3)
     usage: Usage | None                      # what the run actually used; checked against budget on load
     outcome: CaseOutcome | None              # one-variable sets only: that variable's outcome
@@ -1034,9 +1035,9 @@ Rules, carried over from the CORAL protocol 1.1.0 and now contract:
 - Confirmatory evaluation uses `adjudicated` only; results against lower tiers are reported as
   provisional (scorer responsibility, §6).
 - Silver Examples record their producer's provenance (model, prompt versions, rule) so that a
-  system is never scored against its own outputs: the scorer refuses when the producer
-  provenance of a silver Example matches the configuration under evaluation (rule
-  references compared without `+<hash>`, §1.6).
+  system is never scored against its own outputs: the scorer refuses when a silver
+  reference's configuration intersects the configuration under evaluation (configurations as
+  defined for `Scorer`, §6.2; rule references compared without `+<hash>`, §1.6).
 
 ### 4.3 Example
 
@@ -1386,7 +1387,7 @@ fixed points that the conformance kit checks byte-for-byte on fixtures:
 
 | Record | Required top-level keys |
 |---|---|
-| `CaseResult` | `schema_version, case_id, variable_set, variable_set_version, variable_set_ref, claims, mentions, mention_readings, evidence, edges, variable_outcomes, outcome, final_claim_ids, grounding_failures, tool_calls, escalated, trace_id, budget, usage` |
+| `CaseResult` | `schema_version, case_id, run_id, variable_set, variable_set_version, variable_set_ref, claims, mentions, mention_readings, evidence, edges, variable_outcomes, outcome, final_claim_ids, grounding_failures, tool_calls, escalated, trace_id, budget, usage` |
 | `Example` | as §4.3 plus `schema_version` |
 | `AnnotationEvent` | as §4.4 |
 | `LabelRecord` | as §4.6 plus `schema_version` |
@@ -1460,11 +1461,12 @@ list)?, derivation (JSON)?, trace_id?, span_id?, provenance_*.
 reviewed_source_ids (JSON list), evidence_ids (JSON list), final_claim_ids (JSON list),
 provenance_*.
 
-**results** — **case_id →**, grounding_failures, tool_calls, escalated, trace_id?, budget
-(JSON)?, usage (JSON)?.
-One row per `CaseResult`: the run-level fields that belong to no claim or evidence. Every field
-is closed, so the table is `labels_only`. Together with the other tables it reconstructs the
-`CaseResult` exactly, and the loader applies the budget check (§6.6) to it.
+**results** — **case_id →, run_id**, grounding_failures, tool_calls, escalated, trace_id?,
+budget (JSON)?, usage (JSON)?.
+One row per `CaseResult`: the run-level fields that belong to no claim or evidence. `run_id`
+equals the manifest's `producer.run_id`. Every field is closed, so the table is `labels_only`.
+Together with the other tables it reconstructs the `CaseResult` exactly, and the loader applies
+the budget check (§6.6) to it.
 
 **annotation_events** — **event_id**, case_id, variable?, actor, role, round, stream?, action,
 target_id?, before (JSON)?, after (JSON)?, reason?, at, external_ref?, provenance_*.
@@ -1602,9 +1604,12 @@ Rules:
 12. Migration: the `amber/0.1` fixture migrated to a synthetic `amber/0.2` fixture by the test
     migrator equals the hand-written target.
 13. (Catalog `WIR-13`.) A `CaseResult` written to a bundle and read back equals the original,
-    including `grounding_failures`, `tool_calls`, `escalated`, `trace_id`, `budget`, and
-    `usage`; a run bundle without `results.parquet` is rejected; a result whose `usage`
-    exceeds its `budget` loads as `failed` with `failure_kind="budget"`.
+    including `run_id`, `grounding_failures`, `tool_calls`, `escalated`, `trace_id`,
+    `budget`, and `usage`; a run bundle without `results.parquet` is rejected; a result whose
+    `usage` exceeds its `budget` loads only if it records `failed` with
+    `failure_kind="budget"`, and otherwise fails with `budget_exceeded`; loading never changes
+    an outcome.
+
 
 ### 5.10 Decisions recorded
 
@@ -1686,7 +1691,7 @@ Reference: `InMemoryResolver`. First consumer: lapidary dataset loader and loupe
 
 ```python
 class Provider(Protocol):
-    destination: Destination                 # kind == "model"; includes zone and capabilities
+    destination: ProviderDestination         # §1.3: zone, capabilities, model
     def complete(self, request: ProviderRequest) -> ProviderResponse: ...
 ```
 `ProviderRequest`: messages or prompt, optional JSON schema (requires `schema_constrained`),
@@ -1700,17 +1705,28 @@ consumer: lapidary LangExtract/vLLM method (lap-ecc.14).
 ```python
 class Extractor(Protocol):
     name: str; version: str
-    destination: Destination                 # the provider it will use, or local:<name>
+    destinations: frozenset[Destination]     # everything it may contact, including local:<name>
     capabilities: frozenset[Literal["mentions", "note_claims", "derivations", "batch"]]
     def run(self, case: Case, source: Source, variables: VariableSet, *,
-            gate: PolicyGate, budget: Budget, provenance: Provenance) -> CaseResult: ...
+            gate: PolicyGate, budget: Budget, context: RunContext) -> CaseResult: ...
+
+class RunContext(BaseModel):                 # frozen; supplied by the runner
+    run_id: str
+    policy_version: str
+    data: DataPolicy                         # sensitivity and restrictions of the dataset
+    dataset: str; dataset_manifest_hash: str
 ```
-Contract: returns exactly one `CaseResult` per call, always, including on failure
-(`outcome.failed` with a `failure_kind`); never raises for expected failures; records
-`grounding_failures` and `tool_calls`; stays within `budget` (calls, tokens, retries, wall
-time) and records `budget` and `usage` on the result. Everything in the result passed through
-amber's tools. Reference: `DeterministicExtractor` (rule-like, synthetic). First consumer:
-lapidary methods (lap-ecc.7).
+Contract: returns exactly one `CaseResult` per call, always, including on failure (every final
+variable `failed` with a `failure_kind`); never raises for expected failures; records
+`grounding_failures` and `tool_calls`; stays within `budget` (calls, tokens, retries, wall time)
+and records `budget` and `usage` on the result. A result whose usage exceeds its budget must say
+so itself as `failed(budget)`; loading never rewrites an outcome (§6.6 decision 8). Everything
+in the result passed through amber's tools, which stamp each node's `Provenance` from the
+`RunContext` and the destination that produced the node; implementations never assemble
+provenance by hand. `destinations` lets a runner check every destination with the gate before
+starting; each transfer is still checked when it happens, and contacting an undeclared
+destination fails conformance. Reference: `DeterministicExtractor` (rule-like, synthetic). First
+consumer: lapidary methods (lap-ecc.7).
 
 ```python
 class Rule(Protocol):                        # §3.4
@@ -1729,10 +1745,15 @@ class Labeler(Protocol):
     name: str; version: str
     tier: ReferenceTier                      # the tier this labeler can produce (silver for models/rules)
     def label(self, case: Case, source: Source, variables: VariableSet, *,
-              gate: PolicyGate, provenance: Provenance) -> Example | LabelRecord | LabelerFailure: ...
+              gate: PolicyGate, context: RunContext) -> LabelerOutput: ...
+
+LabelerOutput = tuple[Sequence[AnnotationEvent], Example] | LabelRecord | LabelerFailure
 ```
 A `Labeler` wraps a teacher model, a rule set, or an importer of stored predictions, and
-produces tiered references. A model or rule labeler may only declare `tier=silver`; human
+produces tiered references. An Example always comes with the events it was replayed from: an
+`import.result` event plus the `mention.*`/`reading.*`/`claim.*`/`evidence.*` events the import
+implies, with the Example's `as_of_event` the last of them (§4.3). A `LabelRecord` is not
+event-derived and needs none. A model or rule labeler may only declare `tier=silver`; human
 tiers come from `ReviewBackend` imports. Reference: `ImportLabeler` over a synthetic JSON
 file. First consumer: lapidary gpt-6-sol importer (lap-ecc.13).
 
@@ -1740,32 +1761,59 @@ file. First consumer: lapidary gpt-6-sol importer (lap-ecc.13).
 class Store(Protocol):
     capabilities: frozenset[Literal["events", "examples", "query", "transactions"]]
     def put_result(self, result: CaseResult) -> None: ...
-    def get_result(self, case_id: str, *, resolver: SourceResolver) -> CaseResult: ...
+    def get_result(self, case_id: str, run_id: str, *, resolver: SourceResolver) -> CaseResult: ...
+    def runs(self, case_id: str) -> Sequence[str]: ...        # run_ids with a result for this case
     def append_events(self, events: Sequence[AnnotationEvent]) -> None: ...
     def events(self, case_id: str, *, stream: str | None = None) -> Sequence[AnnotationEvent]: ...
-    def project(self, case_id: str, *, actor: str | None, resolver: SourceResolver) -> CaseResult: ...
+    def project(self, case_id: str, *, actor: str | None, as_of_event: str | None = None,
+                resolver: SourceResolver) -> Projection: ...
     def put_example(self, example: Example) -> None: ...
     def get_example(self, example_id: str, *, resolver: SourceResolver) -> Example: ...
     def current_example(self, case_id: str, *, resolver: SourceResolver) -> Example | None: ...
 ```
-Contract: every `get_*`/`project` revalidates through amber's load boundaries with the
-resolver; `append_events` is append-only (no update or delete); `project` honors blind
-streams by role (§4.4); `put_example` rejects a split that differs from the case's
-`(dataset, source_id)` split, a tier that the events do not support, and an `example_id` that
-does not match its `(case_id, variable_set_ref, as_of_event)`; `current_example` returns the
-snapshot at the case's latest event (§4.3). Reference: `InMemoryStore`. First consumer:
+Contract: every `get_*`/`project` revalidates through amber's load boundaries with the resolver;
+results are keyed by `(case_id, run_id)` and `put_result` rejects a duplicate key, so runs of
+different methods on the same cases coexist; `append_events` is append-only (no update or
+delete); `project` honors blind streams by role (§4.4); `put_example` rejects a split that
+differs from the case's `(dataset, source_id)` split, a tier that the events do not support, and
+an `example_id` that does not match its `(case_id, variable_set_ref, as_of_event)` or whose
+`as_of_event` is not already stored (events are appended first); `current_example` returns the
+snapshot at the case's latest event (§4.3).
+
+`Projection` is the replayed state of a case's events up to `as_of_event` (default: the
+latest), as seen by `actor` under the blind-review rules (§4.4): `case_id`,
+`variable_set_ref`, `as_of_event`, `actor`, claims, mentions, readings, evidence, edges, and per
+final variable the outcome and tier so far, either of which may be unset. A projection
+validates under the §2–§3 graph rules but not the Example invariants, since work in progress
+need not satisfy them. An Example is a projection that does: `Example.from_projection(p)`
+returns the Example or names the failing invariant. Stores, review backends, and labelers use
+this one replay path. Reference: `InMemoryStore`. First consumer:
 amber's Parquet bundle store (a reference too) and lapidary's run artifacts.
 
 ```python
 class Exporter(Protocol):
-    format: str                              # "amber-bundle/0.1", "mlflow-dataset", "trl-jsonl", ...
-    payload: PayloadKind                     # the most sensitive kind this export emits
+    format: str                              # "amber-bundle/0.1", "amber-labels/0.1", "mlflow-dataset", ...
     def export(self, items: Sequence[CaseResult | Example | LabelRecord], target: Destination, *,
-               gate: PolicyGate, data: DataPolicy) -> ExportReceipt: ...
+               gate: PolicyGate, data: DataPolicy, now: datetime) -> ExportReceipt: ...
 ```
-Contract: calls the gate with its declared `payload` before writing; `ExportReceipt` carries
-the manifest hashes and the `Decision`. Reference: `BundleExporter` (writes §5 bundles).
-First consumer: lapidary runner artifact logging (lap-ecc.10).
+Contract: an exporter has no fixed payload kind. `export()` derives each output file's kind
+from its schema (§5.2) and calls the gate once per file before writing anything. Export is
+atomic: if any file is refused, nothing is written and the exporter raises `PolicyViolation`
+carrying every decision. `ExportReceipt` lists each file with its payload kind, `Decision`,
+and `content_sha256`.
+
+Two amber formats cover the common split between local and shared storage:
+
+- **`amber-bundle/0.1`** is the complete §5 bundle; it usually contains `derived_text` files
+  and so goes to local or institutional storage.
+- **`amber-labels/0.1`** contains only files that are `labels_only` by construction: `cases`,
+  `results`, `evidence_edges`, `examples`, `decisions`, `claims` when every answer model is
+  closed (§5.2), and `labels_only_view` output for outcomes (`LabelRecord`s) and events. It has
+  the same manifest form and is what goes to a tracking server. It is never a substitute for a
+  bundle: it cannot be validated against sources.
+
+Reference: `BundleExporter` and `LabelsExporter`. First consumer: lapidary runner artifact
+logging (lap-ecc.10).
 
 ```python
 class Scorer(Protocol):
@@ -1777,8 +1825,12 @@ class Scorer(Protocol):
 `ScoreReport`: metrics with numerators and denominators, per-variable breakdown, the
 `example_id`s scored against, the reference **tier mix**, a `provisional: bool` that is true
 when any reference is below `adjudicated`, and `inconclusive` entries for metrics the reference
-tier cannot support. A scorer refuses (`self_reference`) when a silver reference's producer
-provenance matches the predicted results' configuration. Scorers never see source text unless
+tier cannot support. A scorer refuses (`self_reference`) when the predicted results and a
+silver reference share a configuration. A **configuration** is the set of `model:` and `rule:`
+producer references on a record's claims, readings, and attribute `assigned_by` values, with
+rule `+<hash>` removed (§1.6); `human:` and `tool:` references do not count. The scorer refuses
+if the predicted results' configuration and any silver reference's configuration intersect.
+Scorers never see source text unless
 `needs` includes `mentions` (span overlap requires offsets, not text). Reference:
 `StructuralValidityScorer`, `LabelCorrectScorer`. First consumer: lapidary `lap eval`
 (lap-ecc.12).
@@ -1802,15 +1854,18 @@ bridge (amber-1ah.7, amber-1ah.2).
 
 `Budget` (max_calls, max_tokens, max_retries, max_seconds), `Usage` (actual counts, recorded
 on `CaseResult.usage`), `ProviderRequest`/`ProviderResponse`/`ProviderFailure`,
-`RuleResult`, `LabelerFailure`, `ExportReceipt`, `ReviewBatchReceipt`, `ScoreReport`. All
-frozen, `extra="forbid"`, `labels_only` by construction except `ProviderRequest` (which is
-`source_text` and never persisted by amber).
+`RuleResult`, `LabelerOutput`/`LabelerFailure`, `Projection`, `ExportReceipt`,
+`ReviewBatchReceipt`, `ScoreReport`. All frozen and `extra="forbid"`. All are `labels_only` by
+construction except `ProviderRequest` (`source_text`, never persisted by amber) and
+`Projection` and `LabelerOutput`, which carry claims, readings, and evidence and are
+`derived_text`.
 
 ### 6.4 Design checks against the stand-in variables
 
 - **CORAL progression (lapidary run):** `Extractor` = fixed pipeline over a `Provider`
   (vLLM, zone `institution`), gate = `StaticGate` with the CORAL `DataPolicy`; `Store` =
-  bundle; `Exporter` logs `labels_only` tables to MLflow and keeps `derived_text` local;
+  bundle; one `Exporter` writes the full `amber-bundle/0.1` locally and another logs
+  `amber-labels/0.1` to MLflow;
   `Scorer` scores against adjudicated or single-review Examples from the `ReviewBackend`
   import and marks provisional when needed.
 - **`ds_findings_v1`:** `Extractor` capabilities include `mentions`; `Labeler` =
@@ -1825,8 +1880,9 @@ frozen, `extra="forbid"`, `labels_only` by construction except `ProviderRequest`
 1. Each reference implementation satisfies its protocol under `typing` checks and passes the
    kit; a stub that constructs an `Inclusion` or `Claim` directly fails.
 2. `Extractor` returns a `failed` result (never raises) on provider failure, parse failure,
-   policy refusal, and budget exhaustion, each with the right `failure_kind`; usage never
-   exceeds budget.
+   policy refusal, and budget exhaustion, each with the right `failure_kind`; an over-budget
+   result records `failed(budget)` itself; contacting a destination not in `destinations`
+   fails; every node's provenance carries the `RunContext`'s `run_id` and `policy_version`.
 3. `Extractor` declaring `mentions` must emit at least one mention on a fixture containing a
    known span; declaring `derivations` must emit a `Derivation` on the stage fixture.
 4. `Provider` without `schema_constrained` rejects a schema request with `ProviderFailure`
@@ -1834,15 +1890,29 @@ frozen, `extra="forbid"`, `labels_only` by construction except `ProviderRequest`
 5. `Rule.apply` is pure: two calls with equal inputs give equal results; a rule touching the
    clock or randomness fails the purity fixture.
 6. `Labeler` declaring a human tier is rejected at registration; a silver Example from a
-   `Labeler` carries the labeler's provenance.
+   `Labeler` carries the labeler's provenance and comes with events that replay to it,
+   beginning with `import.result`; `put_example` before those events are appended is
+   rejected.
 7. `Store.append_events` rejects updates/deletes; `project` for a stream actor excludes other
-   streams; `put_example` rejects split change and unsupported tier.
-8. `Exporter` without a gate call (detected by a recording gate) fails; `ExportReceipt`
-   hashes match the written bundle.
+   streams; `put_example` rejects split change and unsupported tier; `project` returns a
+   `Projection` that may fail the Example invariants (an unsubmitted review) while
+   `Example.from_projection` names the failing invariant, and for a finished case
+   `from_projection(project(...))` equals the stored Example.
+8. `Exporter` must gate every output file (checked with a recording gate); if one file is
+   refused, nothing is written and every decision is reported; `ExportReceipt` lists each
+   file's payload kind, decision, and `content_sha256`, matching what was written; an
+   `amber-labels/0.1` export containing any `derived_text` file is rejected.
 9. `Scorer` sets `provisional` iff any reference tier is below adjudicated; evidence metrics
-   over `LabelRecord`s are `inconclusive`; `self_reference` refusal fires.
+   over `LabelRecord`s are `inconclusive`; `self_reference` fires when the predicted and silver
+   configurations share a `model:` or `rule:` reference (rule hash ignored), including one that
+   appears only in an attribute's `assigned_by`, and does not fire on shared `human:` or
+   `tool:` references.
 10. `ReviewBackend` round trip on the file reference: exported cases → simulated reviews →
     imported Examples whose events replay to the same projection.
+11. (Catalog `IFC-11`.) Runs: two results for one case with different `run_id`s are both
+    stored and retrievable, and `runs(case_id)` lists both; a second result with the same
+    `(case_id, run_id)` is rejected; a result whose nodes' `provenance.run_id` differs from its
+    `run_id`, or a bundle row whose `run_id` differs from the manifest's, is rejected.
 
 ### 6.6 Decisions recorded
 
@@ -1853,8 +1923,33 @@ Reviewed and accepted 2026-10-30:
    per case.
 2. The extractor enforces `Budget` and reports `Usage`; `load_case_result` validates usage
    against the recorded budget and treats an over-budget result as `failed(budget)`.
+   *(Superseded in part by decision 8: loading rejects rather than rewrites.)*
 3. `Provider` exposes `complete()` only in v0.1. Streaming and embeddings are future
    capabilities, added when a consumer needs them.
+
+Reviewed and accepted 2026-11-02 (whole-document review):
+
+4. `CaseResult` carries `run_id`, which every node's provenance and the bundle manifest must
+   match. Stores key results by `(case_id, run_id)`, reject duplicates, and list a case's runs,
+   so runs of different methods on the same cases coexist.
+5. `Exporter` has no fixed payload kind: it gates every output file by its schema-derived
+   kind, and export is atomic (any refusal writes nothing). `amber-labels/0.1` is a separate
+   format holding only `labels_only` files, for tracking servers.
+6. `Labeler` returns `(events, Example)`, a `LabelRecord`, or a `LabelerFailure`; Examples
+   always arrive with the events they replay from, and stores require those events first.
+7. `Store.project` returns a `Projection`: event-replayed state that is graph-valid but not
+   necessarily Example-valid. `Example.from_projection` is the single path to an Example.
+8. Loading never rewrites an outcome. A result whose `usage` exceeds its `budget` loads only
+   if it already records `failed(budget)`; otherwise `budget_exceeded`. This supersedes the
+   "treats as `failed(budget)`" part of decision 2.
+9. The §1.3 endpoint model is `ProviderDestination`; `Provider` is only the protocol, whose
+   `destination` is a `ProviderDestination`.
+10. `Extractor` declares `destinations` (all it may contact) instead of one `destination`, and
+    `run`/`label` take a `RunContext` instead of a `Provenance`; amber's tools stamp node
+    provenance from it.
+11. A `self_reference` configuration is the set of `model:`/`rule:` producer references on
+    claims, readings, and `assigned_by`, rule hash removed; scoring is refused on any overlap
+    with a silver reference's configuration.
 
 ## 7. Conformance catalog
 
@@ -1862,7 +1957,7 @@ Reviewed and accepted 2026-10-30:
 
 The catalog is the complete list of checks that define conformance to contract v0.1. It is
 implemented as the pytest plugin `amber.conformance` (Phase 2) and its IDs are stable: a
-consumer reports "amber conformance 0.1: 84/90, failing MEN-09, WIR-04". Changing a case's
+consumer reports "amber conformance 0.1: 85/91, failing MEN-09, WIR-04". Changing a case's
 meaning requires a new ID; retired IDs are never reused.
 
 Each case has a **level**:
@@ -1879,7 +1974,7 @@ Each case has a **level**:
 "Applies to" names the interfaces or adapters the case checks; `—` means it checks contract
 objects only.
 
-The catalog contains 90 cases. Every case uses invented data; no fixture contains clinical
+The catalog contains 91 cases. Every case uses invented data; no fixture contains clinical
 text. Fixtures include Unicode (non-BMP, combining marks), CRLF, repeated quotes, empty and
 whitespace-only sources, and the three stand-in variable sets.
 
@@ -1986,22 +2081,23 @@ whitespace-only sources, and the three stand-in variable sets.
 | `WIR-10` | bundle | — | A claim row with null `value` is rejected. |
 | `WIR-11` | bundle | — | The manifest's recomputed `payload_kinds` must equal the declared ones. |
 | `WIR-12` | bundle | — | Migration: the `amber/0.1` fixture migrated to a synthetic `amber/0.2` fixture by the test migrator equals the hand-written target. |
-| `WIR-13` | bundle | Extractor | A `CaseResult` written to a bundle and read back equals the original, including `grounding_failures`, `tool_calls`, `escalated`, `trace_id`, `budget`, and `usage`; a run bundle without `results.parquet` is rejected; a result whose `usage` exceeds its `budget` loads as `failed` with `failure_kind="budget"`. |
+| `WIR-13` | bundle | Extractor | A `CaseResult` written to a bundle and read back equals the original, including `run_id`, `grounding_failures`, `tool_calls`, `escalated`, `trace_id`, `budget`, and `usage`; a run bundle without `results.parquet` is rejected; a result whose `usage` exceeds its `budget` loads only if it records `failed` with `failure_kind="budget"`, and otherwise fails with `budget_exceeded`; loading never changes an outcome. |
 
 ### 7.7 Interfaces (§6)
 
 | ID | Level | Applies to | Case |
 |---|---|---|---|
 | `IFC-01` | implementation | — | Each reference implementation satisfies its protocol under `typing` checks and passes the kit; a stub that constructs an `Inclusion` or `Claim` directly fails. |
-| `IFC-02` | implementation | Extractor, Provider | `Extractor` returns a `failed` result (never raises) on provider failure, parse failure, policy refusal, and budget exhaustion, each with the right `failure_kind`; usage never exceeds budget. |
+| `IFC-02` | implementation | Extractor, Provider | `Extractor` returns a `failed` result (never raises) on provider failure, parse failure, policy refusal, and budget exhaustion, each with the right `failure_kind`; an over-budget result records `failed(budget)` itself; contacting a destination not in `destinations` fails; every node's provenance carries the `RunContext`'s `run_id` and `policy_version`. |
 | `IFC-03` | implementation | Extractor | `Extractor` declaring `mentions` must emit at least one mention on a fixture containing a known span; declaring `derivations` must emit a `Derivation` on the stage fixture. |
 | `IFC-04` | implementation | Provider | `Provider` without `schema_constrained` rejects a schema request with `ProviderFailure` rather than returning unparsed text. |
 | `IFC-05` | implementation | Rule | `Rule.apply` is pure: two calls with equal inputs give equal results; a rule touching the clock or randomness fails the purity fixture. |
-| `IFC-06` | implementation | Labeler | `Labeler` declaring a human tier is rejected at registration; a silver Example from a `Labeler` carries the labeler's provenance. |
-| `IFC-07` | implementation | Store | `Store.append_events` rejects updates/deletes; `project` for a stream actor excludes other streams; `put_example` rejects split change and unsupported tier. |
-| `IFC-08` | implementation | Exporter, PolicyGate | `Exporter` without a gate call (detected by a recording gate) fails; `ExportReceipt` hashes match the written bundle. |
-| `IFC-09` | implementation | Scorer | `Scorer` sets `provisional` iff any reference tier is below adjudicated; evidence metrics over `LabelRecord`s are `inconclusive`; `self_reference` refusal fires. |
+| `IFC-06` | implementation | Labeler | `Labeler` declaring a human tier is rejected at registration; a silver Example from a `Labeler` carries the labeler's provenance and comes with events that replay to it, beginning with `import.result`; `put_example` before those events are appended is rejected. |
+| `IFC-07` | implementation | Store | `Store.append_events` rejects updates/deletes; `project` for a stream actor excludes other streams; `put_example` rejects split change and unsupported tier; `project` returns a `Projection` that may fail the Example invariants (an unsubmitted review) while `Example.from_projection` names the failing invariant, and for a finished case `from_projection(project(...))` equals the stored Example. |
+| `IFC-08` | implementation | Exporter, PolicyGate | `Exporter` must gate every output file (checked with a recording gate); if one file is refused, nothing is written and every decision is reported; `ExportReceipt` lists each file's payload kind, decision, and `content_sha256`, matching what was written; an `amber-labels/0.1` export containing any `derived_text` file is rejected. |
+| `IFC-09` | implementation | Scorer | `Scorer` sets `provisional` iff any reference tier is below adjudicated; evidence metrics over `LabelRecord`s are `inconclusive`; `self_reference` fires when the predicted and silver configurations share a `model:` or `rule:` reference (rule hash ignored), including one that appears only in an attribute's `assigned_by`, and does not fire on shared `human:` or `tool:` references. |
 | `IFC-10` | implementation | Exporter, ReviewBackend | `ReviewBackend` round trip on the file reference: exported cases → simulated reviews → imported Examples whose events replay to the same projection. |
+| `IFC-11` | implementation | Store | Runs: two results for one case with different `run_id`s are both stored and retrievable, and `runs(case_id)` lists both; a second result with the same `(case_id, run_id)` is rejected; a result whose nodes' `provenance.run_id` differs from its `run_id`, or a bundle row whose `run_id` differs from the manifest's, is rejected. |
 
 ### 7.8 Reporting
 
