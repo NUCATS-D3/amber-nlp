@@ -35,7 +35,7 @@ export, amber's MLflow plugins) call it; they are the only places that can actua
 | **Zone** | Declared trust boundary of a destination: `local`, `institution`, `external_baa`, `external`. A property of a configured endpoint, not of a model family. Already in `amber.schemas`. |
 | **Destination** | Anything data can be sent to: a model provider, a structured-data source (EDW query), a tracking/tracing server, an artifact store, a judge model, a review service, an export path. |
 | **Payload kind** | What is being sent: `source_text`, `derived_text` (quotes, offsets, snippets, candidate spans), `labels_only` (values and IDs with no text), `metrics` (aggregates), `model_weights` (parameters or adapters trained on the data). |
-| **Restriction** | A declared obligation that comes with a dataset or a destination beyond the zone matrix: a data-use agreement, a license term, an IRB stipulation, or a no-training clause. |
+| **Restriction** | A declared obligation that comes with a dataset, beyond the zone matrix: a data-use agreement, a license term, an IRB stipulation, or a no-training clause. |
 | **Decision** | The outcome of a check: `permitted` or `refused`, with a stable reason code, the matched rule, and the policy version. |
 
 ### 1.3 Models
@@ -44,11 +44,11 @@ export, amber's MLflow plugins) call it; they are the only places that can actua
 class Destination(BaseModel):                # frozen, extra="forbid"
     name: str                                # "vllm-lab-gpu", "mlflow-onprem", "loupe-institution"
     kind: Literal["model", "structured_source", "tracking", "artifact_store",
-                  "judge", "review", "export"]
+                  "judge", "review", "export", "training"]
     zone: Zone
     accepts: frozenset[PayloadKind]          # payload kinds this destination may receive
-    retains: bool                            # stores payloads beyond the request (default True)
-    trains_on_inputs: bool = False           # vendor may use inputs for training
+    retains: bool = True                     # stores payloads beyond the request
+    trains_on_inputs: bool = False           # the vendor may train its own models on what it receives
     tags: frozenset[str] = frozenset()       # free labels matched by restrictions, e.g. "nm-azure-baa"
 
 class ProviderDestination(Destination):      # kind == "model" or "structured_source"
@@ -61,7 +61,7 @@ class Restriction(BaseModel):                # frozen
     kind: Literal["license", "dua", "irb", "contract", "internal"]
     forbids_zones: frozenset[Zone] = frozenset()
     forbids_kinds: frozenset[Destination.kind] = frozenset()
-    forbids_training_on_inputs: bool = False
+    forbids_training_on_inputs: bool = False # refuses destinations with trains_on_inputs (vendor training only)
     requires_tags: frozenset[str] = frozenset()   # destination must carry all of these
     forbids_payloads: frozenset[PayloadKind] = frozenset()
     valid_until: datetime | None = None      # e.g. IRB approval end; checked against a supplied clock
@@ -74,19 +74,26 @@ class DataPolicy(BaseModel):                 # attached to a dataset manifest; f
 class PolicyMatrix(BaseModel):               # per deployment; frozen
     version: str                             # semver of this deployment's policy configuration
     allowed: Mapping[Sensitivity, frozenset[Zone]]
+    widened_from_default: bool = False       # must be True if any cell exceeds the default matrix
+    note: str | None = None                  # required when widened_from_default; why, and who approved
 
 class Decision(BaseModel):                   # frozen
+    decision_id: str                         # sha256 over the canonical JSON of every other field
     permitted: bool
     reason: Literal["ok", "zone_not_allowed", "payload_not_accepted",
                     "restriction_zone", "restriction_kind", "restriction_training",
                     "restriction_tag", "restriction_payload", "restriction_expired",
-                    "unknown_sensitivity"]
+                    "unknown_sensitivity", "policy_version_mismatch"]
     restriction_id: str | None
     policy_version: str
     destination: str
+    destination_kind: str                    # Destination.kind
     zone: Zone
     sensitivity: Sensitivity
     payload: PayloadKind
+    dataset: str | None                      # from the RunContext, when one was supplied
+    run_id: str | None
+    case_id: str | None
     checked_at: datetime                     # the clock value supplied by the caller
 ```
 
@@ -108,7 +115,8 @@ present.
 
 ```python
 def check(matrix: PolicyMatrix, data: DataPolicy, destination: Destination,
-          payload: PayloadKind, *, now: datetime) -> Decision
+          payload: PayloadKind, *, now: datetime, context: RunContext | None = None,
+          case_id: str | None = None) -> Decision
 ```
 
 `now` is supplied by the enforcement point so the check stays deterministic and testable; the
@@ -116,6 +124,9 @@ core never reads the system clock.
 
 Rules, applied in order; the first failure is the reason:
 
+0. If a `context` is supplied, `context.policy_version` must equal `matrix.version`; otherwise
+   `policy_version_mismatch`. A run is never checked against a different policy than the one
+   it records.
 1. `data.sensitivity` must be in `matrix.allowed`; otherwise `unknown_sensitivity`.
 2. `destination.zone` must be in `matrix.allowed[data.sensitivity]`; otherwise
    `zone_not_allowed`.
@@ -140,12 +151,25 @@ free text; `labels_only_view(events)` keeps only who did what and when (§4.4). 
 kit checks that neither output contains a string that appears in the source. Metrics are
 aggregates computed by scorers; they are `metrics` by construction.
 
+**Combining policies.** When data from several datasets is combined, its policy is
+`combine(policies) -> DataPolicy`: the highest sensitivity in the order `synthetic <
+deidentified < limited < phi`, and **all** restrictions, in input order with duplicate IDs
+removed. Two restrictions with the same `id` but different content are an error. Restrictions
+are obligations, not levels, so none is dropped as "less strict".
+
 **Model weights are payloads.** Parameters or adapters trained on a dataset carry that dataset's
-`DataPolicy` (the most restrictive of all training datasets when several are combined) and pass
+`DataPolicy` (`combine` of all training datasets' policies when several are used) and pass
 the same check as `model_weights` before being stored, logged, or shared. A destination that
 accepts `model_weights` must be declared; the default artifact-store examples accept it only in
-`local` and `institution`. Restrictions with `forbids_training_on_inputs` refuse the training
-call itself, so weights that should not exist are never produced.
+`local` and `institution`.
+
+**Two kinds of training.** *Vendor training* is a destination using what it receives to train
+its own models; `Destination.trains_on_inputs` declares it and `forbids_training_on_inputs`
+refuses it. *Our own training* (fine-tuning, adapters, distillation) is an ordinary transfer:
+the training job is a destination of kind `training`, usually `local` or `institution`, that
+receives `source_text` or `derived_text`. The trainer checks the gate before training starts,
+so a dataset whose terms forbid derived models says `forbids_kinds: [training]`, and weights
+that should not exist are never produced.
 
 ### 1.5 Where checks happen
 
@@ -159,6 +183,7 @@ call itself, so weights that should not exist are never produced.
 | LLM judge | `judge` | `derived_text` or `source_text` | Scorer implementation |
 | Export to loupe | `review` | `source_text` | amber loupe bridge |
 | Example/Dataset export | `export` or `artifact_store` | `derived_text` | amber dataset plugin |
+| Training or fine-tuning on the data | `training` | `source_text` or `derived_text` | training implementation (lapidary) |
 | Adapter/model logging or registry | `artifact_store` | `model_weights` | training implementation (lapidary) via amber plugin |
 
 **Audit.** Every `Decision`, permitted or refused, is an audit record. amber defines the record
@@ -223,7 +248,7 @@ restrictions:
   - id: physionet-chdl-1.5.0
     kind: license
     forbids_zones: [external]
-    forbids_training_on_inputs: true
+    forbids_training_on_inputs: true      # vendors may not train on the notes
     note: "Credentialed Health Data License; no redistribution; online services per PhysioNet guidance"
   - id: coral-no-pseudolabel-mixing
     kind: internal
@@ -265,7 +290,11 @@ tool's output is not trusted to set `sensitivity` on the original.
   refused if the deployment marks the vendor `trains_on_inputs=True`; `external` is refused by
   the restriction. Loupe hosted on an institutional MLflow server is a `review` destination in
   zone `institution`: permitted. Logging traces with prompts to a laptop MLflow is `tracking`
-  in `local`: permitted; to a public MLflow would be `external`: refused.
+  in `local`: permitted; to a public MLflow would be `external`: refused. A local LoRA
+  fine-tune is a `training` destination in `local`: permitted, because the PhysioNet
+  restriction forbids only vendor training. Whether the licence permits local fine-tuning is
+  a judgement for the data owner; if it did not, the restriction would add
+  `forbids_kinds: [training]` and the fine-tune would be refused before it started.
 - **Discharge summaries (`phi`, IRB restriction):** only tagged institutional endpoints; the
   Qwen vLLM server qualifies once tagged. Parquet tables with `quote` columns are
   `derived_text` and may go only to the institutional artifact store. `labels_only_view`
@@ -277,7 +306,8 @@ tool's output is not trusted to set `sensitivity` on the original.
 ### 1.10 Conformance cases (policy)
 
 1. Every cell of the default matrix: permitted and refused combinations.
-2. A widened matrix without the explicit flag fails validation.
+2. A widened matrix without `widened_from_default: true`, or with the flag but no `note`,
+   fails validation.
 3. Payload not accepted by destination is refused even when the zone is allowed.
 4. Each restriction rule refuses independently, with the matching `restriction_id`.
 5. Restrictions apply in order; the first failure is reported.
@@ -291,7 +321,7 @@ tool's output is not trusted to set `sensitivity` on the original.
 11. An expired restriction refuses with `restriction_expired`; the same call with an earlier
     `now` is permitted.
 12. `model_weights` to an `external` destination is refused for `phi` data, and weights trained
-    on two datasets carry the more restrictive policy.
+    on two datasets carry `combine` of their policies.
 13. A serialized `Decision` contains no source text and is accepted as a `labels_only` payload.
 14. Producer references: each of the four forms parses; an unprefixed name, an unknown
     prefix, `rule:` without `@<version>`, or an empty segment is rejected in every field that
@@ -300,6 +330,18 @@ tool's output is not trusted to set `sensitivity` on the original.
 15. (Catalog `POL-15`.) Each transfer is checked separately: a recording gate sees one
     decision per destination and payload kind, and a decision permitting a model call is
     never reused for a tracking or export transfer.
+16. (Catalog `POL-16`.) Training: a `training` destination is refused when a restriction
+    lists `training` in `forbids_kinds` and permitted otherwise; `forbids_training_on_inputs`
+    refuses a destination with `trains_on_inputs=True` and never refuses a `training`
+    destination by itself.
+17. (Catalog `POL-17`.) `combine`: the result has the highest sensitivity and every
+    restriction in input order with duplicate IDs removed; two restrictions with one `id` and
+    different content are an error; combining a policy with itself returns it unchanged.
+18. (Catalog `POL-18`.) Decision context: with a `RunContext` whose `policy_version` differs
+    from `matrix.version`, `check` refuses with `policy_version_mismatch`; a `Decision` carries
+    `dataset`, `run_id`, `case_id`, and `destination_kind` when supplied; `decision_id` is the
+    same for equal inputs and `now`; a `decisions.parquet` row has exactly the `Decision`
+    fields.
 
 ### 1.11 Decisions recorded
 
@@ -307,7 +349,8 @@ Reviewed and accepted 2026-10-30:
 
 1. Restrictions may carry `valid_until`; `check` takes `now` from the caller.
 2. `model_weights` is a payload kind; trained weights inherit the most restrictive training
-   `DataPolicy` and pass the same gate.
+   `DataPolicy` and pass the same gate. *("Most restrictive" is defined by `combine`, decision
+   6.)*
 3. `Decision` is the audit record; amber defines it and the tracking plugin logs it;
    persistence belongs to enforcement points.
 
@@ -317,6 +360,18 @@ Reviewed and accepted 2026-11-02 (whole-document review):
    §1.6) in every producer, actor, annotator, and `assigned_by` field. `self_reference`
    ignores the rule `+<hash>`; everything else compares exact strings. `Derivation.name` is
    bare; destination names are a separate namespace.
+5. Vendor training and our own training are separate. `forbids_training_on_inputs` refuses only
+   destinations with `trains_on_inputs=True`. Our own training is a transfer to a new
+   destination kind, `training`, gated before it starts; derived models are forbidden with
+   `forbids_kinds: [training]`.
+6. `combine(policies)` defines a combined `DataPolicy`: highest sensitivity, all restrictions
+   (input order, duplicate IDs removed, conflicting duplicates an error).
+7. `Decision` gains `decision_id` (content hash), `destination_kind`, `dataset`, `run_id`, and
+   `case_id`, and `decisions.parquet` matches it exactly. `check` takes an optional
+   `RunContext` and refuses with `policy_version_mismatch` when its version differs from the
+   matrix.
+8. `PolicyMatrix` gains `widened_from_default` and `note` (required when widened);
+   `Destination.retains` defaults to `True`; restrictions come with datasets only.
 
 ---
 
@@ -1487,7 +1542,8 @@ matches, and its mentions are the spans those readings point to. Status is not u
 rows: a silver reference's claims are retained as `proposed`.
 
 **decisions** — **decision_id**, checked_at, permitted, reason, restriction_id?, policy_version,
-destination, zone, sensitivity, payload, case_id?, run_id?.
+destination, destination_kind, zone, sensitivity, payload, dataset?, run_id?, case_id?.
+Exactly the fields of `Decision` (§1.3).
 
 ### 5.5 Manifest
 
@@ -1686,8 +1742,10 @@ Rules that apply to every interface:
 class PolicyGate(Protocol):
     matrix: PolicyMatrix
     def check(self, data: DataPolicy, destination: Destination, payload: PayloadKind,
-              *, now: datetime) -> Decision: ...
-    def require(self, data, destination, payload, *, now) -> Decision: ...   # raises PolicyViolation
+              *, now: datetime, context: RunContext | None = None,
+              case_id: str | None = None) -> Decision: ...
+    def require(self, data, destination, payload, *, now, context=None,
+                case_id=None) -> Decision: ...   # raises PolicyViolation
 ```
 Reference: `amber.policy.StaticGate(matrix)`. First consumer: lapidary runner (lap-ecc.4).
 
@@ -1969,7 +2027,7 @@ Reviewed and accepted 2026-11-02 (whole-document review):
 
 The catalog is the complete list of checks that define conformance to contract v0.1. It is
 implemented as the pytest plugin `amber.conformance` (Phase 2) and its IDs are stable: a
-consumer reports "amber conformance 0.1: 92/98, failing MEN-09, WIR-04". Changing a case's
+consumer reports "amber conformance 0.1: 95/101, failing MEN-09, WIR-04". Changing a case's
 meaning requires a new ID; retired IDs are never reused.
 
 Each case has a **level**:
@@ -1997,7 +2055,7 @@ protocols (`PolicyGate`, `SourceResolver`, `Provider`, `Extractor`, `Rule`, `Lab
 A check that touches both amber and an implementation is split into a `core` case and an
 `implementation` case.
 
-The catalog contains 98 cases. Every case uses invented data; no fixture contains clinical
+The catalog contains 101 cases. Every case uses invented data; no fixture contains clinical
 text. Fixtures include Unicode (non-BMP, combining marks), CRLF, repeated quotes, empty and
 whitespace-only sources, and the three stand-in variable sets.
 
@@ -2006,7 +2064,7 @@ whitespace-only sources, and the three stand-in variable sets.
 | ID | Level | Applies to | Case |
 |---|---|---|---|
 | `POL-01` | core | — | Every cell of the default matrix: permitted and refused combinations. |
-| `POL-02` | core | — | A widened matrix without the explicit flag fails validation. |
+| `POL-02` | core | — | A widened matrix without `widened_from_default: true`, or with the flag but no `note`, fails validation. |
 | `POL-03` | core | — | Payload not accepted by destination is refused even when the zone is allowed. |
 | `POL-04` | core | — | Each restriction rule refuses independently, with the matching `restriction_id`. |
 | `POL-05` | core | — | Restrictions apply in order; the first failure is reported. |
@@ -2016,10 +2074,13 @@ whitespace-only sources, and the three stand-in variable sets.
 | `POL-09` | core | — | `check` never raises and never includes source text in a `Decision`. |
 | `POL-10` | core | — | A deidentified derivative cannot be created with a sensitivity lower than its declared `DataPolicy` without a new dataset identity. |
 | `POL-11` | core | — | An expired restriction refuses with `restriction_expired`; the same call with an earlier `now` is permitted. |
-| `POL-12` | core | — | `model_weights` to an `external` destination is refused for `phi` data, and weights trained on two datasets carry the more restrictive policy. |
+| `POL-12` | core | — | `model_weights` to an `external` destination is refused for `phi` data, and weights trained on two datasets carry `combine` of their policies. |
 | `POL-13` | core | — | A serialized `Decision` contains no source text and is accepted as a `labels_only` payload. |
 | `POL-14` | core | — | Producer references: each of the four forms parses; an unprefixed name, an unknown prefix, `rule:` without `@<version>`, or an empty segment is rejected in every field that takes one; `rule:a@1+h1` and `rule:a@1+h2` are equal for `self_reference` and unequal otherwise. |
 | `POL-15` | implementation | Extractor, Exporter | Each transfer is checked separately: a recording gate sees one decision per destination and payload kind, and a decision permitting a model call is never reused for a tracking or export transfer. |
+| `POL-16` | core | — | Training: a `training` destination is refused when a restriction lists `training` in `forbids_kinds` and permitted otherwise; `forbids_training_on_inputs` refuses a destination with `trains_on_inputs=True` and never refuses a `training` destination by itself. |
+| `POL-17` | core | — | `combine`: the result has the highest sensitivity and every restriction in input order with duplicate IDs removed; two restrictions with one `id` and different content are an error; combining a policy with itself returns it unchanged. |
+| `POL-18` | core | — | Decision context: with a `RunContext` whose `policy_version` differs from `matrix.version`, `check` refuses with `policy_version_mismatch`; a `Decision` carries `dataset`, `run_id`, `case_id`, and `destination_kind` when supplied; `decision_id` is the same for equal inputs and `now`; a `decisions.parquet` row has exactly the `Decision` fields. |
 
 ### 7.3 Mentions and structured evidence (§2)
 
