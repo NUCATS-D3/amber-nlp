@@ -4,6 +4,7 @@ Models in this package perform no I/O and import nothing outside the amber core.
 answer models belong to the projects that define those tasks, not to amber-nlp.
 """
 
+from amber.schemas.annotations import AnnotationEvent
 from amber.schemas.answers import AnswerModel
 from amber.schemas.cases import Case, CaseOutcome, CaseResult, VariableOutcome
 from amber.schemas.claims import Claim
@@ -22,6 +23,7 @@ __all__ = [
     "GroundingFailure",
     "Inclusion",
     "InferenceEvidence",
+    "AnnotationEvent",
     "AnswerModel",
     "AttributeRequirement",
     "Attribute",

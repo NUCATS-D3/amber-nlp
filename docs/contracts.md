@@ -116,6 +116,38 @@ refuse scoring a configuration against its own silver references; rule hashes ar
   producer, split). `load_label_record` checks it against the case and set and validates the
   value against the final variable's answer model. A LabelRecord never loads as an Example.
 
+## Annotation events (`amber.schemas.annotations`, `amber.annotations`)
+
+- **`AnnotationEvent`**: one append-only change to a case's annotations, ordered by its ULID:
+  actor (producer reference; `human:` exactly for `reviewer` and `adjudicator`), role, round,
+  blind `stream` (reviewers only), action, target, `before`/`after` without quotes or
+  offsets, reason, time, provenance, and external reference. Event logs are `derived_text`.
+- **`replay`** rebuilds a `Projection` of a case's events up to `as_of_event` as one actor may
+  see it. It is deterministic, and replaying a prefix gives that prefix's projection. Events
+  name mentions and inclusions by ID, resolved against caller-supplied spans and re-minted
+  against the `Source`. A projection validates under the graph rules with any status.
+  - **Blind review** (`visible_events`): before an untargeted `adjudication.resolve` for its
+    round, a reviewer sees their own streams and stream-less events only; adjudicators,
+    importers, and system actors see everything; afterwards everyone does.
+  - **Transitions**: claims and readings are created `proposed` (by the human actor when the
+    role is human); reviewers move `proposed` to `verified` or `rejected`; the adjudicator
+    resolves to `gold` or `rejected` (`gold` to `rejected` needs a reason). A correction
+    (`claim.update`, `reading.update`) is a new record linked by its event; the old one is
+    rejected unless it is gold, which is never edited. A claim becomes gold only over
+    `gold`/`verified` readings.
+  - **Tiers** only rise: `silver` by importers or system, `single_review` by the reviewer,
+    `adjudicated` by the adjudicator; a human tier promotes the variable's final claims to
+    gold. A case-level `tier.set` is the protocol's move-on decision and needs
+    `role="system"` and a `decision_ref`.
+  - An `excluded` adjudication decision yields no Example; `unresolved` and `excluded` need a
+    reason.
+- **`example_from_projection`** is the one path from events to an `Example`: it drops
+  rejected records and the inferences built only on them, attributes each reference from
+  the events (reviewers who submitted, the resolving adjudicator, or the silver producer),
+  and loads the result through `load_example`, which names any failing invariant.
+  **`verify_example`** requires an Example to equal the replay of its events
+  (`events_mismatch`), so a tier the events do not support is rejected.
+
 ## Policy (`amber.policy`)
 
 Pure data and functions; no I/O, credentials, or clock (contract v0.1 §1).
@@ -154,8 +186,9 @@ Pure data and functions; no I/O, credentials, or clock (contract v0.1 §1).
     the source; readings must name a registered span; attribute cues and scopes must be
     registered inclusions, and a scope must contain the mention's hull. Graphs hold only
     `proposed` and `rejected` readings and claims. Each claim validates against its own
-    variable; a claim's inferences may consume claims of its own variable or of declared
-    `inputs` only (`undeclared_dependency`). A mention-level claim names a registered,
+    variable; no live claim's support reaches a rejected claim (inferences only rejected
+    claims rely on may keep rejected inputs); a claim's inferences may consume claims of its
+    own variable or of declared `inputs` only (`undeclared_dependency`). A mention-level claim names a registered,
     non-rejected reading of a span of a permitted `mention_type` (`missing_reading`), and
     cites the inclusions at the span's hull or every fragment (`uncited_mention`). Required
     attributes must be present with a permitted value, compared with strict types
@@ -192,8 +225,7 @@ These items are tracked in Beads (`bd list --status=open`):
 - the `PolicyGate` protocol and its reference implementation;
 - claims that rely on readings and required attributes (`StructuredEvidence` is deferred to a
   later minor; contract v0.1 §2.6);
-- annotation events, status transitions, replay to a projection, and building Examples from
-  projections;
+- `labels_only_view` for case results and annotation events;
 - derivations and rule replay;
 - interfaces (`Extractor`, `Store`, `Exporter`, `Scorer`, `ReviewBackend`, `Labeler`);
 - the conformance kit;

@@ -618,6 +618,39 @@ def test_inference_inputs_reject_unknown_and_rejected_claims(target: str, code: 
     )
 
 
+def test_rejected_claims_may_feed_inferences_only_rejected_claims_rely_on() -> None:
+    context, answer, leaf, edge = _valid_graph()
+    support = make_claim_record(source=context.source, value={FIELD: False})
+    support["status"] = "rejected"
+    built = make_claim_record(source=context.source, value={FIELD: True})
+    built["status"] = "rejected"
+    inference = make_inference_record(inputs=[support["claim_id"], leaf.evidence_id])
+    support_edge = {"claim_id": support["claim_id"], "evidence_id": leaf.evidence_id, "role": FIELD}
+    built_edge = {
+        "claim_id": built["claim_id"],
+        "evidence_id": inference["evidence_id"],
+        "role": FIELD,
+    }
+
+    state = validate_state(
+        context,
+        claims=[answer, support, built],
+        evidence=[leaf.model_dump(), inference],
+        edges=[edge, support_edge, built_edge],
+    )
+    assert state.claims[built["claim_id"]].status == "rejected"
+
+    live_edge = {**built_edge, "claim_id": answer["claim_id"]}
+    _assert_error(
+        "invalid_context",
+        validate_state,
+        context,
+        claims=[answer, support, built],
+        evidence=[leaf.model_dump(), inference],
+        edges=[edge, support_edge, built_edge, live_edge],
+    )
+
+
 def test_rejected_claim_may_have_no_evidence_but_its_retained_edges_must_be_valid() -> None:
     source = make_source("Stable disease.")
     context = build_context(source=source, task=make_task(), sensitivity=Sensitivity.synthetic)

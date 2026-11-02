@@ -483,7 +483,8 @@ def test_load_rejects_source_free_and_duplicate_retained_components() -> None:
     inference = deepcopy(next(item for item in payload["evidence"] if item["kind"] == "inference"))
     inference.update(evidence_id=new_ulid(), inputs=[inclusion.evidence_id, rejected_id])
     payload["evidence"].append(inference)
-    with pytest.raises(GraphValidationError, match="invalid_context"):
+    # The rejected claim has no support, so the inference built on it is source-free.
+    with pytest.raises(GraphValidationError, match="source_free_support"):
         _load(payload, case, graph)
     payload = result.model_dump(mode="json")
     payload["claims"].append(deepcopy(payload["claims"][0]))

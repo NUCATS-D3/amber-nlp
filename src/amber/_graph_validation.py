@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -466,6 +466,29 @@ def _require_variable_rules(
             _raise("citation_outside_section")
 
 
+def _require_live_support(
+    claims: Mapping[str, _ClaimRecord], adjacency: Mapping[str, Iterable[str]]
+) -> None:
+    """No live claim's support reaches a rejected claim.
+
+    A rejected claim may stay an input of inferences that only rejected claims rely on, so a
+    reviewer can reject a supporting claim together with the claims built on it.
+    """
+    for claim_id, claim in claims.items():
+        if claim.status == "rejected":
+            continue
+        visited: set[str] = set()
+        pending = list(adjacency[claim_id])
+        while pending:
+            node_id = pending.pop()
+            if node_id in visited:
+                continue
+            visited.add(node_id)
+            if node_id in claims and claims[node_id].status == "rejected":
+                _raise("invalid_context")
+            pending.extend(adjacency[node_id])
+
+
 def _require_declared_dependencies(
     context: _GraphContext,
     claims: Mapping[str, _ClaimRecord],
@@ -604,12 +627,10 @@ def validate_state(
         if not isinstance(evidence_record, InferenceEvidence):
             continue
         for input_id in evidence_record.inputs:
-            if input_id in claim_records:
-                if claim_records[input_id].status == "rejected":
-                    _raise("invalid_context")
-            elif input_id not in evidence_records:
+            if input_id not in claim_records and input_id not in evidence_records:
                 _raise("unknown_reference")
             adjacency_lists[evidence_id].add(input_id)
+    _require_live_support(claim_records, adjacency_lists)
 
     for claim_id, claim_record in claim_records.items():
         if claim_record.status == "rejected":
