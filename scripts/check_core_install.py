@@ -56,6 +56,9 @@ def main() -> None:
         "mlx",
         "pytest",
         "marimo",
+        "anthropic",
+        "azure",
+        "openai",
     )
     available = [name for name in optional if importlib.util.find_spec(name) is not None]
     assert not available, f"Expected a core-only environment; found {available}"

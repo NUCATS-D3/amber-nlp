@@ -28,3 +28,6 @@ notebooks/**/__marimo__/
 .beads-credential-key
 .beads/proxieddb/
 *.gate.lock*
+
+# env vars
+.envrc
