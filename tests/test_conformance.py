@@ -7,6 +7,7 @@ import re
 import tempfile
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -18,16 +19,18 @@ from amber.conformance.catalog import CASES, CATALOG, CATALOG_VERSION, catalog_r
 from amber.conformance.checks import CHECKS
 from amber.conformance.report import build_report, run_checks
 from amber.labeling import LabelerFailure
-from amber.policy import ProviderDestination
+from amber.policy import DEFAULT_MATRIX, Destination, ProviderDestination, StaticGate
 from amber.providers import ProviderFailure, ProviderRequest, ProviderResponse
 from amber.reference import (
     DeterministicExtractor,
+    FileReviewBackend,
     ImportLabeler,
     InMemoryResolver,
     InMemoryStore,
     LabelCorrectScorer,
     ScriptedProvider,
 )
+from amber.reference.review import simulate_reviews
 from amber.schemas import Example, ReferenceTier, Source, Zone
 from amber.scoring import Metric
 
@@ -70,11 +73,29 @@ def _import_labeler() -> ImportLabeler:
     return ImportLabeler(path, clock=lambda: datetime(2026, 1, 1, tzinfo=UTC))
 
 
+_REVIEW = Destination(
+    name="conformance-review",
+    kind="review",
+    zone=Zone.local,
+    accepts=frozenset({"source_text", "derived_text"}),
+)
+
+
+def _file_review(backend_class: type[FileReviewBackend] = FileReviewBackend) -> Any:
+    def make() -> tuple[FileReviewBackend, Any]:
+        backend = backend_class(Path(tempfile.mkdtemp()), _REVIEW, answer_models=[fx.FindingAnswer])
+        clock = datetime(2026, 1, 1, tzinfo=UTC)
+        return backend, partial(simulate_reviews, variables=fx.NOTE_VARIABLES, now=clock)
+
+    return make
+
+
 def _subject(
     store: type[InMemoryStore] = InMemoryStore,
     provider: Any = None,
     extractor: Any = None,
     labeler: Any = None,
+    review: Any = None,
 ) -> Subject:
     return Subject(
         name="amber-reference",
@@ -86,6 +107,7 @@ def _subject(
             "Extractor": extractor or _extractor,
             "Scorer": LabelCorrectScorer,
             "Labeler": labeler or _import_labeler,
+            "ReviewBackend": review or _file_review(),
         },
     )
 
@@ -142,6 +164,7 @@ def test_every_check_names_a_catalog_case_for_its_target() -> None:
         ("ANN-12", "Scorer"),
         ("ANN-17", "Scorer"),
         ("IFC-06", "Labeler"),
+        ("IFC-10", "ReviewBackend"),
     }
 
 
@@ -155,21 +178,30 @@ def test_the_references_pass_every_implemented_case() -> None:
     for check in CHECKS:
         if check.case_id != "IFC-12":
             assert statuses[check.case_id] == ("passed", None)
-    for target in ("Store", "Provider", "Extractor", "Scorer", "SourceResolver", "Labeler"):
+    for target in (
+        "Store",
+        "Provider",
+        "Extractor",
+        "Scorer",
+        "SourceResolver",
+        "Labeler",
+        "ReviewBackend",
+    ):
         assert report.conforms(target)
     assert statuses["ANN-06"] == ("not_applicable", None)
     assert statuses["WIR-01"] == ("not_implemented", None)
     assert statuses["WIR-04"] == ("not_implemented", None)
     assert report.counts() == {
-        "passed": 12,
+        "passed": 13,
         "failed": 0,
-        "not_applicable": 101 - 12 - 18,
-        "not_implemented": 18,
+        "not_applicable": 101 - 13 - 20,
+        "not_implemented": 20,
     }
     assert report.targets == (
         "Extractor",
         "Labeler",
         "Provider",
+        "ReviewBackend",
         "Scorer",
         "SourceResolver",
         "Store",
@@ -177,6 +209,8 @@ def test_the_references_pass_every_implemented_case() -> None:
     # IFC-12's Extractor part has no check yet, so the shared case is never reported passed.
     assert statuses["IFC-12"] == ("not_implemented", None)
     assert statuses["IFC-03"] == ("not_implemented", None)
+    # ANN-13 and ANN-14 are loupe-bridge cases with no check yet.
+    assert statuses["ANN-13"] == statuses["ANN-14"] == ("not_implemented", None)
     assert report.catalog_revision == catalog_revision()
     assert report.fixtures_ref == fx.fixtures_ref()
 
@@ -508,3 +542,64 @@ def test_broken_labelers_fail_with_source_free_codes(labeler: Any, code: str) ->
     assert _statuses(report)["IFC-06"] == ("failed", code)
     assert not report.conforms("Labeler")
     assert report.conforms("Store")
+
+
+class _Ungated(FileReviewBackend):
+    def export_cases(self, cases: Any, *, gate: Any, **kwargs: Any) -> Any:
+        return super().export_cases(cases, gate=StaticGate(DEFAULT_MATRIX), **kwargs)
+
+
+class _ImportsNothing(FileReviewBackend):
+    def import_references(self, receipt: Any, *, resolver: Any) -> Any:
+        return (), ()
+
+
+class _DropsEvents(FileReviewBackend):
+    def import_references(self, receipt: Any, *, resolver: Any) -> Any:
+        examples, events = super().import_references(receipt, resolver=resolver)
+        return examples, [event for event in events if event.action != "review.submit"]
+
+
+class _SilverToo(FileReviewBackend):
+    def import_references(self, receipt: Any, *, resolver: Any) -> Any:
+        examples, events = super().import_references(receipt, resolver=resolver)
+        silver = [
+            example.model_copy(
+                update={
+                    "references": {
+                        name: reference.model_copy(update={"tier": ReferenceTier.silver})
+                        for name, reference in example.references.items()
+                    }
+                }
+            )
+            for example in examples
+        ]
+        return silver, events
+
+
+@pytest.mark.parametrize(
+    ("review", "code"),
+    [
+        (_file_review(_Ungated), "export_not_gated"),
+        (_file_review(_ImportsNothing), "references_missing"),
+        (_file_review(_DropsEvents), "events_do_not_replay"),
+        (_file_review(_SilverToo), "tier_not_human"),
+        (lambda: object(), "not_a_review_backend"),
+        (lambda: (InMemoryStore(), print), "not_a_review_backend"),
+    ],
+)
+def test_broken_review_backends_fail_with_source_free_codes(review: Any, code: str) -> None:
+    report = run_checks(_subject(review=review))
+    assert _statuses(report)["IFC-10"] == ("failed", code)
+    assert not report.conforms("ReviewBackend")
+    assert report.conforms("Store")
+
+
+def test_a_review_backend_needs_a_review_destination() -> None:
+    def tracking() -> Any:
+        backend, review = _file_review()()
+        backend.destination = _REVIEW.model_copy(update={"kind": "tracking"})
+        return backend, review
+
+    report = run_checks(_subject(review=tracking))
+    assert _statuses(report)["IFC-10"] == ("failed", "not_a_review_destination")

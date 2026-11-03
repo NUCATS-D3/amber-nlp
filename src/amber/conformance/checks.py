@@ -17,21 +17,33 @@ from amber.cases import load_case_result
 from amber.conformance import fixtures as fx
 from amber.conformance.catalog import CASES, Target
 from amber.examples import load_example, load_label_record
-from amber.interfaces import Extractor, Labeler, Provider, Scorer, SourceResolver, Store
+from amber.interfaces import (
+    Extractor,
+    Labeler,
+    Provider,
+    ReviewBackend,
+    Scorer,
+    SourceResolver,
+    Store,
+)
 from amber.labeling import LabelerFailure, LabelerRejected, admit_labeler, spans_of
 from amber.policy import (
     DEFAULT_MATRIX,
+    DataPolicy,
     Destination,
     PolicyMatrix,
+    PolicyViolation,
     ProviderDestination,
     StaticGate,
 )
 from amber.providers import ProviderFailure, ProviderRequest, ProviderResponse
+from amber.review import ReviewBatchReceipt
 from amber.schemas import (
     Budget,
     Case,
     CaseResult,
     Example,
+    Inclusion,
     LabelRecord,
     ReferenceTier,
     Sensitivity,
@@ -128,6 +140,18 @@ class Subject:
         if not isinstance(labeler, Labeler):
             _fail("not_a_labeler")
         return labeler
+
+    def review_backend(self) -> tuple[ReviewBackend, Callable[[ReviewBatchReceipt], None]]:
+        made = self.targets["ReviewBackend"]()
+        if not isinstance(made, tuple) or len(made) != 2:
+            _fail("not_a_review_backend")
+        backend, review = made
+        if not isinstance(backend, ReviewBackend) or not callable(review):
+            _fail("not_a_review_backend")
+        destination = getattr(backend, "destination", None)
+        if not isinstance(destination, Destination) or destination.kind != "review":
+            _fail("not_a_review_destination")
+        return backend, review
 
 
 def _store_with_case(subject: Subject, case: Case | None = None) -> Store:
@@ -705,6 +729,97 @@ def check_ifc_06(subject: Subject) -> None:
     )
 
 
+# ReviewBackend -----------------------------------------------------------------------------
+
+
+class _PayloadGate:
+    """Records each (payload, case_id) asked for; refuses everything when ``refuse`` is set."""
+
+    def __init__(self, *, refuse: bool) -> None:
+        self._gate = StaticGate(DEFAULT_MATRIX)
+        self.matrix = self._gate.matrix
+        self.refuse = refuse
+        self.asked: list[tuple[str, str | None]] = []
+
+    def _target(self, destination: Destination) -> Destination:
+        return (
+            destination.model_copy(update={"accepts": frozenset()}) if self.refuse else destination
+        )
+
+    def check(self, data: Any, destination: Destination, payload: Any, **kwargs: Any) -> Any:
+        self.asked.append((payload, kwargs.get("case_id")))
+        return self._gate.check(data, self._target(destination), payload, **kwargs)
+
+    def require(self, data: Any, destination: Destination, payload: Any, **kwargs: Any) -> Any:
+        self.asked.append((payload, kwargs.get("case_id")))
+        return self._gate.require(data, self._target(destination), payload, **kwargs)
+
+
+def check_ifc_10(subject: Subject) -> None:
+    """Round trip: exported cases, simulated reviews, imported Examples whose events replay."""
+    proposal = fx.note_result(fx.RUN_IDS[0], present=True, producer=fx.TEACHER)
+    blank = fx.note_case("conformance-note-case-2")
+    batch = [(fx.note_case(), fx.SOURCE, proposal), (blank, fx.SOURCE, None)]
+    data = DataPolicy(sensitivity=Sensitivity.synthetic)
+
+    def export(backend: ReviewBackend, gate: _PayloadGate) -> Any:
+        return backend.export_cases(
+            batch, variables=fx.NOTE_VARIABLES, streams=("a", "b"), gate=gate, data=data
+        )
+
+    backend, review = subject.review_backend()
+    refusing = _PayloadGate(refuse=True)
+    try:
+        export(backend, refusing)
+    except PolicyViolation:
+        pass
+    except Exception:
+        _fail("refusal_not_policy_violation")
+    else:
+        _fail("export_not_gated")
+
+    backend, review = subject.review_backend()
+    gate = _PayloadGate(refuse=False)
+    receipt = _must_accept(lambda: export(backend, gate), "export_rejected")
+    asked = set(gate.asked)
+    if not {("source_text", case.case_id) for case, _, _ in batch} <= asked:
+        _fail("source_not_gated")
+    if ("derived_text", fx.note_case().case_id) not in asked:
+        _fail("proposal_not_gated")
+    if not isinstance(receipt, ReviewBatchReceipt) or receipt.case_ids != tuple(
+        case.case_id for case, _, _ in batch
+    ):
+        _fail("receipt_mismatch")
+    if not receipt.decisions or not all(decision.permitted for decision in receipt.decisions):
+        _fail("receipt_mismatch")
+
+    _must_accept(lambda: review(receipt), "review_failed")
+    examples, events = _must_accept(
+        lambda: backend.import_references(receipt, resolver=subject.resolver()), "import_rejected"
+    )
+    by_case = {example.case_id: example for example in examples}
+    if set(by_case) != set(receipt.case_ids) or len(by_case) != len(examples):
+        _fail("references_missing")
+    proposal_spans = tuple(item for item in proposal.evidence if isinstance(item, Inclusion))
+    for case, _, _ in batch:
+        example = by_case[case.case_id]
+        if any(reference.tier is ReferenceTier.silver for reference in example.references.values()):
+            _fail("tier_not_human")
+        mine = [event for event in events if event.case_id == case.case_id]
+        _must_accept(
+            partial(
+                verify_example,
+                example,
+                mine,
+                case=case,
+                source=fx.SOURCE,
+                variables=fx.NOTE_VARIABLES,
+                spans=(*spans_of(example), *proposal_spans),
+            ),
+            "events_do_not_replay",
+        )
+
+
 @dataclass(frozen=True)
 class Check:
     """One check of one case for one target. ``also_covers`` names other targets whose part of
@@ -732,6 +847,7 @@ CHECKS: tuple[Check, ...] = (
     Check("ANN-12", "Scorer", check_ann_12_scorer),
     Check("ANN-17", "Scorer", check_ann_17_scorer),
     Check("IFC-06", "Labeler", check_ifc_06),
+    Check("IFC-10", "ReviewBackend", check_ifc_10),
 )
 assert all(
     check.case_id in CASES and check.target in CASES[check.case_id].targets for check in CHECKS

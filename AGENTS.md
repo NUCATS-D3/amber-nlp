@@ -33,10 +33,11 @@ src/amber/tools/          quote, mention, cite, commit_claim, no_claim: operatio
 src/amber/examples.py     Example and LabelRecord load boundary
 src/amber/annotations.py  annotation-event replay, projections, Examples from events
 src/amber/interfaces.py   protocols (Store, SourceResolver, PolicyGate, Exporter, Provider, Extractor, Scorer,
-                          Labeler)
+                          Labeler, ReviewBackend)
 src/amber/scoring.py      score reports and the self-reference and move-on rules
 src/amber/evaluation.py   tier-aware binary metric harness: gates, Wilson, bootstrap
 src/amber/labeling.py     Labeler outputs, silver-only admission, import events from results
+src/amber/review.py       review receipts and the reviewed-import rules (spans, provenance, tiers)
 src/amber/extraction.py   shared extractor pieces: failed results, local provenance
 src/amber/providers.py    provider requests and responses; the gated, budgeted call_provider
 src/amber/reference/      synthetic reference implementations (not loaded by import amber)

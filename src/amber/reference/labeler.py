@@ -83,7 +83,6 @@ class ImportLabeler:
             case=case,
             source=source,
             variables=variables,
-            context=context,
             actor=self.producer,
             provenance=local_provenance(
                 context,

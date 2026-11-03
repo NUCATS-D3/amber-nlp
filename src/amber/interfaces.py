@@ -26,6 +26,7 @@ from amber.policy import (
     RunContext,
 )
 from amber.providers import ProviderFailure, ProviderRequest, ProviderResponse
+from amber.review import ReviewBatchReceipt
 from amber.schemas.annotations import AnnotationEvent
 from amber.schemas.cases import Budget, Case, CaseResult
 from amber.schemas.evidence import Inclusion
@@ -162,6 +163,36 @@ class Labeler(Protocol):
         gate: PolicyGate,
         context: RunContext,
     ) -> LabelerOutput: ...
+
+
+@runtime_checkable
+class ReviewBackend(Protocol):
+    """Sends cases to a review service and imports reviewed references (contract v0.1
+    section 6.2).
+
+    ``destination.kind`` is ``review``. ``export_cases`` sends each case's source after a
+    ``source_text`` decision, and its proposal (a ``CaseResult``) after a ``derived_text``
+    decision, deciding everything before sending anything. ``import_references`` returns the
+    validated Examples and the full event log (``amber.review.reviewed_example`` is the rule),
+    or raises ``ReviewImportError``; it never returns partially validated records. Reference:
+    ``amber.reference.FileReviewBackend``.
+    """
+
+    destination: Destination
+
+    def export_cases(
+        self,
+        cases: Sequence[tuple[Case, Source, CaseResult | None]],
+        *,
+        variables: VariableSet,
+        streams: Sequence[str],
+        gate: PolicyGate,
+        data: DataPolicy,
+    ) -> ReviewBatchReceipt: ...
+
+    def import_references(
+        self, receipt: ReviewBatchReceipt, *, resolver: SourceResolver
+    ) -> tuple[Sequence[Example], Sequence[AnnotationEvent]]: ...
 
 
 @runtime_checkable

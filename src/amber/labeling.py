@@ -17,7 +17,6 @@ from pydantic import BaseModel, ConfigDict
 from ulid import ULID
 
 from amber.annotations import example_from_projection, replay
-from amber.policy import RunContext
 from amber.schemas import (
     AnnotationEvent,
     Case,
@@ -66,7 +65,7 @@ def admit_labeler(labeler: object) -> object:
     return labeler
 
 
-class _Ids:
+class EventIds:
     """Strictly increasing ULIDs from one millisecond base and a random starting serial."""
 
     def __init__(self, now: datetime) -> None:
@@ -127,7 +126,6 @@ def import_events(
     case: Case,
     source: Source,
     variables: VariableSet,
-    context: RunContext,
     actor: str,
     provenance: Provenance,
     now: datetime,
@@ -143,7 +141,7 @@ def import_events(
     """
     if any(item.outcome.status == "failed" for item in result.variable_outcomes.values()):
         raise ValueError("failed results are diagnostics, never references")
-    ids = _Ids(now)
+    ids = EventIds(now)
     events: list[AnnotationEvent] = []
     tick = 0
 
@@ -238,6 +236,7 @@ def spans_of(example: Example) -> tuple[Inclusion | Mention, ...]:
 
 
 __all__ = [
+    "EventIds",
     "LabelerFailure",
     "LabelerOutput",
     "LabelerRejected",

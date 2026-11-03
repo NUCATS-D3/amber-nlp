@@ -325,6 +325,24 @@ implementations are synthetic and are not loaded by `import amber`.
   name. Reference: `ImportLabeler`, which reads stored results or label records from a JSON
   file, revalidates them against the authoritative case, source, and variable set, and
   returns `missing`, `unsupported`, `invalid`, or `failed_result` failures otherwise.
+- **`ReviewBackend`**: a `review` destination, `export_cases(cases, *, variables, streams,
+  gate, data) -> ReviewBatchReceipt`, and `import_references(receipt, *, resolver) ->
+  (examples, events)`. Export decides `source_text` for every case and `derived_text` for
+  every proposal (`CaseResult`) before sending anything; the receipt (`amber.review`,
+  `labels_only`) lists the batch, destination, location, variable set, cases, streams, and
+  decisions. Import returns validated Examples and the full event log, or raises
+  `ReviewImportError` (`receipt_mismatch`, `invalid_batch`, `invalid_spans`,
+  `source_unavailable`, `foreign_provenance`, or `invalid_events` with the replay code);
+  nothing partially validated is returned. `amber.review` holds the shared rules:
+  `load_spans` re-mints span rows against the authoritative source, every event must carry
+  the review destination and the batch's policy version, and `reviewed_example` gives an
+  Example only for a complete projection whose references all have human tiers (unsubmitted,
+  unresolved, excluded, and silver-only cases keep their events and give none). Reference:
+  `FileReviewBackend`, which round-trips through a batch directory of JSON files (staged and
+  renamed into place), with `amber.reference.review.simulate_reviews` as a synthetic review
+  service: a proposal is imported and accepted unchanged, a case without one is confirmed
+  `not_mentioned`; one stream gives `single_review`, several give blind submissions and an
+  adjudication (`accepted`, `unresolved`, or `excluded`).
 - **`SourceResolver`**: `resolve(source_id) -> Source | None`. Reference: `InMemoryResolver`.
 - **`Exporter`**: `export(items, target, *, gate, data, now) -> ExportReceipt`. It derives each
   output file's payload kind from its schema, gates every file (the manifest included) before
@@ -364,7 +382,8 @@ implementations are synthetic and are not loaded by `import amber`.
   source-free codes. Implemented today for `Store` (ANN-05, ANN-16, ANN-17, IFC-07, IFC-11,
   IFC-12), `Provider` (IFC-04, IFC-12), `Extractor` (IFC-02, IFC-13; the kit supplies
   scripted providers to the consumer's extractor factory), `Scorer` (IFC-09, ANN-11,
-  ANN-12, ANN-17), and `Labeler` (IFC-06). A case shared by several targets
+  ANN-12, ANN-17), `Labeler` (IFC-06), and `ReviewBackend` (IFC-10; the factory returns
+  the backend and a callable that completes the reviews for a receipt). A case shared by several targets
   records which declared targets failed it, so `conforms(target)` is per target, and is
   reported `passed` only when every declared target it applies to was checked. A store rejects by raising; the kit does not depend on its exception types.
 - **`ConformanceReport`**: subject, amber version, declared targets, catalog version and
@@ -410,7 +429,7 @@ These items are tracked in Beads (`bd list --status=open`):
 
 - structured evidence (deferred to a later minor; contract v0.1 §2.6);
 - derivations and rule replay;
-- the remaining interfaces (`Rule`, `ReviewBackend`);
+- the remaining interface (`Rule`);
 - conformance checks for the remaining targets and for bundles;
 - MLflow plugins for evaluation, datasets, the loupe bridge, and deployment.
 

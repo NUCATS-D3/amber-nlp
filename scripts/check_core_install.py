@@ -243,9 +243,38 @@ def main() -> None:
         resamples=20,
     )
     assert evaluation.overall == "met"
+
+    import tempfile
+
+    from amber.policy import StaticGate
+    from amber.reference import FileReviewBackend
+    from amber.reference.review import simulate_reviews
+
+    review = Destination(
+        name="core-review",
+        kind="review",
+        zone=Zone.local,
+        accepts=frozenset({"source_text", "derived_text"}),
+    )
+    with tempfile.TemporaryDirectory() as directory:
+        backend = FileReviewBackend(Path(directory), review, answer_models=[fixtures.FindingAnswer])
+        receipt = backend.export_cases(
+            [(fixtures.note_case(), fixtures.SOURCE, None)],
+            variables=fixtures.NOTE_VARIABLES,
+            streams=("a",),
+            gate=StaticGate(DEFAULT_MATRIX),
+            data=DataPolicy(sensitivity=Sensitivity.synthetic),
+        )
+        simulate_reviews(
+            receipt, variables=fixtures.NOTE_VARIABLES, now=datetime(2026, 1, 2, tzinfo=UTC)
+        )
+        reviewed, _ = backend.import_references(
+            receipt, resolver=InMemoryResolver([fixtures.SOURCE])
+        )
+        assert len(reviewed) == 1
     print(
         "Core-only installed grounding, claim commit, case results, restore, policy, "
-        "conformance-kit, and in-memory bundle checks passed."
+        "conformance-kit, in-memory bundle, evaluation, and review round-trip checks passed."
     )
 
 
