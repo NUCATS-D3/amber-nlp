@@ -542,3 +542,46 @@ def test_derivations_survive_events_examples_and_bundles() -> None:
     assert isinstance(loaded, BundleContents)
     assert loaded.results == (result,)
     assert replay_derivations(loaded.results[0], registry=REGISTRY, variables=fx.STAGE_VARIABLES)
+
+
+# Completeness of listed candidates (amber-hee.1.7) -----------------------------------------
+
+
+def _with_extra_size_claim(value: str) -> tuple[Any, Any]:
+    """A derived result, then another size_class claim committed after the derivation."""
+    graph, claim = _derive([("size_class", "S2"), ("node_class", "N1")])
+    span = next(item for item in graph.evidence.values() if isinstance(item, Inclusion))
+    graph.commit_claim(
+        "size_class", {"value": value}, [span.evidence_id], "Invented.", provenance=STAMP
+    )
+    return graph, claim
+
+
+def test_a_derivation_must_list_every_candidate_of_its_roles() -> None:
+    """Hiding a disagreeing candidate would hide a conflict."""
+    graph, claim = _derive([("size_class", "S2"), ("size_class", "S1"), ("node_class", "N1")])
+    assert isinstance(claim, DerivedOutcome) and claim.status == "conflicting_evidence"
+
+    hidden_graph, derived = _with_extra_size_claim("S1")
+    _mismatch(_result(hidden_graph, derived))
+
+
+def test_an_equal_candidate_added_after_the_derivation_also_makes_it_stale() -> None:
+    graph, derived = _with_extra_size_claim("S2")
+    _mismatch(_result(graph, derived))
+
+
+def test_a_defaulted_or_empty_role_must_have_no_candidates() -> None:
+    graph, derived = _derive([("size_class", "S2"), ("node_class", "N1")])
+    span = next(item for item in graph.evidence.values() if isinstance(item, Inclusion))
+    graph.commit_claim(
+        "spread_class", {"value": "M0"}, [span.evidence_id], "Invented.", provenance=STAMP
+    )
+    _mismatch(_result(graph, derived))
+
+
+def test_a_complete_derivation_still_replays_with_several_equal_candidates() -> None:
+    graph, derived = _derive([("size_class", "S2"), ("size_class", "S2"), ("node_class", "N1")])
+    assert replay_derivations(
+        _result(graph, derived), registry=REGISTRY, variables=fx.STAGE_VARIABLES
+    )

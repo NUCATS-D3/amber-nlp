@@ -337,8 +337,10 @@ Export and import (`amber.loupe.reference`):
   registered rule derivation (roles must equal the spec's, defaults must be declared and
   equal, inputs must belong to the role's variable, a `one` role's listed values must agree)
   and compares the value with the derived claims; any difference is `derivation_mismatch`.
-  Unregistered rules and model or human derivations are not replayed. Replay does not check
-  that the listed candidates are complete. Bundles carry derivations in the `evidence` table's
+  Unregistered rules and model or human derivations are not replayed. A variable role must
+  list exactly the record's non-rejected claims of its variable, so an omitted candidate (which
+  could hide a conflict) or a claim added or rejected after the derivation, for example in
+  review, fails replay until the rule is applied again. Bundles carry derivations in the `evidence` table's
   `derivation` column.
 
 Structural validity and source traceability do not establish semantic support or clinical

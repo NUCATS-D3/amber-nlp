@@ -389,6 +389,16 @@ def _replay_inputs(
     inputs: dict[str, RoleInput] = {}
     for name, role in spec.roles.items():
         ids = derivation.inputs[name]
+        if role.source != EVIDENCE_INCLUSION:
+            # Every non-rejected claim of the role's variable was a candidate; listing fewer
+            # could hide a conflict, and a claim added since makes the derivation stale.
+            candidates = {
+                claim_id
+                for claim_id, claim in claims.items()
+                if claim.variable == role.source and claim.status != "rejected"
+            }
+            if set(ids) != candidates:
+                raise _mismatch()
         if name in derivation.defaults_used:
             if role.on_missing != "default" or canonical_json(
                 derivation.defaults_used[name]
@@ -425,8 +435,11 @@ def replay_derivations(
 ) -> tuple[str, ...]:
     """Recompute every registered rule derivation and compare it with the derived claims.
 
-    Returns the IDs of the inferences replayed. Unregistered rules, and model and human
-    derivations, are not replayed. Raises ``GraphValidationError("derivation_mismatch")``.
+    A variable role must list exactly the record's non-rejected claims of that variable: a
+    missing candidate could hide a conflict, and a claim added or rejected after the derivation
+    (say, in review) makes it stale, so the rule must be applied again. Returns the IDs of the
+    inferences replayed. Unregistered rules, and model and human derivations, are not
+    replayed. Raises ``GraphValidationError("derivation_mismatch")``.
     """
     claims = {claim.claim_id: claim for claim in record.claims}
     inclusions = {item.evidence_id: item for item in record.evidence if isinstance(item, Inclusion)}
