@@ -20,8 +20,10 @@ from amber.policy import (
     Destination,
     PayloadKind,
     PolicyMatrix,
+    ProviderDestination,
     RunContext,
 )
+from amber.providers import ProviderFailure, ProviderRequest, ProviderResponse
 from amber.schemas.annotations import AnnotationEvent
 from amber.schemas.cases import Case, CaseResult
 from amber.schemas.evidence import Inclusion
@@ -59,6 +61,22 @@ class PolicyGate(Protocol):
         context: RunContext | None = None,
         case_id: str | None = None,
     ) -> Decision: ...
+
+
+@runtime_checkable
+class Provider(Protocol):
+    """A model endpoint (contract v0.1 section 6.2). It never sees a ``Source``.
+
+    ``complete`` returns a ``ProviderFailure`` rather than raising for expected failures, and
+    refuses a request needing a capability its destination does not declare (for example a
+    JSON schema without ``schema_constrained``) instead of returning unconstrained text.
+    Callers go through ``amber.providers.call_provider``. Reference:
+    ``amber.reference.ScriptedProvider``.
+    """
+
+    destination: ProviderDestination
+
+    def complete(self, request: ProviderRequest) -> ProviderResponse | ProviderFailure: ...
 
 
 @runtime_checkable

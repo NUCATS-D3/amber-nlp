@@ -11,7 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 import amber
-from amber.conformance.catalog import CASES, CATALOG, CATALOG_VERSION, TARGETS, catalog_revision
+from amber.conformance.catalog import CATALOG, CATALOG_VERSION, TARGETS, catalog_revision
 from amber.conformance.checks import CHECKS, ConformanceFailure, Subject
 from amber.conformance.fixtures import fixtures_ref
 from amber.schemas._wire import SCHEMA_VERSION, SchemaVersion
@@ -37,6 +37,7 @@ class CaseReport(BaseModel):
     level: Literal["core", "implementation", "bundle"]
     status: CaseStatus
     code: str | None = None
+    failed_targets: tuple[str, ...] = ()
 
 
 class ConformanceReport(BaseModel):
@@ -64,9 +65,7 @@ class ConformanceReport(BaseModel):
 
     def conforms(self, target: str) -> bool:
         """Zero failures among the cases that apply to ``target``."""
-        return not any(
-            case.status == "failed" and target in CASES[case.id].targets for case in self.cases
-        )
+        return not any(target in case.failed_targets for case in self.cases)
 
 
 def build_report(
@@ -91,6 +90,7 @@ def build_report(
     for case in CATALOG:
         status: CaseStatus
         code: str | None = None
+        failed_targets: tuple[str, ...] = ()
         applicable = [target for target in case.targets if target in declared]
         if case.level == "core":
             status = "not_applicable"
@@ -104,14 +104,23 @@ def build_report(
                 for target in applicable
                 if target in implemented.get(case.id, []) and (case.id, target) in outcomes
             ]
-            failures = [result for _, result in runs if result is not None]
+            failures = [(target, result) for target, result in runs if result is not None]
             if failures:
-                status, code = "failed", failures[0]
+                status, code = "failed", failures[0][1]
+                failed_targets = tuple(target for target, _ in failures)
             elif runs:
                 status = "passed"
             else:
                 status = "not_implemented"
-        cases.append(CaseReport(id=case.id, level=case.level, status=status, code=code))
+        cases.append(
+            CaseReport(
+                id=case.id,
+                level=case.level,
+                status=status,
+                code=code,
+                failed_targets=failed_targets,
+            )
+        )
     return ConformanceReport(
         subject=ReportSubject(name=name, version=version),
         amber_version=amber.__version__,

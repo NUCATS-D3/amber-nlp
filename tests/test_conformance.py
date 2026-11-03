@@ -15,8 +15,10 @@ from amber.conformance import fixtures as fx
 from amber.conformance.catalog import CASES, CATALOG, CATALOG_VERSION, catalog_revision
 from amber.conformance.checks import CHECKS
 from amber.conformance.report import build_report, run_checks
-from amber.reference import InMemoryResolver, InMemoryStore
-from amber.schemas import Example, Source
+from amber.policy import ProviderDestination
+from amber.providers import ProviderFailure, ProviderRequest, ProviderResponse
+from amber.reference import InMemoryResolver, InMemoryStore, ScriptedProvider
+from amber.schemas import Example, Source, Zone
 
 DESIGN = Path(__file__).parents[1] / "docs" / "design" / "contract-v0.1.md"
 
@@ -25,11 +27,36 @@ def _resolver(sources: Iterable[Source]) -> InMemoryResolver:
     return InMemoryResolver(sources)
 
 
-def _subject(store: type[InMemoryStore] = InMemoryStore) -> Subject:
+def _answer(request: ProviderRequest) -> ProviderResponse:
+    if request.json_schema is not None:
+        return ProviderResponse(parsed={"present": True}, input_tokens=5, output_tokens=3)
+    return ProviderResponse(text="Invented answer.", input_tokens=5, output_tokens=3)
+
+
+def _destination(*capabilities: str) -> ProviderDestination:
+    return ProviderDestination(
+        name="conformance-model",
+        kind="model",
+        zone=Zone.local,
+        accepts=frozenset({"source_text"}),
+        model="synthetic-model",
+        capabilities=frozenset(capabilities),  # type: ignore[arg-type]
+    )
+
+
+def _provider(*capabilities: str) -> Any:
+    return lambda: ScriptedProvider(_destination(*capabilities), [_answer] * 10)
+
+
+def _subject(store: type[InMemoryStore] = InMemoryStore, provider: Any = None) -> Subject:
     return Subject(
         name="amber-reference",
         version="0.0.0",
-        targets={"Store": store, "SourceResolver": _resolver},
+        targets={
+            "Store": store,
+            "SourceResolver": _resolver,
+            "Provider": provider or _provider("schema_constrained", "logprobs"),
+        },
     )
 
 
@@ -76,6 +103,8 @@ def test_every_check_names_a_catalog_case_for_its_target() -> None:
         ("IFC-07", "Store"),
         ("IFC-11", "Store"),
         ("IFC-12", "Store"),
+        ("IFC-04", "Provider"),
+        ("IFC-12", "Provider"),
     }
 
 
@@ -88,18 +117,18 @@ def test_the_reference_store_passes_every_store_case() -> None:
 
     for check in CHECKS:
         assert statuses[check.case_id] == ("passed", None)
-    assert report.conforms("Store")
-    assert statuses["IFC-02"] == ("not_applicable", None)
+    assert report.conforms("Store") and report.conforms("Provider")
     assert statuses["ANN-06"] == ("not_applicable", None)
     assert statuses["WIR-01"] == ("not_implemented", None)
     assert statuses["WIR-04"] == ("not_implemented", None)
     assert report.counts() == {
-        "passed": 6,
+        "passed": 7,
         "failed": 0,
-        "not_applicable": 63 + 25 - 6,
-        "not_implemented": 13,
+        "not_applicable": 101 - 7 - 14,
+        "not_implemented": 14,
     }
-    assert report.targets == ("SourceResolver", "Store")
+    assert report.targets == ("Provider", "SourceResolver", "Store")
+    assert statuses["IFC-02"] == ("not_implemented", None)
     assert report.catalog_revision == catalog_revision()
     assert report.fixtures_ref == fx.fixtures_ref()
 
@@ -217,7 +246,8 @@ class BrokenStore(InMemoryStore):
 def test_the_plugin_runs_the_kit_and_writes_a_report(pytester: pytest.Pytester) -> None:
     pytester.makeconftest(_CONFTEST.format(extra="", store="InMemoryStore"))
     result = pytester.runpytest("--amber-conformance", "--amber-conformance-report=report.json")
-    result.assert_outcomes(passed=len(CHECKS))
+    stores = sum(check.target == "Store" for check in CHECKS)
+    result.assert_outcomes(passed=stores, skipped=len(CHECKS) - stores)
     report = json.loads((pytester.path / "report.json").read_text())
     assert report["subject"] == {
         "kind": "implementation",
@@ -231,7 +261,8 @@ def test_the_plugin_runs_the_kit_and_writes_a_report(pytester: pytest.Pytester) 
 def test_the_plugin_reports_failures_by_code(pytester: pytest.Pytester) -> None:
     pytester.makeconftest(_CONFTEST.format(extra=_BROKEN, store="BrokenStore"))
     result = pytester.runpytest("--amber-conformance", "--amber-conformance-report=report.json")
-    result.assert_outcomes(passed=len(CHECKS) - 2, failed=2)
+    stores = sum(check.target == "Store" for check in CHECKS)
+    result.assert_outcomes(passed=stores - 2, failed=2, skipped=len(CHECKS) - stores)
     cases = {
         case["id"]: case
         for case in json.loads((pytester.path / "report.json").read_text())["cases"]
@@ -250,3 +281,40 @@ def test_the_plugin_needs_a_declared_subject(pytester: pytest.Pytester) -> None:
     result = pytester.runpytest("--amber-conformance")
     assert result.ret != 0
     result.stdout.fnmatch_lines(["*pytest_amber_conformance_subject*"])
+
+
+class _IgnoresCapabilities(ScriptedProvider):
+    def complete(self, request: ProviderRequest) -> ProviderResponse | ProviderFailure:
+        return ProviderResponse(text="Unconstrained text.")
+
+
+class _RaisingProvider(ScriptedProvider):
+    def complete(self, request: ProviderRequest) -> ProviderResponse | ProviderFailure:
+        raise RuntimeError("transport down")
+
+
+@pytest.mark.parametrize(
+    ("provider", "case_id", "code"),
+    [
+        (lambda: _IgnoresCapabilities(_destination(), []), "IFC-04", "schema_request_served"),
+        (
+            lambda: _IgnoresCapabilities(_destination(), []),
+            "IFC-12",
+            "undeclared_capability_served",
+        ),
+        (
+            lambda: _IgnoresCapabilities(_destination("schema_constrained"), []),
+            "IFC-12",
+            "declared_capability_failed",
+        ),
+        (lambda: _RaisingProvider(_destination(), []), "IFC-04", "provider_raised"),
+        (lambda: object(), "IFC-12", "not_a_provider"),
+    ],
+)
+def test_broken_providers_fail_with_source_free_codes(
+    provider: Any, case_id: str, code: str
+) -> None:
+    report = run_checks(_subject(provider=provider))
+    assert _statuses(report)[case_id] == ("failed", code)
+    assert not report.conforms("Provider")
+    assert report.conforms("Store")

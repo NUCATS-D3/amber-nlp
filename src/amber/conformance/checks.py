@@ -16,7 +16,9 @@ from amber.annotations import example_from_projection, replay
 from amber.conformance import fixtures as fx
 from amber.conformance.catalog import CASES, Target
 from amber.examples import load_example, load_label_record
-from amber.interfaces import SourceResolver, Store
+from amber.interfaces import Provider, SourceResolver, Store
+from amber.policy import ProviderDestination
+from amber.providers import ProviderFailure, ProviderRequest, ProviderResponse
 from amber.schemas import Case, Example, Source
 
 StoreFactory = Callable[[], Store]
@@ -82,6 +84,14 @@ class Subject:
         if not isinstance(resolver, SourceResolver):
             _fail("not_a_resolver")
         return resolver
+
+    def provider(self) -> Provider:
+        provider = self.targets["Provider"]()
+        if not isinstance(provider, Provider) or not isinstance(
+            getattr(provider, "destination", None), ProviderDestination
+        ):
+            _fail("not_a_provider")
+        return provider
 
 
 def _store_with_case(subject: Subject, case: Case | None = None) -> Store:
@@ -325,6 +335,51 @@ def check_ifc_12_store(subject: Subject) -> None:
         )
 
 
+# Provider ----------------------------------------------------------------------------------
+
+_PROMPT = "Invented note: is the invented finding present? Answer briefly."
+_SCHEMA = fx.FindingAnswer.model_json_schema()
+_CAPABILITY_REQUESTS: dict[str, ProviderRequest] = {
+    "schema_constrained": ProviderRequest(prompt=_PROMPT, json_schema=_SCHEMA),
+    "tools": ProviderRequest(
+        prompt=_PROMPT,
+        tools=({"name": "lookup", "description": "Invented tool.", "parameters": {}},),
+    ),
+    "logprobs": ProviderRequest(prompt=_PROMPT, logprobs=True),
+    "adapters": ProviderRequest(prompt=_PROMPT, adapter="conformance-adapter"),
+}
+
+
+def _complete(subject: Subject, request: ProviderRequest) -> Any:
+    provider = subject.provider()
+    return _must_accept(lambda: provider.complete(request), "provider_raised")
+
+
+def check_ifc_04(subject: Subject) -> None:
+    """Without schema_constrained, a schema request is refused, never answered with text."""
+    if "schema_constrained" in subject.provider().destination.capabilities:
+        return
+    outcome = _complete(subject, _CAPABILITY_REQUESTS["schema_constrained"])
+    if not isinstance(outcome, ProviderFailure):
+        _fail("schema_request_served")
+
+
+def check_ifc_12_provider(subject: Subject) -> None:
+    """A plain request and every declared capability work; undeclared ones are refused."""
+    if not isinstance(_complete(subject, ProviderRequest(prompt=_PROMPT)), ProviderResponse):
+        _fail("plain_request_failed")
+    declared = subject.provider().destination.capabilities
+    for capability, request in _CAPABILITY_REQUESTS.items():
+        outcome = _complete(subject, request)
+        if capability not in declared:
+            if not isinstance(outcome, ProviderFailure):
+                _fail("undeclared_capability_served")
+        elif not isinstance(outcome, ProviderResponse) or (
+            capability == "schema_constrained" and not isinstance(outcome.parsed, Mapping)
+        ):
+            _fail("declared_capability_failed")
+
+
 @dataclass(frozen=True)
 class Check:
     case_id: str
@@ -339,6 +394,8 @@ CHECKS: tuple[Check, ...] = (
     Check("IFC-07", "Store", check_ifc_07),
     Check("IFC-11", "Store", check_ifc_11),
     Check("IFC-12", "Store", check_ifc_12_store),
+    Check("IFC-04", "Provider", check_ifc_04),
+    Check("IFC-12", "Provider", check_ifc_12_provider),
 )
 assert all(
     check.case_id in CASES and check.target in CASES[check.case_id].targets for check in CHECKS

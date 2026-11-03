@@ -279,6 +279,20 @@ implementations are synthetic and are not loaded by `import amber`.
 
 - **`PolicyGate`**: `check`/`require` against a matrix. Reference: `amber.policy.StaticGate`.
   `PolicyViolation` carries the first refusal and, for multi-file transfers, every decision.
+- **`Provider`**: a model endpoint with a `ProviderDestination` (zone, model, declared
+  capabilities: `schema_constrained`, `tools`, `logprobs`, `batch`, `adapters`) and
+  `complete(ProviderRequest) -> ProviderResponse | ProviderFailure`. It never sees a `Source`,
+  and refuses a request needing an undeclared capability rather than answering with
+  unconstrained text. Reference: `ScriptedProvider` (canned outcomes, offline).
+- **`amber.providers.call_provider`**: the enforcement point for every model call. It requires
+  a permitting decision for `source_text` to the provider's destination (`PolicyViolation`
+  otherwise, before anything is sent), refuses missing capabilities without sending
+  (`capability_missing`), parses schema responses (`parse`/`invalid_json`), retries only
+  retryable failures and only while the `Budget` allows (`max_retries`; none without a
+  budget), stops at `max_calls` or once usage exceeds the budget (`budget`), and stamps the
+  `Provenance` for nodes built from the response. `ProviderFailure.kind` (`parse`,
+  `provider`, `budget`) is the result's `failure_kind`; `UsageMeter` accumulates the run's
+  `Usage`.
 - **`SourceResolver`**: `resolve(source_id) -> Source | None`. Reference: `InMemoryResolver`.
 - **`Exporter`**: `export(items, target, *, gate, data, now) -> ExportReceipt`. It derives each
   output file's payload kind from its schema, gates every file (the manifest included) before
@@ -315,8 +329,9 @@ implementations are synthetic and are not loaded by `import amber`.
   event scenarios (silver import, single-review rise, blind streams, adjudication), with
   `fixtures_ref()` hashing them.
 - **Checks**: implementation cases run against a consumer's declared targets and fail with
-  source-free codes. Implemented today for `Store`: ANN-05, ANN-16, ANN-17, IFC-07, IFC-11,
-  IFC-12. A store rejects by raising; the kit does not depend on its exception types.
+  source-free codes. Implemented today for `Store` (ANN-05, ANN-16, ANN-17, IFC-07, IFC-11,
+  IFC-12) and `Provider` (IFC-04, IFC-12). A case shared by several targets records which
+  declared targets failed it, so `conforms(target)` is per target. A store rejects by raising; the kit does not depend on its exception types.
 - **`ConformanceReport`**: subject, amber version, declared targets, catalog version and
   revision, `fixtures_ref`, and per case `passed`, `failed` (with a code), `not_applicable`
   (core cases, which amber's own suite covers, and cases for undeclared targets), or
@@ -338,8 +353,7 @@ These items are tracked in Beads (`bd list --status=open`):
 
 - structured evidence (deferred to a later minor; contract v0.1 §2.6);
 - derivations and rule replay;
-- the remaining interfaces (`Extractor`, `Provider`, `Rule`, `Scorer`, `ReviewBackend`,
-  `Labeler`);
+- the remaining interfaces (`Extractor`, `Rule`, `Scorer`, `ReviewBackend`, `Labeler`);
 - conformance checks for the remaining targets and for bundles;
 - MLflow plugins for evaluation, datasets, the loupe bridge, and deployment.
 
