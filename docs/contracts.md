@@ -16,7 +16,10 @@ resist mutation. Offsets are end-exclusive Python code points into the immutable
 Content-addressed IDs hash canonical JSON as defined by RFC 8785 (`canonical_json`,
 `canonical_sha256`): keys sorted by UTF-16 code units, ECMAScript number form, no Unicode
 normalization. Timestamps must be timezone-aware and hash as UTC with six fractional digits and
-`Z`. NaN, infinities, lone surrogates, and integers beyond ±(2⁵³−1) are rejected.
+`Z`. NaN, infinities, lone surrogates, and integers beyond ±(2⁵³−1) are rejected. Because the
+ECMAScript form writes a float such as `5.575263392078219e16` without a fraction, canonical
+text is read back with `parse_canonical_json`, which returns integer literals beyond that range
+as floats, so parsing and re-serializing gives the same text (bundle JSON columns use it).
 
 | Identifier | Derivation |
 |---|---|

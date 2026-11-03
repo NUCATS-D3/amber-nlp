@@ -25,6 +25,19 @@ from ulid import ULID
 MAX_SAFE_INTEGER = 2**53 - 1
 
 
+def _parse_canonical_int(text: str) -> int | float:
+    value = int(text)
+    # RFC 8785 writes a float of magnitude 2**53 or more (below 1e21) without a fraction or
+    # exponent; amber never writes such an integer, so it was a float.
+    return value if abs(value) <= MAX_SAFE_INTEGER else float(text)
+
+
+def parse_canonical_json(text: str) -> Any:
+    """Parse canonical JSON so that re-serializing gives the same text: integer literals beyond
+    ±(2**53 - 1), which only floats produce, are read back as floats."""
+    return json.loads(text, parse_int=_parse_canonical_int)
+
+
 def _check_string(value: str) -> str:
     if any(0xD800 <= ord(char) <= 0xDFFF for char in value):
         raise ValueError("canonical strings must not contain lone surrogates")

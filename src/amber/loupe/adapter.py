@@ -52,7 +52,7 @@ from amber.examples import ExampleValidationError
 from amber.graph import EvidenceGraph
 from amber.graph_errors import GraphValidationError
 from amber.grounding import exact_quote
-from amber.ids import canonical_json, canonical_sha256, seeded_ulids
+from amber.ids import canonical_json, canonical_sha256, parse_canonical_json, seeded_ulids
 from amber.schemas import (
     Case,
     CaseOutcome,
@@ -264,7 +264,7 @@ class AmberClaimsAdapter:
                 _fail("invalid_field_evidence")
             roles[field] = sorted(indexes)
         return {
-            "value": json.loads(canonical_json(value)),
+            "value": parse_canonical_json(canonical_json(value)),
             "rationale": _text(claim.get("rationale"), "rationale_required"),
             "evidence": spans,
             "fields": roles,

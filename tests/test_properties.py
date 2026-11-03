@@ -1,0 +1,343 @@
+"""Property tests for amber's core relations (amber-2sw; the invariant-tests skill): canonical
+hashing, quote faithfulness, wire and bundle round trips, replay prefix determinism, and
+random support graphs that must refuse cycles and source-free branches. Strategies are
+bounded so the suite stays fast."""
+
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime
+from typing import Any
+
+from hypothesis import HealthCheck, assume, given, settings
+from hypothesis import strategies as st
+
+from amber.annotations import replay
+from amber.bundles import (
+    BundleContents,
+    ManifestDataset,
+    ManifestProducer,
+    build_bundle,
+    load_bundle,
+)
+from amber.cases import create_case_result, load_case_result
+from amber.conformance import fixtures as fx
+from amber.graph import EvidenceGraph
+from amber.graph_errors import GraphValidationError
+from amber.grounding import exact_quote
+from amber.ids import canonical_json, canonical_sha256, new_ulid, parse_canonical_json
+from amber.reference import InMemoryResolver
+from amber.schemas import (
+    Case,
+    CaseOutcome,
+    Inclusion,
+    Sensitivity,
+    Source,
+    SourceKind,
+    VariableSet,
+)
+
+from ._claim_helpers import SYNTHETIC_RUN_ID, make_provenance, make_task
+
+PROPERTY = settings(max_examples=60, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+TASK = make_task(evidence_policy="claim")
+VARIABLES = VariableSet.from_task(TASK)
+
+# Text with CRLF, astral characters, combining marks, and plain words.
+_ATOMS = st.sampled_from(
+    ["a", "b", "mass", " ", "\r\n", "\n", "\U0001f642", "e\u0301", "\u00e9", "\U00010348", "."]
+)
+TEXTS = st.lists(_ATOMS, min_size=1, max_size=40).map("".join)
+JSON_SCALARS = st.one_of(
+    st.none(),
+    st.booleans(),
+    st.integers(min_value=-(2**53 - 1), max_value=2**53 - 1),
+    st.floats(allow_nan=False, allow_infinity=False, width=64),
+    st.text(max_size=8),
+)
+JSON_VALUES = st.recursive(
+    JSON_SCALARS,
+    lambda children: st.one_of(
+        st.lists(children, max_size=4),
+        st.dictionaries(st.text(max_size=6), children, max_size=4),
+    ),
+    max_leaves=12,
+)
+
+
+def _source(text: str) -> Source:
+    return Source.create(
+        patient_id="synthetic-patient-1",
+        kind=SourceKind.note,
+        external_id="synthetic-note-1",
+        datetime=datetime(2026, 1, 2, tzinfo=UTC),
+        text=text,
+        record=None,
+    )
+
+
+def _case(source: Source) -> Case:
+    return Case(
+        case_id="property-case",
+        task=TASK.name,
+        patient_id=source.patient_id,
+        source_ids=[source.source_id],
+        sensitivity=Sensitivity.synthetic,
+        dataset=fx.DATASET,
+        split="dev",
+    )
+
+
+@st.composite
+def spans(draw: st.DrawFn) -> tuple[str, int, int]:
+    text = draw(TEXTS)
+    start = draw(st.integers(min_value=0, max_value=len(text) - 1))
+    end = draw(st.integers(min_value=start + 1, max_value=len(text)))
+    return text, start, end
+
+
+# Canonical hashing -------------------------------------------------------------------------
+
+
+@PROPERTY
+@given(st.dictionaries(st.text(max_size=6), JSON_VALUES, max_size=6), st.randoms())
+def test_canonical_hashes_ignore_key_order(value: dict[str, Any], rng: Any) -> None:
+    def shuffled(item: Any) -> Any:
+        if isinstance(item, dict):
+            keys = list(item)
+            rng.shuffle(keys)
+            return {key: shuffled(item[key]) for key in keys}
+        if isinstance(item, list):
+            return [shuffled(child) for child in item]
+        return item
+
+    reordered = shuffled(value)
+    assert canonical_json(reordered) == canonical_json(value)
+    assert canonical_sha256(reordered) == canonical_sha256(value)
+    text = canonical_json(value)
+    assert canonical_json(parse_canonical_json(text)) == text
+
+
+@PROPERTY
+@given(st.dictionaries(st.text(max_size=6), JSON_VALUES, min_size=1, max_size=6), JSON_VALUES)
+def test_changing_a_value_changes_the_hash(value: dict[str, Any], other: Any) -> None:
+    key = sorted(value)[0]
+    assume(canonical_json(other) != canonical_json(value[key]))
+    assert canonical_sha256({**value, key: other}) != canonical_sha256(value)
+
+
+# Quote faithfulness ------------------------------------------------------------------------
+
+
+@PROPERTY
+@given(spans())
+def test_a_quote_is_exactly_the_text_at_its_code_point_offsets(span: tuple[str, int, int]) -> None:
+    text, start, end = span
+    source = _source(text)
+    inclusion = exact_quote(source, text[start:end], start)
+    assert isinstance(inclusion, Inclusion)
+    assert (inclusion.start, inclusion.end) == (start, end)
+    assert text[inclusion.start : inclusion.end] == inclusion.quote == text[start:end]
+
+
+@PROPERTY
+@given(spans())
+def test_a_quote_never_grounds_at_an_offset_where_it_does_not_occur(
+    span: tuple[str, int, int],
+) -> None:
+    text, start, end = span
+    quote = text[start:end]
+    for hint in range(len(text)):
+        if text[hint : hint + len(quote)] != quote:
+            assert not isinstance(exact_quote(_source(text), quote, hint), Inclusion)
+
+
+# Wire and bundle round trips ---------------------------------------------------------------
+
+
+def _result(text: str, start: int, end: int, present: bool) -> Any:
+    source = _source(text)
+    graph = EvidenceGraph(source=source, task=TASK, sensitivity=Sensitivity.synthetic)
+    inclusion = exact_quote(source, text[start:end], start)
+    assert isinstance(inclusion, Inclusion)
+    graph.register_evidence(inclusion)
+    claim = graph.commit_claim(
+        TASK, {"finding_present": present}, [inclusion.evidence_id], "Invented.",
+        provenance=make_provenance(),
+    )  # fmt: skip
+    result = create_case_result(
+        _case(source),
+        graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
+        outcome=CaseOutcome(status="answered", provenance=make_provenance()),
+        final_claim_ids=[claim.claim_id],
+    )
+    return source, graph, result
+
+
+@PROPERTY
+@given(spans(), st.booleans())
+def test_graphs_and_results_round_trip_byte_for_byte(
+    span: tuple[str, int, int], present: bool
+) -> None:
+    source, graph, result = _result(*span, present)
+    payload = json.loads(json.dumps(graph.to_payload(), default=str))
+    restored = EvidenceGraph.from_payload(
+        payload, source=source, task=TASK, sensitivity=Sensitivity.synthetic
+    )
+    assert restored.to_payload() == graph.to_payload()
+    text = result.model_dump_json()
+    loaded = load_case_result(
+        json.loads(text), case=_case(source), source=source, variables=VARIABLES
+    )
+    assert loaded.model_dump_json() == text
+
+
+@PROPERTY
+@given(spans(), st.booleans())
+def test_run_bundles_round_trip(span: tuple[str, int, int], present: bool) -> None:
+    source, _, result = _result(*span, present)
+    bundle = build_bundle(
+        kind="run",
+        variables=VARIABLES,
+        dataset=ManifestDataset(
+            name=fx.DATASET, manifest_hash="property", sensitivity=Sensitivity.synthetic
+        ),
+        producer=ManifestProducer(name="property", version="1", run_id=SYNTHETIC_RUN_ID),
+        policy_version="property-policy@1",
+        created_at=datetime(2026, 1, 3, tzinfo=UTC),
+        sources=[source],
+        cases=[_case(source)],
+        results=[result],
+    )
+    loaded = load_bundle(bundle, variables=VARIABLES, resolver=InMemoryResolver([source]))
+    assert isinstance(loaded, BundleContents)
+    assert loaded.results == (result,)
+
+
+# Replay ------------------------------------------------------------------------------------
+
+
+_LOG, _ = fx.adjudicated()
+_EVENTS = list(_LOG.events)
+_ACTORS = st.sampled_from([None, fx.REVIEWER_A, fx.REVIEWER_B, fx.ADJUDICATOR, fx.IMPORTER])
+
+
+@PROPERTY
+@given(st.integers(min_value=0, max_value=len(_EVENTS) - 1), _ACTORS)
+def test_replaying_up_to_an_event_equals_replaying_that_prefix(index: int, actor: Any) -> None:
+    common = {"case": fx.case(), "source": fx.SOURCE, "variables": fx.VARIABLES, "spans": fx.SPANS}
+    as_of = _EVENTS[index].event_id
+    full = replay(_EVENTS, actor=actor, as_of_event=as_of, **common)
+    prefix = replay(_EVENTS[: index + 1], actor=actor, **common)
+    assert full == prefix
+    assert replay(_EVENTS[: index + 1], actor=actor, **common) == prefix
+
+
+# Random support graphs ---------------------------------------------------------------------
+
+
+@st.composite
+def support_graphs(draw: st.DrawFn) -> tuple[list[list[int]], set[int]]:
+    """Per claim, the inputs of its inference (-1 = the inclusion, j = claim j), and the claims
+    that have no evidence at all."""
+    size = draw(st.integers(min_value=1, max_value=5))
+    inputs = [
+        draw(
+            st.lists(
+                st.integers(min_value=-1, max_value=size - 1), min_size=1, max_size=3, unique=True
+            )
+        )
+        for _ in range(size)
+    ]
+    orphans = draw(st.sets(st.integers(min_value=0, max_value=size - 1), max_size=1))
+    return inputs, orphans
+
+
+def _has_cycle(inputs: list[list[int]], orphans: set[int]) -> bool:
+    state: dict[int, int] = {}
+
+    def visit(node: int) -> bool:
+        if state.get(node) == 1:
+            return True
+        if state.get(node) == 2 or node in orphans:
+            return False
+        state[node] = 1
+        found = any(visit(child) for child in inputs[node] if child >= 0)
+        state[node] = 2
+        return found
+
+    return any(visit(node) for node in range(len(inputs)))
+
+
+@settings(max_examples=120, deadline=None)
+@given(support_graphs())
+def test_random_graphs_validate_exactly_when_acyclic_and_source_backed(
+    graph: tuple[list[list[int]], set[int]],
+) -> None:
+    inputs, orphans = graph
+    source = _source("Alpha beta gamma")
+    seed = EvidenceGraph(source=source, task=TASK, sensitivity=Sensitivity.synthetic)
+    inclusion = exact_quote(source, "Alpha", 0)
+    assert isinstance(inclusion, Inclusion)
+    template = seed.register_evidence(inclusion)
+    claim = seed.commit_claim(
+        TASK,
+        {"finding_present": True},
+        [template.evidence_id],
+        "Invented.",
+        provenance=make_provenance(),
+    )
+    payload = json.loads(json.dumps(seed.to_payload(), default=str))
+    claim_template, inference_template, inclusion_payload = (
+        payload["claims"][0],
+        next(e for e in payload["evidence"] if e["kind"] == "inference"),
+        next(e for e in payload["evidence"] if e["kind"] == "inclusion"),
+    )
+    claim_ids = [new_ulid() for _ in inputs]
+    claims, evidence, edges = [], [inclusion_payload], []
+    for index, node_inputs in enumerate(inputs):
+        claims.append({**claim_template, "claim_id": claim_ids[index]})
+        if index in orphans:
+            continue
+        inference_id = new_ulid()
+        ids = [inclusion.evidence_id if item < 0 else claim_ids[item] for item in node_inputs]
+        evidence.append({**inference_template, "evidence_id": inference_id, "inputs": ids})
+        edges.append(
+            {
+                "claim_id": claim_ids[index],
+                "evidence_id": inference_id,
+                "role": None,
+                "weight": None,
+            }
+        )
+    payload.update(claims=claims, evidence=evidence, edges=edges)
+    valid = not orphans and not _has_cycle(inputs, orphans)
+    try:
+        EvidenceGraph.from_payload(
+            payload, source=source, task=TASK, sensitivity=Sensitivity.synthetic
+        )
+    except GraphValidationError as error:
+        assert not valid, error.code
+        assert error.code in {"cyclic_support", "source_free_support", "missing_evidence"}
+    else:
+        assert valid
+    assert claim.claim_id not in claim_ids
+
+
+def test_large_floats_survive_canonical_json_and_parquet_columns(tmp_path: Any) -> None:
+    """Regression found by the property above: RFC 8785 writes 5.575263392078219e16 as
+    55752633920782190, which a plain JSON parser reads as an integer amber cannot
+    re-serialize."""
+    import pytest
+
+    value = {"x": 5.575263392078219e16, "y": 2.0**53, "z": 1e21, "n": 7}
+    text = canonical_json(value)
+    assert text == '{"n":7,"x":55752633920782190,"y":9007199254740992,"z":1e+21}'
+    assert parse_canonical_json(text) == value
+    assert canonical_json(parse_canonical_json(text)) == text
+
+    pytest.importorskip("pyarrow")
+    from amber.bundles.parquet import _parse_json
+
+    assert _parse_json("claims", "value", text) == value

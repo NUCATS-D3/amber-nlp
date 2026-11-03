@@ -31,7 +31,7 @@ from amber.bundles.core import (
     sorted_rows,
 )
 from amber.bundles.schema import TABLES, ColumnType
-from amber.ids import canonical_json
+from amber.ids import canonical_json, parse_canonical_json
 from amber.schemas._wire import check_schema_version
 
 _ARROW: dict[ColumnType, pa.DataType] = {
@@ -90,7 +90,7 @@ def _parse_json(name: str, column: str, text: Any) -> Any:
     if text is None:
         return None
     try:
-        value = json.loads(text)
+        value = parse_canonical_json(text)
     except (TypeError, ValueError):
         raise BundleError("non_canonical_json", name, column) from None
     if canonical_json(value) != text:
