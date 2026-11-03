@@ -21,6 +21,13 @@ conform to amber contracts. Nothing in this document changes [contracts.md](../c
 - The GEPA design is corrected against the library source ([§6.4](#64-evaluator-and-proposer-sketch),
   [§6.5](#65-gepa-fit-and-workarounds)).
 
+**Revision 4** (2026-11-02):
+
+- A new section relates the design to DSPy, GEPA, and EvoPool
+  ([§2.2](#22-relation-to-dspy-gepa-and-evopool)).
+- The §6.1 novelty callout names L3 as a symbolic aggregator over L1/L2 rule pools.
+- §6.3 states that the proposer is stateless by design.
+
 ## Summary
 
 Clinical experts and a frontier LLM define an extraction standard once. An evolutionary search
@@ -175,6 +182,38 @@ Each part has close precedent, so **N1, N2, and N3 are weakened, none refuted**.
 | Medium (N3) | Yan et al. 2024 (JAMIA); Zhang 2026 (verification of LLM-compiled rules) | Expert review of LLM-drafted phenotypes; checking LLM-compiled rules against their source | Structured data or business rules; no clinical span rules |
 | Baseline | Byrd et al. 2013 (*Int J Med Inform*) | Hand-built Framingham HF rules: mentions with affirmed/denied status, then an encounter label; mention F1 0.910 | The two-level architecture exists by hand; we compile it |
 | Baseline | Workman et al. 2024 (*Prog Cardiovasc Dis*) | VA HF symptom snippets labeled by two clinicians; GPT-4 zero-shot F1 0.95 vs. 0.655 for rules and ML | Suggests a strong teacher and a large rule gap to close |
+
+### 2.2 Relation to DSPy, GEPA, and EvoPool
+
+All three use an LLM as an optimizer over discrete text artifacts, scored against a small
+labeled set, with the expensive reasoning done once. They differ in what is optimized.
+
+| | DSPy | GEPA | EvoPool | This proposal |
+|---|---|---|---|---|
+| **Optimized artifact** | Prompts, demos, weights of a fixed LM program | Any text candidate | A pool of small annotator programs | A copal rule set, one component per level |
+| **Runtime** | Still calls an LM | LM call or code | Pool + learned aggregator → labels → model | copal on CPU, no LM |
+| **Candidate's job** | Solve the task | Solve the task | Cover a slice; abstaining allowed | Solve the task; *rules within it* cover slices |
+| **Fitness** | Program metric | Per-example scores; Pareto frontier | Pool-level: precision floor, diversity, marginal contribution | Shard-level F0.5 and objectives; marginal contribution per rule in pruning |
+| **End state** | One program | Frontier; merge pushes toward one | Many specialists + aggregator | Best rule set (default); frontier as ablation |
+
+**Best program versus best committee.** GEPA is single-solution search; its frontier keeps
+diverse candidates alive for exploration, and each candidate tries to be a complete solution.
+EvoPool builds an ensemble in the data-programming lineage: a rule that fires on 2% of notes at
+95% precision is a good member though a poor standalone candidate, which is why its gate scores
+marginal contribution to the pool and why it needs a learned aggregator.
+
+**This design is a hybrid.** GEPA searches over whole rule sets. Inside each rule set, the
+Stage 3 clean-up (prune by marginal contribution, dedupe by firing pattern, precision floor)
+applies EvoPool's committee logic *to the rules within one program*. The hierarchy then
+replaces EvoPool's learned aggregator: L1 matchers behave like a pool of specialists, and L3
+composition combines their output with an inspectable, replayable rule
+([§6.1](#61-hierarchical-rules-as-evidence-graphs)). This is the principled reason Stage 4
+defaults to the best single rule set: aggregation already happens inside L3.
+
+**Lineage.** The two lines developed largely in parallel. EvoPool positions itself against
+ALCHEmist, DataSculpt, Snorkel, and agent-evolution work; its reference list does not include
+DSPy or GEPA. GEPA comes from the DSPy line and positions itself against prompt optimizers and
+RL methods.
 
 ---
 
@@ -491,6 +530,10 @@ claim to its support. Every branch ends in an `Inclusion`, which is exactly the
 > L3 separately; each error is attributed to the level that failed; and the results can report
 > *which level* is hard to compile for each phenomenon.
 >
+> Within a level, rules form an EvoPool-style pool of specialists that may stay silent; L3
+> composition is a symbolic, replayable aggregator in place of a learned label model
+> ([§2.2](#22-relation-to-dspy-gepa-and-evopool)).
+>
 > To our knowledge, no work on labeling-function synthesis or evolution compiles into a
 > hierarchical, derivation-producing rule language.
 
@@ -552,6 +595,13 @@ sequenceDiagram
 Each ASI item for a missed span names the failed level and, depending on the experiment arm,
 the cross-fitted teacher's inclusion, a guideline excerpt, or the expert's note. Comparing
 those arms is how N2 measures the value of expert reasoning.
+
+**The proposer is stateless by design.** Each call sees only the parent rule set and the
+current minibatch's errors; no lessons or summaries carry across iterations. The candidate is
+the only inheritance channel. EvoPool found this "Darwinian" setup slightly better and cheaper
+than agents that carry verbal lessons forward (+0.014 and +0.040 macro-F1 over two memory
+variants on ChemProt), because selection already supplies the feedback. Cross-iteration memory
+is not planned; if added later, it is an ablation.
 
 **Keep note text out of GEPA's state.** GEPA writes evaluator side information to `run_dir`
 (see [§6.5](#65-gepa-fit-and-workarounds)). So the evaluator returns only identifiers and codes:

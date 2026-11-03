@@ -21,6 +21,17 @@ File follow-up work with `bd create` instead of Markdown TODO lists. Never use `
 is interactive. Keep issue text free of clinical text, quotes, or offsets. Experiment work is
 tracked in lapidary.
 
+## Development skills
+
+Project skills live in `.agents/skills/` (linked from `.claude/skills/`). Use them when their
+trigger applies:
+
+| Skill | When | Done when |
+|---|---|---|
+| [invariant-tests](.agents/skills/invariant-tests/SKILL.md) | A change touches validation, grounding, IDs, the graph, outcomes, Examples, events, policy, bundles, or a load boundary | Each touched invariant has a test that failed before the change |
+| [contract-change](.agents/skills/contract-change/SKILL.md) | A diff touches schemas, wire forms, ID derivation, protocols, golden records, or the conformance catalog or fixtures | Changes classified and approved; migration and conformance updated for breaking ones |
+| [deslop-diff](.agents/skills/deslop-diff/SKILL.md) | A feature is finished, before landing | Simplified diff passes with tests unchanged by the pass |
+
 ## Layout and dependency direction
 
 ```

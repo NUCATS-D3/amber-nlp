@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 520" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#4a4a4a"/>
+    </marker>
+    <marker id="arrowMuted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8a8a8a"/>
+    </marker>
+  </defs>
+
+  <!-- lapidary -->
+  <rect x="380" y="20" width="340" height="110" rx="14" fill="#eef3f7" stroke="#2f5d7c" stroke-width="2.5"/>
+  <text x="550" y="60" text-anchor="middle" font-size="30" font-weight="bold" fill="#2f5d7c">lapidary</text>
+  <text x="550" y="90" text-anchor="middle" font-size="18" fill="#333">experiment workbench</text>
+  <text x="550" y="114" text-anchor="middle" font-size="16" fill="#666">datasets · tasks · extractors · runs</text>
+
+  <!-- copal -->
+  <rect x="30" y="220" width="290" height="110" rx="14" fill="#f6f1e4" stroke="#9c7a2b" stroke-width="2.5"/>
+  <text x="175" y="260" text-anchor="middle" font-size="30" font-weight="bold" fill="#8a6a1f">copal</text>
+  <text x="175" y="290" text-anchor="middle" font-size="18" fill="#333">rule engine (Rust + Python)</text>
+  <text x="175" y="314" text-anchor="middle" font-size="16" fill="#666">exact offsets · matchers · rules</text>
+
+  <!-- amber -->
+  <rect x="380" y="210" width="340" height="130" rx="14" fill="#fff4dc" stroke="#d08a00" stroke-width="4"/>
+  <text x="550" y="255" text-anchor="middle" font-size="34" font-weight="bold" fill="#b36f00">amber</text>
+  <text x="550" y="287" text-anchor="middle" font-size="18" fill="#333">shared contracts + validation</text>
+  <text x="550" y="312" text-anchor="middle" font-size="16" fill="#666">claims · evidence · references</text>
+
+  <!-- loupe -->
+  <rect x="780" y="220" width="290" height="110" rx="14" fill="#f1edf6" stroke="#5b3c88" stroke-width="2.5"/>
+  <text x="925" y="260" text-anchor="middle" font-size="30" font-weight="bold" fill="#5b3c88">loupe</text>
+  <text x="925" y="290" text-anchor="middle" font-size="18" fill="#333">human review app</text>
+  <text x="925" y="314" text-anchor="middle" font-size="16" fill="#666">annotate · adjudicate · publish</text>
+
+  <!-- dependency arrows -->
+  <line x1="550" y1="130" x2="550" y2="206" stroke="#4a4a4a" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <line x1="440" y1="130" x2="250" y2="216" stroke="#4a4a4a" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <line x1="660" y1="130" x2="850" y2="216" stroke="#4a4a4a" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <line x1="780" y1="275" x2="724" y2="275" stroke="#4a4a4a" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <!-- copal independence note -->
+  <text x="350" y="370" text-anchor="middle" font-size="15" fill="#8a6a1f" font-style="italic">copal knows nothing</text>
+  <text x="350" y="389" text-anchor="middle" font-size="15" fill="#8a6a1f" font-style="italic">about amber</text>
+
+  <!-- MLflow -->
+  <rect x="30" y="430" width="1040" height="70" rx="12" fill="#f4f4f4" stroke="#8a8a8a" stroke-width="2" stroke-dasharray="7 5"/>
+  <text x="550" y="463" text-anchor="middle" font-size="22" font-weight="bold" fill="#444">MLflow — the shared ledger</text>
+  <text x="550" y="488" text-anchor="middle" font-size="16" fill="#666">runs · datasets · review traces · model serving</text>
+
+  <line x1="550" y1="340" x2="550" y2="426" stroke="#8a8a8a" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrowMuted)"/>
+  <line x1="925" y1="330" x2="925" y2="426" stroke="#8a8a8a" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrowMuted)"/>
+  <text x="560" y="395" font-size="14" fill="#777">plugins</text>
+  <text x="935" y="395" font-size="14" fill="#777">MLflow app</text>
+
+  <!-- legend -->
+  <line x1="800" y1="60" x2="850" y2="60" stroke="#4a4a4a" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="860" y="66" font-size="16" fill="#444">depends on</text>
+</svg>
