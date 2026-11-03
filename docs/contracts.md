@@ -313,6 +313,18 @@ implementations are synthetic and are not loaded by `import amber`.
   snapshot includes it). References: `StructuralValidityScorer` (outcome mix, failure kinds,
   grounding failures) and `LabelCorrectScorer` (label accuracy, coverage, omissions, tokens
   per case, and evidence overlap against Examples, `inconclusive` against label records).
+- **`Labeler`**: `name`, `version`, `tier`, and `label(case, source, variables, *, gate,
+  context)` returning `(events, Example)`, a `LabelRecord`, or a source-free `LabelerFailure`
+  (`amber.labeling`). Models, rules, and importers are `silver`; `admit_labeler` rejects a
+  labeler declaring a human tier (`human_tier`). An Example's events begin with
+  `import.result` and replay to it. `import_events` turns a teacher's validated `CaseResult`
+  into that log (`import.result`; `mention.create` and `reading.create` per live reading; one
+  `claim.create` per live claim with its inclusions, inferences, and edges in dependency
+  order; `outcome.set` and `tier.set` silver per variable) plus its spans and Example, and
+  refuses a result with a `failed` variable; `spans_of` lists the spans an Example's events
+  name. Reference: `ImportLabeler`, which reads stored results or label records from a JSON
+  file, revalidates them against the authoritative case, source, and variable set, and
+  returns `missing`, `unsupported`, `invalid`, or `failed_result` failures otherwise.
 - **`SourceResolver`**: `resolve(source_id) -> Source | None`. Reference: `InMemoryResolver`.
 - **`Exporter`**: `export(items, target, *, gate, data, now) -> ExportReceipt`. It derives each
   output file's payload kind from its schema, gates every file (the manifest included) before
@@ -351,8 +363,8 @@ implementations are synthetic and are not loaded by `import amber`.
 - **Checks**: implementation cases run against a consumer's declared targets and fail with
   source-free codes. Implemented today for `Store` (ANN-05, ANN-16, ANN-17, IFC-07, IFC-11,
   IFC-12), `Provider` (IFC-04, IFC-12), `Extractor` (IFC-02, IFC-13; the kit supplies
-  scripted providers to the consumer's extractor factory), and `Scorer` (IFC-09, ANN-11,
-  ANN-12, ANN-17). A case shared by several targets
+  scripted providers to the consumer's extractor factory), `Scorer` (IFC-09, ANN-11,
+  ANN-12, ANN-17), and `Labeler` (IFC-06). A case shared by several targets
   records which declared targets failed it, so `conforms(target)` is per target, and is
   reported `passed` only when every declared target it applies to was checked. A store rejects by raising; the kit does not depend on its exception types.
 - **`ConformanceReport`**: subject, amber version, declared targets, catalog version and
@@ -398,7 +410,7 @@ These items are tracked in Beads (`bd list --status=open`):
 
 - structured evidence (deferred to a later minor; contract v0.1 §2.6);
 - derivations and rule replay;
-- the remaining interfaces (`Rule`, `ReviewBackend`, `Labeler`);
+- the remaining interfaces (`Rule`, `ReviewBackend`);
 - conformance checks for the remaining targets and for bundles;
 - MLflow plugins for evaluation, datasets, the loupe bridge, and deployment.
 

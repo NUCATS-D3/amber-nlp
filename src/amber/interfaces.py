@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict
 
 from amber.annotations import Projection
 from amber.extraction import ExtractorCapability
+from amber.labeling import LabelerOutput
 from amber.policy import (
     DataPolicy,
     Decision,
@@ -28,7 +29,7 @@ from amber.providers import ProviderFailure, ProviderRequest, ProviderResponse
 from amber.schemas.annotations import AnnotationEvent
 from amber.schemas.cases import Budget, Case, CaseResult
 from amber.schemas.evidence import Inclusion
-from amber.schemas.examples import Example, LabelRecord
+from amber.schemas.examples import Example, LabelRecord, ReferenceTier
 from amber.schemas.mentions import Mention
 from amber.schemas.sources import Source
 from amber.schemas.variables import VariableSet
@@ -136,6 +137,31 @@ class Scorer(Protocol):
         *,
         variables: VariableSet,
     ) -> ScoreReport: ...
+
+
+@runtime_checkable
+class Labeler(Protocol):
+    """Produces tiered references for a case (contract v0.1 section 6.2).
+
+    Models, rules, and importers declare ``tier = silver`` (``amber.labeling.admit_labeler``
+    rejects anything else). ``label`` returns ``(events, Example)``, with events beginning at
+    ``import.result`` that replay to the Example, or a ``LabelRecord``, or a
+    ``LabelerFailure``. Reference: ``amber.reference.ImportLabeler``.
+    """
+
+    name: str
+    version: str
+    tier: ReferenceTier
+
+    def label(
+        self,
+        case: Case,
+        source: Source,
+        variables: VariableSet,
+        *,
+        gate: PolicyGate,
+        context: RunContext,
+    ) -> LabelerOutput: ...
 
 
 @runtime_checkable

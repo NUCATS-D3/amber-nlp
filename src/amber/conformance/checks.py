@@ -12,12 +12,13 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Any, NoReturn
 
-from amber.annotations import example_from_projection, replay
+from amber.annotations import example_from_projection, replay, verify_example
 from amber.cases import load_case_result
 from amber.conformance import fixtures as fx
 from amber.conformance.catalog import CASES, Target
 from amber.examples import load_example, load_label_record
-from amber.interfaces import Extractor, Provider, Scorer, SourceResolver, Store
+from amber.interfaces import Extractor, Labeler, Provider, Scorer, SourceResolver, Store
+from amber.labeling import LabelerFailure, LabelerRejected, admit_labeler, spans_of
 from amber.policy import (
     DEFAULT_MATRIX,
     Destination,
@@ -32,6 +33,7 @@ from amber.schemas import (
     CaseResult,
     Example,
     LabelRecord,
+    ReferenceTier,
     Sensitivity,
     Source,
     Zone,
@@ -120,6 +122,12 @@ class Subject:
         if not isinstance(scorer, Scorer):
             _fail("not_a_scorer")
         return scorer
+
+    def labeler(self) -> Labeler:
+        labeler = self.targets["Labeler"]()
+        if not isinstance(labeler, Labeler):
+            _fail("not_a_labeler")
+        return labeler
 
 
 def _store_with_case(subject: Subject, case: Case | None = None) -> Store:
@@ -640,6 +648,63 @@ def check_ann_17_scorer(subject: Subject) -> None:
         _fail("example_ids_missing")
 
 
+# Labeler -----------------------------------------------------------------------------------
+
+
+def check_ifc_06(subject: Subject) -> None:
+    """Labelers are silver; Examples come with events that begin at import.result and replay
+    to them; label records validate."""
+    labeler = subject.labeler()
+    try:
+        admit_labeler(labeler)
+    except LabelerRejected:
+        _fail("human_tier_declared")
+    context = fx.run_context()
+    case = fx.note_case()
+    output = _must_accept(
+        lambda: labeler.label(
+            case, fx.SOURCE, fx.NOTE_VARIABLES, gate=StaticGate(DEFAULT_MATRIX), context=context
+        ),
+        "labeler_raised",
+    )
+    if isinstance(output, LabelerFailure):
+        _fail("no_reference")
+    if isinstance(output, LabelRecord):
+        _must_accept(
+            partial(
+                load_label_record,
+                output.model_dump(mode="json"),
+                case=case,
+                variables=fx.NOTE_VARIABLES,
+            ),
+            "label_invalid",
+        )
+        return
+    events, example = output
+    if not isinstance(example, Example) or not events:
+        _fail("not_a_reference")
+    if events[0].action != "import.result":
+        _fail("missing_import_event")
+    if any(event.case_id != case.case_id for event in events):
+        _fail("events_for_another_case")
+    if any(event.provenance.run_id != context.run_id for event in events):
+        _fail("provenance_not_from_context")
+    if any(reference.tier is not ReferenceTier.silver for reference in example.references.values()):
+        _fail("tier_mismatch")
+    _must_accept(
+        partial(
+            verify_example,
+            example,
+            events,
+            case=case,
+            source=fx.SOURCE,
+            variables=fx.NOTE_VARIABLES,
+            spans=spans_of(example),
+        ),
+        "events_do_not_replay",
+    )
+
+
 @dataclass(frozen=True)
 class Check:
     """One check of one case for one target. ``also_covers`` names other targets whose part of
@@ -666,6 +731,7 @@ CHECKS: tuple[Check, ...] = (
     Check("ANN-11", "Scorer", check_ann_11_scorer),
     Check("ANN-12", "Scorer", check_ann_12_scorer),
     Check("ANN-17", "Scorer", check_ann_17_scorer),
+    Check("IFC-06", "Labeler", check_ifc_06),
 )
 assert all(
     check.case_id in CASES and check.target in CASES[check.case_id].targets for check in CHECKS

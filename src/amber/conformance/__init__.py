@@ -13,8 +13,9 @@ A consumer declares what it implements by implementing the hook in its root ``co
             targets={"Store": MyStore, "Extractor": lambda provider: MyExtractor(provider)},
         )
 
-``Store``, ``Provider``, and ``Scorer`` factories take no arguments; ``SourceResolver`` takes
-the fixture sources; ``Extractor`` takes the scripted ``Provider`` the kit supplies.
+``Store``, ``Provider``, ``Scorer``, and ``Labeler`` factories take no arguments;
+``SourceResolver`` takes the fixture sources; ``Extractor`` takes the scripted ``Provider`` the
+kit supplies.
 
 then runs ``pytest --amber-conformance --amber-conformance-report=report.json``.
 """

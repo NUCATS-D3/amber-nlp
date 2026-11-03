@@ -4,12 +4,14 @@ Not loaded by ``import amber``. Real implementations live in the consuming proje
 """
 
 from amber.reference.extractor import DeterministicExtractor
+from amber.reference.labeler import ImportLabeler
 from amber.reference.provider import ScriptedProvider
 from amber.reference.scorers import LabelCorrectScorer, StructuralValidityScorer
 from amber.reference.store import InMemoryResolver, InMemoryStore, StoreError
 
 __all__ = [
     "DeterministicExtractor",
+    "ImportLabeler",
     "InMemoryResolver",
     "InMemoryStore",
     "LabelCorrectScorer",

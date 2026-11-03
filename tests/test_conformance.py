@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import tempfile
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,16 +17,18 @@ from amber.conformance import fixtures as fx
 from amber.conformance.catalog import CASES, CATALOG, CATALOG_VERSION, catalog_revision
 from amber.conformance.checks import CHECKS
 from amber.conformance.report import build_report, run_checks
+from amber.labeling import LabelerFailure
 from amber.policy import ProviderDestination
 from amber.providers import ProviderFailure, ProviderRequest, ProviderResponse
 from amber.reference import (
     DeterministicExtractor,
+    ImportLabeler,
     InMemoryResolver,
     InMemoryStore,
     LabelCorrectScorer,
     ScriptedProvider,
 )
-from amber.schemas import Example, Source, Zone
+from amber.schemas import Example, ReferenceTier, Source, Zone
 from amber.scoring import Metric
 
 DESIGN = Path(__file__).parents[1] / "docs" / "design" / "contract-v0.1.md"
@@ -60,8 +63,18 @@ def _extractor(provider: Any) -> DeterministicExtractor:
     return DeterministicExtractor(provider, clock=lambda: datetime(2026, 1, 1, tzinfo=UTC))
 
 
+def _import_labeler() -> ImportLabeler:
+    result = fx.note_result(fx.RUN_IDS[0], present=True, producer="model:teacher@1")
+    path = Path(tempfile.mkdtemp()) / "predictions.json"
+    path.write_text(json.dumps({result.case_id: {"result": json.loads(result.model_dump_json())}}))
+    return ImportLabeler(path, clock=lambda: datetime(2026, 1, 1, tzinfo=UTC))
+
+
 def _subject(
-    store: type[InMemoryStore] = InMemoryStore, provider: Any = None, extractor: Any = None
+    store: type[InMemoryStore] = InMemoryStore,
+    provider: Any = None,
+    extractor: Any = None,
+    labeler: Any = None,
 ) -> Subject:
     return Subject(
         name="amber-reference",
@@ -72,6 +85,7 @@ def _subject(
             "Provider": provider or _provider("schema_constrained", "logprobs"),
             "Extractor": extractor or _extractor,
             "Scorer": LabelCorrectScorer,
+            "Labeler": labeler or _import_labeler,
         },
     )
 
@@ -127,6 +141,7 @@ def test_every_check_names_a_catalog_case_for_its_target() -> None:
         ("ANN-11", "Scorer"),
         ("ANN-12", "Scorer"),
         ("ANN-17", "Scorer"),
+        ("IFC-06", "Labeler"),
     }
 
 
@@ -140,18 +155,25 @@ def test_the_references_pass_every_implemented_case() -> None:
     for check in CHECKS:
         if check.case_id != "IFC-12":
             assert statuses[check.case_id] == ("passed", None)
-    for target in ("Store", "Provider", "Extractor", "Scorer", "SourceResolver"):
+    for target in ("Store", "Provider", "Extractor", "Scorer", "SourceResolver", "Labeler"):
         assert report.conforms(target)
     assert statuses["ANN-06"] == ("not_applicable", None)
     assert statuses["WIR-01"] == ("not_implemented", None)
     assert statuses["WIR-04"] == ("not_implemented", None)
     assert report.counts() == {
-        "passed": 11,
+        "passed": 12,
         "failed": 0,
-        "not_applicable": 101 - 11 - 18,
+        "not_applicable": 101 - 12 - 18,
         "not_implemented": 18,
     }
-    assert report.targets == ("Extractor", "Provider", "Scorer", "SourceResolver", "Store")
+    assert report.targets == (
+        "Extractor",
+        "Labeler",
+        "Provider",
+        "Scorer",
+        "SourceResolver",
+        "Store",
+    )
     # IFC-12's Extractor part has no check yet, so the shared case is never reported passed.
     assert statuses["IFC-12"] == ("not_implemented", None)
     assert statuses["IFC-03"] == ("not_implemented", None)
@@ -442,4 +464,47 @@ def test_broken_scorers_fail_with_source_free_codes(scorer: Any, case_id: str, c
     )
     assert _statuses(report)[case_id] == ("failed", code)
     assert not report.conforms("Scorer")
+    assert report.conforms("Store")
+
+
+class _HumanLabeler(ImportLabeler):
+    tier = ReferenceTier.adjudicated  # type: ignore[assignment]
+
+
+class _SkipsImportEvent(ImportLabeler):
+    def label(self, *args: Any, **kwargs: Any) -> Any:
+        events, example = super().label(*args, **kwargs)
+        return events[1:], example
+
+
+class _AlwaysFails(ImportLabeler):
+    def label(self, *args: Any, **kwargs: Any) -> Any:
+        return LabelerFailure(reason="missing")
+
+
+class _EditsExample(ImportLabeler):
+    def label(self, *args: Any, **kwargs: Any) -> Any:
+        events, example = super().label(*args, **kwargs)
+        claims = tuple(claim.model_copy(update={"status": "accepted"}) for claim in example.claims)
+        return events, example.model_copy(update={"claims": claims})
+
+
+def _broken(cls: type[ImportLabeler]) -> Any:
+    return lambda: cls(_import_labeler().path, clock=lambda: datetime(2026, 1, 1, tzinfo=UTC))
+
+
+@pytest.mark.parametrize(
+    ("labeler", "code"),
+    [
+        (_broken(_HumanLabeler), "human_tier_declared"),
+        (_broken(_SkipsImportEvent), "missing_import_event"),
+        (_broken(_AlwaysFails), "no_reference"),
+        (_broken(_EditsExample), "events_do_not_replay"),
+        (lambda: object(), "not_a_labeler"),
+    ],
+)
+def test_broken_labelers_fail_with_source_free_codes(labeler: Any, code: str) -> None:
+    report = run_checks(_subject(labeler=labeler))
+    assert _statuses(report)["IFC-06"] == ("failed", code)
+    assert not report.conforms("Labeler")
     assert report.conforms("Store")
