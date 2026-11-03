@@ -380,7 +380,12 @@ correctness. Those are measured separately.
 ## Interfaces (`amber.interfaces`) and references (`amber.reference`)
 
 Protocols are structural and experimental until a real consumer uses them. Reference
-implementations are synthetic and are not loaded by `import amber`.
+implementations are synthetic and are not loaded by `import amber`. They are for synthetic data
+only: every entry point that sees a case, data policy, run, or result (the store's `put_case`,
+the extractor's and labeler's runs, scorers, `FileReviewBackend.export_cases`, and
+`LocalExporter.export`) raises `ReferenceUseError` (`synthetic_only`) for any other
+sensitivity. They ship with the core; `amber[reference]` installs what all of them need
+(`bundles`, for `LocalExporter`).
 
 - **`PolicyGate`**: `check`/`require` against a matrix. Reference: `amber.policy.StaticGate`.
   `PolicyViolation` carries the first refusal and, for multi-file transfers, every decision.

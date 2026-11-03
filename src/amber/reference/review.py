@@ -21,6 +21,7 @@ from amber.cases import load_case_result
 from amber.interfaces import PolicyGate, SourceResolver
 from amber.labeling import EventIds, import_events
 from amber.policy import DataPolicy, Decision, Destination
+from amber.reference._guard import require_synthetic
 from amber.review import (
     ReviewBatchReceipt,
     ReviewImportError,
@@ -109,6 +110,7 @@ class FileReviewBackend:
                     "result": None if proposal is None else proposal.model_dump(mode="json"),
                 }
             )
+        require_synthetic(data.sensitivity)
         now = self._clock()
         decisions: list[Decision] = []
         for (case, _, result), _payload in zip(cases, payloads, strict=True):

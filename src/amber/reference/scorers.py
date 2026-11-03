@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from typing import Literal
 
 from amber.ids import canonical_json
+from amber.reference._guard import require_synthetic_results
 from amber.schemas import (
     CaseResult,
     Example,
@@ -65,6 +66,7 @@ class StructuralValidityScorer:
         *,
         variables: VariableSet,
     ) -> ScoreReport:
+        require_synthetic_results(predicted)
         _check_predictions(predicted, variables)
         refuse_self_reference(predicted, reference)
         outcomes = [item for result in predicted for item in result.variable_outcomes.values()]
@@ -157,6 +159,7 @@ class LabelCorrectScorer:
         *,
         variables: VariableSet,
     ) -> ScoreReport:
+        require_synthetic_results(predicted)
         _check_predictions(predicted, variables)
         refuse_self_reference(predicted, reference)
         if self.move_on_event is not None:

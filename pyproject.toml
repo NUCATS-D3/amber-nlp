@@ -22,6 +22,11 @@ tracking = [
 bundles = [
     "pyarrow>=17",
 ]
+# The synthetic reference implementations (amber.reference) ship with the core and are for
+# synthetic data only; this extra adds what all of them need (LocalExporter writes Parquet).
+reference = [
+    "amber[bundles]",
+]
 # The conformance kit's pytest plugin; the rest of the kit needs only the core.
 conformance = [
     "pytest>=8",

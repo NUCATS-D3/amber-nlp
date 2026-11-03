@@ -22,6 +22,7 @@ from amber.examples import ExampleValidationError, load_example
 from amber.graph_errors import GraphValidationError
 from amber.ids import example_id
 from amber.interfaces import SourceResolver, StoreCapability
+from amber.reference._guard import require_synthetic
 from amber.schemas.annotations import AnnotationEvent
 from amber.schemas.cases import Case, CaseResult
 from amber.schemas.evidence import Inclusion
@@ -107,6 +108,8 @@ class InMemoryStore:
         A case never changes, and a ``(dataset, source)`` pair has one split across every
         case and variable set.
         """
+        if isinstance(case, Case):
+            require_synthetic(case.sensitivity)
         if not isinstance(case, Case) or not isinstance(variables, VariableSet):
             _raise("invalid_record")
         case = Case.model_validate(case.model_dump())

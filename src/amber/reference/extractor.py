@@ -20,6 +20,7 @@ from amber.graph_errors import GraphValidationError
 from amber.interfaces import PolicyGate, Provider
 from amber.policy import Destination, PolicyViolation, RunContext
 from amber.providers import Message, ProviderFailure, ProviderRequest, UsageMeter, call_provider
+from amber.reference._guard import require_synthetic
 from amber.schemas import (
     Budget,
     Case,
@@ -103,6 +104,7 @@ class DeterministicExtractor:
         if context.data.sensitivity is not case.sensitivity:
             # A runner error, not an expected failure: no truthful provenance can be stamped.
             raise ValueError("the run context's sensitivity does not match the case")
+        require_synthetic(case.sensitivity)
         meter = UsageMeter(budget)
         counters = {"grounding_failures": 0, "tool_calls": 0}
         try:
