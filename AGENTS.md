@@ -112,4 +112,6 @@ dependency, or wire-format changes, and their migrations.
 
 Work lands on `main` through pull requests. CI's "Protected contract artifacts" check fails a
 pull request that changes golden records, the catalog, conformance fixtures, or existing test
-assertions until a human adds the `contract-approved` label; agents never add it.
+assertions until a human adds the `contract-approved` label; agents never add it. An agent may
+merge its own pull request once every check passes and the protected-artifacts check passed
+without that label; anything that needs the label waits for a human.

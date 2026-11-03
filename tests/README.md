@@ -71,8 +71,15 @@ credentials or external services:
 - **Core install.** A non-editable install with no extras, checked with
   [check_core_install.py](../scripts/check_core_install.py) under `python -I`. This verifies the
   absence of optional stacks, Unicode/CRLF grounding, commits, restore, and case results.
-- **Full suite.** `dev` and `tracking` are installed; MLflow import is required before tests;
-  then the suite, Ruff, formatting, and mypy run.
+- **Full suite.** `dev`, `tracking`, and `bundles` are installed; MLflow import is required
+  before tests; then the suite, Ruff, formatting, mypy, and `lint-imports` run.
+- **Protected contract artifacts** (pull requests only): see
+  [check_protected_changes.py](../scripts/check_protected_changes.py).
+
+Hypothesis profiles live in [conftest.py](conftest.py): `dev` locally, `ci` when `CI` is set
+(derandomized, fixed deadline, failure blob printed, no example database), and `thorough` on
+request (`HYPOTHESIS_PROFILE=thorough uv run pytest tests/test_properties.py`). Property tests
+take their example counts from the profile, not from per-test settings.
 
 To reproduce the core check without replacing your environment:
 

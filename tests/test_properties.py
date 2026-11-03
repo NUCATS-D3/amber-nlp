@@ -1,7 +1,8 @@
 """Property tests for amber's core relations (amber-2sw; the invariant-tests skill): canonical
 hashing, quote faithfulness, wire and bundle round trips, replay prefix determinism, and
 random support graphs that must refuse cycles and source-free branches. Strategies are
-bounded so the suite stays fast."""
+bounded so the suite stays fast; example counts and deadlines come from the Hypothesis profile
+in tests/conftest.py."""
 
 from __future__ import annotations
 
@@ -9,7 +10,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from hypothesis import HealthCheck, assume, given, settings
+from hypothesis import assume, given
 from hypothesis import strategies as st
 
 from amber.annotations import replay
@@ -39,7 +40,6 @@ from amber.schemas import (
 
 from ._claim_helpers import SYNTHETIC_RUN_ID, make_provenance, make_task
 
-PROPERTY = settings(max_examples=60, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 TASK = make_task(evidence_policy="claim")
 VARIABLES = VariableSet.from_task(TASK)
 
@@ -99,7 +99,6 @@ def spans(draw: st.DrawFn) -> tuple[str, int, int]:
 # Canonical hashing -------------------------------------------------------------------------
 
 
-@PROPERTY
 @given(st.dictionaries(st.text(max_size=6), JSON_VALUES, max_size=6), st.randoms())
 def test_canonical_hashes_ignore_key_order(value: dict[str, Any], rng: Any) -> None:
     def shuffled(item: Any) -> Any:
@@ -118,7 +117,6 @@ def test_canonical_hashes_ignore_key_order(value: dict[str, Any], rng: Any) -> N
     assert canonical_json(parse_canonical_json(text)) == text
 
 
-@PROPERTY
 @given(st.dictionaries(st.text(max_size=6), JSON_VALUES, min_size=1, max_size=6), JSON_VALUES)
 def test_changing_a_value_changes_the_hash(value: dict[str, Any], other: Any) -> None:
     key = sorted(value)[0]
@@ -129,7 +127,6 @@ def test_changing_a_value_changes_the_hash(value: dict[str, Any], other: Any) ->
 # Quote faithfulness ------------------------------------------------------------------------
 
 
-@PROPERTY
 @given(spans())
 def test_a_quote_is_exactly_the_text_at_its_code_point_offsets(span: tuple[str, int, int]) -> None:
     text, start, end = span
@@ -140,7 +137,6 @@ def test_a_quote_is_exactly_the_text_at_its_code_point_offsets(span: tuple[str, 
     assert text[inclusion.start : inclusion.end] == inclusion.quote == text[start:end]
 
 
-@PROPERTY
 @given(spans())
 def test_a_quote_never_grounds_at_an_offset_where_it_does_not_occur(
     span: tuple[str, int, int],
@@ -175,7 +171,6 @@ def _result(text: str, start: int, end: int, present: bool) -> Any:
     return source, graph, result
 
 
-@PROPERTY
 @given(spans(), st.booleans())
 def test_graphs_and_results_round_trip_byte_for_byte(
     span: tuple[str, int, int], present: bool
@@ -193,7 +188,6 @@ def test_graphs_and_results_round_trip_byte_for_byte(
     assert loaded.model_dump_json() == text
 
 
-@PROPERTY
 @given(spans(), st.booleans())
 def test_run_bundles_round_trip(span: tuple[str, int, int], present: bool) -> None:
     source, _, result = _result(*span, present)
@@ -223,7 +217,6 @@ _EVENTS = list(_LOG.events)
 _ACTORS = st.sampled_from([None, fx.REVIEWER_A, fx.REVIEWER_B, fx.ADJUDICATOR, fx.IMPORTER])
 
 
-@PROPERTY
 @given(st.integers(min_value=0, max_value=len(_EVENTS) - 1), _ACTORS)
 def test_replaying_up_to_an_event_equals_replaying_that_prefix(index: int, actor: Any) -> None:
     common = {"case": fx.case(), "source": fx.SOURCE, "variables": fx.VARIABLES, "spans": fx.SPANS}
@@ -270,7 +263,6 @@ def _has_cycle(inputs: list[list[int]], orphans: set[int]) -> bool:
     return any(visit(node) for node in range(len(inputs)))
 
 
-@settings(max_examples=120, deadline=None)
 @given(support_graphs())
 def test_random_graphs_validate_exactly_when_acyclic_and_source_backed(
     graph: tuple[list[list[int]], set[int]],
