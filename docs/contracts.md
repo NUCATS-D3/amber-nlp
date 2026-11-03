@@ -115,6 +115,14 @@ refuse scoring a configuration against its own silver references; rule hashes ar
     serves a reference;
   - `split` equals the case's, `example_id` matches, and referenced events precede
     `as_of_event`.
+- **`amber.labels.labels_only_view`**: the only sanctioned downgrade from `derived_text` to
+  `labels_only`. For a `CaseResult` (with its authoritative `Case` and `VariableSet`) it gives
+  one silver `LabelRecord` per final variable that did not fail, keeping the answer value only
+  when the answer model is closed (`open_answer_fields` otherwise) and the final claims agree
+  on it and on their producer. For annotation events it gives one `EventLabel` per event
+  (`event_id`, `case_id`, `variable`, `actor`, `role`, `round`, `stream`, `action`,
+  `target_id`, `at`, `external_ref`). `is_closed_schema` decides closedness: booleans,
+  numbers, nulls, and strings limited by `enum`, `const`, or a date format.
 - **`LabelRecord`**: a silver label without evidence (outcome status, value, one non-human
   producer, split). `load_label_record` checks it against the case and set and validates the
   value against the final variable's answer model. A LabelRecord never loads as an Example.
@@ -276,7 +284,6 @@ These items are tracked in Beads (`bd list --status=open`):
 - the `PolicyGate` protocol and its reference implementation;
 - claims that rely on readings and required attributes (`StructuredEvidence` is deferred to a
   later minor; contract v0.1 §2.6);
-- `labels_only_view` for case results and annotation events;
 - derivations and rule replay;
 - the remaining interfaces (`Extractor`, `Provider`, `Exporter`, `Scorer`, `ReviewBackend`,
   `Labeler`, `PolicyGate`);
