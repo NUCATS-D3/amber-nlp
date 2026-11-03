@@ -25,6 +25,7 @@ The suite is flat and grouped by the boundary under test. All inputs are invente
 | `test_scoring.py` | Score reports, self-reference refusal, move-on inclusion, reference scorers |
 | `test_labeling.py` | Labelers: silver-only admission, import events that replay to the Example, ImportLabeler outcomes |
 | `test_evaluation.py` | Binary metric harness: protocol arithmetic, P=0, Q=0, no answers, provisional and label-only gates, Wilson and bootstrap |
+| `test_mlflow_tracking.py` | Gated run, decision, and trace logging; local tracking; redacted prompts; refused destinations (needs tracking) |
 | `test_mlflow_datasets.py` | Examples as MLflow evaluation datasets: lossless records, gating, reload and event verification (needs tracking) |
 | `test_mlflow_evaluation.py` | MLflow validity scorer and gated report logging (needs tracking) |
 | `test_derivations.py` | Derivation records: inputs within the inference, defaults only on rule derivations and empty roles, unset derivations omitted from JSON |

@@ -479,6 +479,21 @@ replicates. `gold_from` and `prediction_from` adapt Examples, label records, and
   (values, numerators, denominators, intervals as metrics; gate statuses, provisional flag,
   and tier mix as tags) to the active run, after the gate permits both `metrics` and
   `labels_only` to the destination.
+- `amber.mlflow_ext.tracking`: gated run and trace logging. `local_tracking(directory)`
+  points MLflow at a SQLite store on this machine and returns the `local:mlflow` tracking
+  destination (accepting `metrics` and `labels_only` unless told otherwise), the default for
+  development. Every function checks the destination is `tracking` and, for a `local` one,
+  that MLflow's tracking URI is a local file or SQLite store (`TrackingError`:
+  `not_a_tracking_destination`, `tracking_uri_not_local`, `no_active_run`).
+  `log_run(context, *, providers, gate, destination, now, prompt_versions, adapter_policy,
+  producer)` logs the run ID, dataset and manifest hash, policy version, sensitivity,
+  restrictions, prompt versions, adapter policy, and each provider's kind, zone, model, and
+  capabilities as `labels_only` params after the gate permits them; `log_decisions` stores
+  decisions as `amber/decisions.json`. `traced_provider_call` wraps `call_provider` in an
+  MLflow span: `labels_only` must be permitted before the call, the span carries model, zone,
+  attempts, tokens, and failure or refusal, and the prompt and response are attached only when
+  `source_text` is permitted to the tracking destination (`amber.content` says `included` or
+  `redacted`).
 - `amber.mlflow_ext.datasets`: Examples as MLflow GenAI evaluation datasets. Each record has
   `inputs` (`case_id`, `example_id`, and the note `text` only when a resolver is passed as
   `texts`) and `expectations` (`amber_example`, the full Example JSON, plus per final variable

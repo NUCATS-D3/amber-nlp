@@ -229,7 +229,11 @@ def main() -> None:
         else:
             raise AssertionError(f"{module} must require the bundles extra")
     assert "pyarrow" not in sys.modules
-    for module in ("amber.mlflow_ext.evaluation", "amber.mlflow_ext.datasets"):
+    for module in (
+        "amber.mlflow_ext.evaluation",
+        "amber.mlflow_ext.datasets",
+        "amber.mlflow_ext.tracking",
+    ):
         try:
             importlib.import_module(module)
         except ImportError as error:
