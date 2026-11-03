@@ -6,7 +6,7 @@ A report is ``labels_only``: case IDs, statuses, and source-free codes.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -20,6 +20,8 @@ CaseStatus = Literal["passed", "failed", "not_applicable", "not_implemented"]
 
 
 class ReportSubject(BaseModel):
+    """An implementation under test."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     kind: Literal["implementation"] = "implementation"
@@ -27,9 +29,20 @@ class ReportSubject(BaseModel):
     version: str = Field(min_length=1)
 
 
+class BundleSubject(BaseModel):
+    """A bundle under test, by the SHA-256 of its manifest's canonical JSON (None when the
+    manifest could not be read)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["bundle"] = "bundle"
+    manifest_content_sha256: str | None
+
+
 class CaseReport(BaseModel):
     """One catalog case. Core cases test amber itself and are ``not_applicable`` to a
-    consumer; ``not_implemented`` marks applicable cases the kit cannot check yet."""
+    consumer, as bundle cases are to an implementation; ``not_implemented`` marks applicable
+    cases the kit cannot check yet."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -44,7 +57,7 @@ class ConformanceReport(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: SchemaVersion = SCHEMA_VERSION
-    subject: ReportSubject
+    subject: Annotated[ReportSubject | BundleSubject, Field(discriminator="kind")]
     amber_version: str
     targets: tuple[str, ...]
     catalog_version: str
@@ -63,9 +76,22 @@ class ConformanceReport(BaseModel):
             counts[case.status] += 1
         return counts
 
-    def conforms(self, target: str) -> bool:
-        """Zero failures among the cases that apply to ``target``."""
+    def conforms(self, target: str | None = None) -> bool:
+        """Zero failures among the cases that apply to ``target``; with no target (a bundle
+        report), zero failures at all."""
+        if target is None:
+            return not any(case.status == "failed" for case in self.cases)
         return not any(target in case.failed_targets for case in self.cases)
+
+
+def report_header() -> dict[str, Any]:
+    """The fields every report shares: amber version, catalog identity, and fixtures."""
+    return {
+        "amber_version": amber.__version__,
+        "catalog_version": CATALOG_VERSION,
+        "catalog_revision": catalog_revision(),
+        "fixtures_ref": fixtures_ref(),
+    }
 
 
 def build_report(
@@ -95,10 +121,9 @@ def build_report(
         code: str | None = None
         failed_targets: tuple[str, ...] = ()
         applicable = [target for target in case.targets if target in declared]
-        if case.level == "core":
+        if case.level in ("core", "bundle"):
+            # Core cases test amber; bundle cases run against a bundle (amber.conformance.bundle).
             status = "not_applicable"
-        elif case.level == "bundle":
-            status = "not_implemented"
         elif not applicable:
             status = "not_applicable"
         else:
@@ -127,12 +152,9 @@ def build_report(
         )
     return ConformanceReport(
         subject=ReportSubject(name=name, version=version),
-        amber_version=amber.__version__,
         targets=declared,
-        catalog_version=CATALOG_VERSION,
-        catalog_revision=catalog_revision(),
-        fixtures_ref=fixtures_ref(),
         cases=tuple(cases),
+        **report_header(),
     )
 
 

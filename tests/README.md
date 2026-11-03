@@ -14,6 +14,7 @@ The suite is flat and grouped by the boundary under test. All inputs are invente
 | `test_examples.py` | Examples and label records: tiers and claim status, references, identity, split, mentions |
 | `test_annotations.py` | Events, replay determinism and prefixes, blind streams, transitions, tiers, move-on, Examples from events |
 | `test_store.py` | Store protocol and `InMemoryStore`: splits, runs, append-only events, projections, Examples, resolver |
+| `test_conformance_bundle.py` | Bundle conformance: WIR cases against written bundles, diagnostics mapped to cases, blocked cases, bundle reports, plugin bundle mode (needs bundles) |
 | `test_conformance.py` | Conformance catalog, fixtures, checks against the references and broken stores, providers, extractors, scorers, labelers, review backends, and rules, report, pytest plugin |
 | `test_labels.py` | `labels_only_view` for results and events, schema closedness, no source text in output |
 | `test_wire.py` | JSON records: golden bytes and keys, schema versions, timestamps, budgets, VariableSet JSON |

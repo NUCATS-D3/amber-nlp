@@ -93,6 +93,15 @@ def _must_accept(call: Callable[[], Any], code: str) -> Any:
 
 
 @dataclass(frozen=True)
+class BundleUnderTest:
+    """What bundle conformance needs besides the bundle directory: its variable set and,
+    for the source cases (WIR-04, WIR-13), a resolver."""
+
+    variables: VariableSet
+    resolver: SourceResolver | None = None
+
+
+@dataclass(frozen=True)
 class Subject:
     """What a consumer declared: its name, version, and a factory per implemented target."""
 

@@ -213,13 +213,14 @@ def test_the_references_pass_every_implemented_case() -> None:
     ):
         assert report.conforms(target)
     assert statuses["ANN-06"] == ("not_applicable", None)
-    assert statuses["WIR-01"] == ("not_implemented", None)
-    assert statuses["WIR-04"] == ("not_implemented", None)
+    # Bundle cases run against a bundle, never against an implementation.
+    assert statuses["WIR-01"] == ("not_applicable", None)
+    assert statuses["WIR-04"] == ("not_applicable", None)
     assert report.counts() == {
         "passed": 14,
         "failed": 0,
-        "not_applicable": 101 - 14 - 21,
-        "not_implemented": 21,
+        "not_applicable": 101 - 14 - 8,
+        "not_implemented": 8,
     }
     assert report.targets == (
         "Extractor",
@@ -331,6 +332,9 @@ def test_broken_stores_fail_with_source_free_codes(
 
 # pytest plugin -----------------------------------------------------------------------------
 
+# The suite also collects one bundle test per bundle case, skipped outside bundle mode.
+_BUNDLE_TESTS = sum(case.level == "bundle" for case in CATALOG)
+
 _CONFTEST = """
 from amber.conformance import Subject
 from amber.reference import InMemoryResolver, InMemoryStore
@@ -355,7 +359,7 @@ def test_the_plugin_runs_the_kit_and_writes_a_report(pytester: pytest.Pytester) 
     pytester.makeconftest(_CONFTEST.format(extra="", store="InMemoryStore"))
     result = pytester.runpytest("--amber-conformance", "--amber-conformance-report=report.json")
     stores = sum(check.target == "Store" for check in CHECKS)
-    result.assert_outcomes(passed=stores, skipped=len(CHECKS) - stores)
+    result.assert_outcomes(passed=stores, skipped=len(CHECKS) - stores + _BUNDLE_TESTS)
     report = json.loads((pytester.path / "report.json").read_text())
     assert report["subject"] == {
         "kind": "implementation",
@@ -370,7 +374,9 @@ def test_the_plugin_reports_failures_by_code(pytester: pytest.Pytester) -> None:
     pytester.makeconftest(_CONFTEST.format(extra=_BROKEN, store="BrokenStore"))
     result = pytester.runpytest("--amber-conformance", "--amber-conformance-report=report.json")
     stores = sum(check.target == "Store" for check in CHECKS)
-    result.assert_outcomes(passed=stores - 2, failed=2, skipped=len(CHECKS) - stores)
+    result.assert_outcomes(
+        passed=stores - 2, failed=2, skipped=len(CHECKS) - stores + _BUNDLE_TESTS
+    )
     cases = {
         case["id"]: case
         for case in json.loads((pytester.path / "report.json").read_text())["cases"]

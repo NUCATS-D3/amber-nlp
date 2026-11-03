@@ -217,7 +217,11 @@ def main() -> None:
         bundle, variables=fixtures.VARIABLES, resolver=InMemoryResolver([fixtures.SOURCE])
     )
     assert isinstance(loaded, BundleContents) and len(loaded.results) == 1
-    for module in ("amber.bundles.parquet", "amber.reference.exporter"):
+    for module in (
+        "amber.bundles.parquet",
+        "amber.reference.exporter",
+        "amber.conformance.bundle",
+    ):
         try:
             importlib.import_module(module)
         except ImportError as error:

@@ -423,19 +423,36 @@ implementations are synthetic and are not loaded by `import amber`.
   scripted providers to the consumer's extractor factory), `Scorer` (IFC-09, ANN-11,
   ANN-12, ANN-17), `Labeler` (IFC-06), `ReviewBackend` (IFC-10; the factory returns
   the backend and a callable that completes the reviews for a receipt), and `Rule` (VAR-09;
-  the factory returns the rule, a result with its derivations, and the variable set). A case shared by several targets
-  records which declared targets failed it, so `conforms(target)` is per target, and is
-  reported `passed` only when every declared target it applies to was checked. A store rejects by raising; the kit does not depend on its exception types.
-- **`ConformanceReport`**: subject, amber version, declared targets, catalog version and
-  revision, `fixtures_ref`, and per case `passed`, `failed` (with a code), `not_applicable`
-  (core cases, which amber's own suite covers, and cases for undeclared targets), or
-  `not_implemented` (applicable cases the kit cannot check yet, including every bundle
-  case). `run_checks(subject)` builds one without pytest.
+  the factory returns the rule, a result with its derivations, and the variable set). A case
+  shared by several targets records which declared targets failed it, so `conforms(target)`
+  is per target, and is reported `passed` only when every declared target it applies to was
+  checked. A store rejects by raising; the kit does not depend on its exception types.
+- **Bundle checks** (`amber.conformance.bundle`, `bundles` extra): `run_bundle_checks(directory,
+  *, variables, resolver=None)` runs the bundle cases against a written bundle. The reader's
+  and `check_bundle`'s diagnostics fail the case they belong to (WIR-02 version, WIR-03
+  structure, WIR-05 and WIR-11 payload kinds, WIR-06 hashes and case scope, WIR-07 canonical
+  JSON, WIR-09 unknown columns); WIR-01 requires key-sorted rows and an unchanged write and
+  read (`x_` columns included); WIR-08 and WIR-10 check evidence kinds, event actions, and
+  claim values directly. With a resolver, WIR-04 requires every record to revalidate (any load
+  failure is reported there with the boundary's code, except `budget_exceeded` under WIR-13)
+  and, for run bundles, WIR-13 requires the revalidated results to rebuild identical tables;
+  without one both are `not_applicable`. Cases left undecided by an earlier failure fail with
+  `blocked`. WIR-12 (migration) is `not_implemented`.
+- **`ConformanceReport`**: subject (`{kind: "implementation", name, version}` or `{kind:
+  "bundle", manifest_content_sha256}`, the SHA-256 of the manifest's canonical JSON), amber
+  version, declared targets, catalog version and revision, `fixtures_ref`, and per case
+  `passed`, `failed` (with a code), `not_applicable` (core cases, which amber's own suite
+  covers; bundle cases in an implementation report and the reverse; and cases for undeclared
+  targets), or `not_implemented` (applicable cases the kit cannot check yet).
+  `run_checks(subject)` builds one without pytest; `conforms()` without a target asks whether
+  anything failed.
 - **pytest plugin** (`conformance` extra; `pytest11` entry point, inert without
   `--amber-conformance`): a consumer returns a `Subject` (name, version, a factory per
   target) from `pytest_amber_conformance_subject(config)` in its root `conftest.py`, runs
   `pytest --amber-conformance --amber-conformance-report=report.json`, and gets one test per
-  check plus the report.
+  check plus the report. With `--amber-conformance-bundle=DIR` and a
+  `pytest_amber_conformance_bundle(config)` hook returning a `BundleUnderTest` (variable set,
+  optional resolver), it instead runs one test per bundle case and writes the bundle report.
 
 ## Evaluation harness (`amber.evaluation`)
 

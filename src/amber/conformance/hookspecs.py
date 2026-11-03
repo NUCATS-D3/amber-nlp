@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from amber.conformance.checks import Subject
+from amber.conformance.checks import BundleUnderTest, Subject
 
 
 @pytest.hookspec(firstresult=True)
@@ -16,3 +16,8 @@ def pytest_amber_conformance_subject(config: Any) -> Subject | None:
     ``Store``: a zero-argument factory returning an empty store. ``SourceResolver``: a factory
     taking the fixture sources.
     """
+
+
+@pytest.hookspec(firstresult=True)
+def pytest_amber_conformance_bundle(config: Any) -> BundleUnderTest | None:
+    """Return the variable set (and optional resolver) for ``--amber-conformance-bundle``."""

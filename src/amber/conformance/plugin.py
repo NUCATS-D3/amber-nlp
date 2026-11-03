@@ -20,12 +20,13 @@ except ImportError as error:  # pragma: no cover - pytest loads this module
     ) from error
 
 from amber.conformance import hookspecs
-from amber.conformance.checks import Check, ConformanceFailure, Subject
-from amber.conformance.report import build_report
+from amber.conformance.checks import BundleUnderTest, Check, ConformanceFailure, Subject
+from amber.conformance.report import ConformanceReport, build_report
 
 _SUITE = Path(__file__).with_name("suite.py")
 _OUTCOMES = pytest.StashKey[dict[tuple[str, str], str | None]]()
 _SUBJECT = pytest.StashKey[Subject]()
+_BUNDLE_REPORT = pytest.StashKey[ConformanceReport]()
 
 
 def pytest_addhooks(pluginmanager: pytest.PytestPluginManager) -> None:
@@ -39,6 +40,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="store_true",
         default=False,
         help="run the amber conformance kit against the declared subject",
+    )
+    group.addoption(
+        "--amber-conformance-bundle",
+        default=None,
+        metavar="DIR",
+        help="check the written bundle in DIR instead of an implementation",
     )
     group.addoption(
         "--amber-conformance-report",
@@ -71,9 +78,38 @@ def _subject(config: pytest.Config) -> Subject:
     return config.stash[_SUBJECT]
 
 
+def _bundle_directory(config: pytest.Config) -> Path | None:
+    value = config.getoption("--amber-conformance-bundle")
+    return None if value is None else Path(value)
+
+
 @pytest.fixture(scope="session")
-def amber_conformance_subject(pytestconfig: pytest.Config) -> Subject:
+def amber_conformance_subject(pytestconfig: pytest.Config) -> Subject | None:
+    if _bundle_directory(pytestconfig) is not None:
+        return None
     return _subject(pytestconfig)
+
+
+@pytest.fixture(scope="session")
+def amber_conformance_bundle_statuses(
+    pytestconfig: pytest.Config,
+) -> dict[str, tuple[str, str | None]]:
+    directory = _bundle_directory(pytestconfig)
+    if directory is None:
+        return {}
+    under_test = pytestconfig.hook.pytest_amber_conformance_bundle(config=pytestconfig)
+    if not isinstance(under_test, BundleUnderTest):
+        raise pytest.UsageError(
+            "--amber-conformance-bundle needs a pytest_amber_conformance_bundle hook returning "
+            "amber.conformance.BundleUnderTest"
+        )
+    from amber.conformance.bundle import run_bundle_checks
+
+    report = run_bundle_checks(
+        directory, variables=under_test.variables, resolver=under_test.resolver
+    )
+    pytestconfig.stash[_BUNDLE_REPORT] = report
+    return {case.id: (case.status, case.code) for case in report.cases}
 
 
 def _check(item: pytest.Item) -> Check | None:
@@ -108,7 +144,13 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
     if not _enabled(config):
         return
     path = config.getoption("--amber-conformance-report")
-    if path is None or _SUBJECT not in config.stash:
+    if path is None:
+        return
+    if _BUNDLE_REPORT in config.stash:
+        bundle_report = config.stash[_BUNDLE_REPORT]
+        Path(path).write_text(bundle_report.model_dump_json(indent=2) + "\n", encoding="utf-8")
+        return
+    if _SUBJECT not in config.stash:
         return
     subject = config.stash[_SUBJECT]
     outcomes: dict[tuple[str, str], str | None] = config.stash[_OUTCOMES]

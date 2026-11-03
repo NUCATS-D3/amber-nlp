@@ -21,8 +21,13 @@ kit supplies; ``ReviewBackend`` takes no arguments and returns ``(backend, revie
 least one derivation by the rule, and its variable set.
 
 then runs ``pytest --amber-conformance --amber-conformance-report=report.json``.
+
+To check a written bundle instead, the consumer returns a ``BundleUnderTest`` (variable set and
+optional resolver) from ``pytest_amber_conformance_bundle(config)`` and runs
+``pytest --amber-conformance --amber-conformance-bundle=DIR``; the report's subject is then the
+bundle (``amber.conformance.bundle``, which needs the ``bundles`` extra).
 """
 
-from amber.conformance.checks import CHECKS, ConformanceFailure, Subject
+from amber.conformance.checks import CHECKS, BundleUnderTest, ConformanceFailure, Subject
 
-__all__ = ["CHECKS", "ConformanceFailure", "Subject"]
+__all__ = ["CHECKS", "BundleUnderTest", "ConformanceFailure", "Subject"]
