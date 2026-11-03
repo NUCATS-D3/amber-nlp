@@ -88,3 +88,6 @@ jobs:
       - name: Type check the supported target
         if: matrix.python == '3.12'
         run: uv run --no-sync mypy src
+      - name: Check dependency direction
+        if: matrix.python == '3.12'
+        run: uv run --no-sync lint-imports
