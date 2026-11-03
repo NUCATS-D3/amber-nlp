@@ -366,9 +366,31 @@ implementations are synthetic and are not loaded by `import amber`.
   `pytest --amber-conformance --amber-conformance-report=report.json`, and gets one test per
   check plus the report.
 
-## MLflow plugin (`tracking` extra)
+## Evaluation harness (`amber.evaluation`)
+
+A binary-answer harness following CORAL protocol 1.1.0: counts `N`, `B`, `P`, `Q`, `A`, `C`,
+`A_pos`, `TP`, `FP`, `O`, execution failures by kind, unattempted cases, and missing gold;
+measures (precision, PPV, recall, omission rate, coverage, correct yield, false positives
+defined only when `Q > 0`, execution failures, mean cost per eligible case); and
+consumer-supplied `GateSpec`s. A zero denominator is undefined, never 0 or 1. Each gate is
+`met`, `unmet`, or `inconclusive` on the observed value; any reference below `adjudicated`
+makes it provisional, and a provisional pass is `inconclusive` with `observed_pass` set.
+Evidence measures are inconclusive against label-only references. The overall status is
+`unmet` if any gate is violated and `met` only when every gate is met with complete gold and
+attempts. Wilson intervals accompany every defined case-level proportion, and a seeded
+(20260915) case-level bootstrap reports percentile intervals with counts of undefined
+replicates. `gold_from` and `prediction_from` adapt Examples, label records, and results.
+
+## MLflow plugins (`tracking` extra)
 
 - `amber.mlflow_ext.context.AmberRunContextProvider` adds the `amber.version` tag.
+- `amber.mlflow_ext.evaluation.validity_scorer`: an OSS `@scorer` that revalidates a
+  `CaseResult` JSON against its case, source, and variable set and returns a boolean
+  `Feedback` with a source-free rationale code.
+- `amber.mlflow_ext.evaluation.log_evaluation`: logs an `EvaluationReport` or `ScoreReport`
+  (values, numerators, denominators, intervals as metrics; gate statuses, provisional flag,
+  and tier mix as tags) to the active run, after the gate permits both `metrics` and
+  `labels_only` to the destination.
 
 ## Planned contract work
 

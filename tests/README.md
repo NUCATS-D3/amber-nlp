@@ -22,6 +22,8 @@ The suite is flat and grouped by the boundary under test. All inputs are invente
 | `test_providers.py` | Provider records, `ScriptedProvider`, `call_provider` gating, capabilities, parsing, retries, budgets |
 | `test_extraction.py` | `DeterministicExtractor` end to end with a scripted provider: every outcome kind, budgets, batches, persistence |
 | `test_scoring.py` | Score reports, self-reference refusal, move-on inclusion, reference scorers |
+| `test_evaluation.py` | Binary metric harness: protocol arithmetic, P=0, Q=0, no answers, provisional and label-only gates, Wilson and bootstrap |
+| `test_mlflow_evaluation.py` | MLflow validity scorer and gated report logging (needs tracking) |
 | `test_answer_schemas.py` | Frozen, closed, strict `AnswerModel` subclasses |
 | `test_claim_schemas.py` | Task, claim, inference, and edge records; canonical IDs; immutability; wire shapes |
 | `test_graph_validation.py` | Full graph, context, and source validation; field citations; cycles; deep chains |

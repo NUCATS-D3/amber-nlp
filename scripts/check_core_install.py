@@ -225,6 +225,24 @@ def main() -> None:
         else:
             raise AssertionError(f"{module} must require the bundles extra")
     assert "pyarrow" not in sys.modules
+    try:
+        importlib.import_module("amber.mlflow_ext.evaluation")
+    except ImportError as error:
+        assert "--extra tracking" in str(error)
+    else:
+        raise AssertionError("the MLflow evaluation plugin must require the tracking extra")
+
+    from amber.evaluation import GateSpec, Gold, Prediction, evaluate_binary
+    from amber.schemas import ReferenceTier
+
+    evaluation = evaluate_binary(
+        ["n1"],
+        [Gold("n1", "answered", True, ReferenceTier.adjudicated, True)],
+        [Prediction("n1", "answered", True)],
+        [GateSpec(name="precision", measure="precision", op="ge", threshold=0.95)],
+        resamples=20,
+    )
+    assert evaluation.overall == "met"
     print(
         "Core-only installed grounding, claim commit, case results, restore, policy, "
         "conformance-kit, and in-memory bundle checks passed."
