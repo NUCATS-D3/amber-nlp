@@ -31,6 +31,7 @@ The suite is flat and grouped by the boundary under test. All inputs are invente
 | `test_mlflow_datasets.py` | Examples as MLflow evaluation datasets: lossless records, gating, reload and event verification (needs tracking) |
 | `test_mlflow_evaluation.py` | MLflow validity scorer and gated report logging (needs tracking) |
 | `test_derivations.py` | Derivation records: inputs within the inference, defaults only on rule derivations and empty roles, unset derivations omitted from JSON |
+| `test_protected_changes.py` | CI guard for pinned contract artifacts and existing test assertions (uses git) |
 | `test_review.py` | Review backends: file round trips (single review, adjudication, unresolved, excluded, unreviewed), export gating, import refusals |
 | `test_rules.py` | Rules: specs and registry, reduction (equal, conflicting, many, rejected), on_missing, conflict propagation, replay and tampering, events and bundles |
 | `test_seeded_ids.py` | Seeded ULID sources: reproducible graphs, invalid or repeating IDs rejected |

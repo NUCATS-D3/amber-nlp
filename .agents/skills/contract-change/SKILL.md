@@ -63,6 +63,9 @@ uv run --no-sync pytest --strict-markers -ra -m "not slow"
 Check that only the approved records changed. Mention the contract or wire-format change and
 its migration in the commit body.
 
+On a pull request, CI's "Protected contract artifacts" check fails until a human adds the
+`contract-approved` label; never add it yourself.
+
 ## Done when
 
 - Every change is classified, no accidental change remains, and the user approved the set.
