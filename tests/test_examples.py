@@ -180,7 +180,7 @@ class Fixture:
                 variable_set_ref=VARIABLES.schema_ref,
                 as_of_event=self.as_of,
             ),
-            "schema_version": "0.1",
+            "schema_version": "amber/0.1",
             "case_id": CASE.case_id,
             "variable_set": VARIABLES.name,
             "variable_set_version": VARIABLES.version,
@@ -488,7 +488,9 @@ def test_derived_events_precede_the_snapshot_event() -> None:
         ({"variable_set_version": "2.0.0"}, "variable_set_mismatch"),
         ({"case_id": "other"}, "invalid_context"),
         ({"source_ids": ["other"]}, "invalid_context"),
-        ({"schema_version": "0.2"}, "invalid_schema"),
+        ({"schema_version": "0.1"}, "invalid_schema"),
+        ({"schema_version": "amber/0.2"}, "invalid_schema"),
+        ({"schema_version": "amber/1.0"}, "invalid_schema"),
         ({"created_at": "2026-11-02T12:00:00"}, "invalid_schema"),
         ({"extra": True}, "invalid_schema"),
         ({"claims": "none"}, "invalid_schema"),
@@ -523,7 +525,7 @@ def test_examples_load_only_against_their_case_split_and_set() -> None:
 
 def _label(**changes: Any) -> dict[str, Any]:
     return {
-        "schema_version": "0.1",
+        "schema_version": "amber/0.1",
         "case_id": CASE.case_id,
         "variable": "summary",
         "variable_set": VARIABLES.name,

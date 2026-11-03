@@ -30,6 +30,18 @@ normalization. Timestamps must be timezone-aware and hash as UTC with six fracti
 `tool:<name>[@<version>]`. `producer_configuration` returns the `model:`/`rule:` keys used to
 refuse scoring a configuration against its own silver references; rule hashes are ignored.
 
+## Wire format (`amber.schemas._wire`, `amber.wire`)
+
+- Every JSON record (`CaseResult`, `Example`, `AnnotationEvent`, `LabelRecord`, `Decision`,
+  VariableSet JSON) carries `schema_version: "amber/0.1"`. Readers accept this major at a
+  lower or equal minor, normalize it, and reject anything else.
+- JSON timestamps are UTC with `Z` and six fractional digits; naive times keep their ISO form.
+- A record's JSON is its `model_dump_json()`; golden fixtures in
+  `amber/conformance/golden/` pin the bytes and key order (WIR-14).
+- `variable_set_json` writes answer models as their JSON Schema plus `schema_ref`;
+  `load_variable_set` rebuilds the set only from the matching answer-model classes
+  (`unknown_answer_model`, `answer_model_mismatch`, `variable_set_mismatch`).
+
 ## Models (`amber.schemas`)
 
 - **`Source`**, **`Section`**, **`SourceKind`**: an immutable note or record, with
@@ -87,6 +99,9 @@ refuse scoring a configuration against its own silver references; rule hashes ar
   evidence, edges, mentions and their readings; one `VariableOutcome` per final variable;
   counters; and a trace ID. When the set has one final variable, `outcome` and
   `final_claim_ids` equal its `VariableOutcome`; otherwise both are null.
+  It also records the run's `Budget` (`max_calls`, `max_tokens`, `max_retries`, `max_seconds`)
+  and `Usage`; a result whose usage exceeds its budget must have every variable `failed` with
+  `failure_kind="budget"`, or it fails with `budget_exceeded`.
   `amber.cases.case_status` returns the most severe variable status (failed, conflicting,
   insufficient, not mentioned, answered) and is never stored. Results are built and loaded only through `amber.cases`.
 

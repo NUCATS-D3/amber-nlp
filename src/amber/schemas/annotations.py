@@ -9,16 +9,15 @@ values and free text, so an event log is ``derived_text``.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime
 from typing import Annotated, Any, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from amber.ids import parse_producer, validate_ulid
 from amber.schemas._immutable import freeze_json
+from amber.schemas._wire import SchemaVersion, Timestamp
 from amber.schemas.provenance import Provenance
 
-EVENT_SCHEMA_VERSION = "0.1"
 _Text = Annotated[str, Field(strict=True, min_length=1)]
 
 EventRole: TypeAlias = Literal["reviewer", "adjudicator", "importer", "system"]
@@ -56,7 +55,7 @@ class AnnotationEvent(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     event_id: Annotated[str, Field(strict=True)]
-    schema_version: Literal["0.1"] = "0.1"
+    schema_version: SchemaVersion = "amber/0.1"
     case_id: _Text
     variable: _Text | None = None
     actor: _Text
@@ -68,7 +67,7 @@ class AnnotationEvent(BaseModel):
     before: Mapping[str, Any] | None = None
     after: Mapping[str, Any] | None = None
     reason: _Text | None = None
-    at: datetime
+    at: Timestamp
     provenance: Provenance
     external_ref: _Text | None = None
 

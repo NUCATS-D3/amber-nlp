@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime
 from typing import Annotated, Any, Literal, Self
 
 from pydantic import (
@@ -17,6 +16,7 @@ from pydantic import (
 
 from amber.ids import validate_ulid
 from amber.schemas._immutable import freeze_json
+from amber.schemas._wire import Timestamp
 from amber.schemas.provenance import Provenance
 
 _CLAIM_MINT_CONTEXT = object()
@@ -44,7 +44,7 @@ class _ClaimRecord(BaseModel):
     reading_id: _StrictString | None = None
     schema_ref: _StrictString
     value: dict[str, Any]
-    effective_datetime: datetime | None
+    effective_datetime: Timestamp | None
     confidence: _Confidence | None
     status: Literal["proposed", "verified", "rejected", "gold"] = "proposed"
     provenance: Provenance

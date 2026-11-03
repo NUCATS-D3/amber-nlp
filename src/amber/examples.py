@@ -20,11 +20,10 @@ from amber._graph_validation import (
     validate_state,
 )
 from amber.ids import example_id, validate_ulid
+from amber.schemas._wire import check_schema_version
 from amber.schemas.cases import Case, CaseOutcome
 from amber.schemas.examples import (
-    EXAMPLE_SCHEMA_VERSION,
     HUMAN_TIERS,
-    LABEL_RECORD_SCHEMA_VERSION,
     Example,
     LabelRecord,
     VariableReference,
@@ -90,6 +89,13 @@ def _bound_case(case: Case) -> Case:
         return Case.model_validate(case.model_dump(warnings=False))
     except (AttributeError, TypeError, ValueError):
         _raise("invalid_context")
+
+
+def _require_schema_version(payload: dict[str, Any]) -> None:
+    try:
+        payload["schema_version"] = check_schema_version(payload["schema_version"])
+    except ValueError:
+        _raise("invalid_schema")
 
 
 def _require_set(payload: Mapping[str, Any], variables: VariableSet) -> None:
@@ -230,8 +236,9 @@ def load_example(
     """
     bound_case = _bound_case(case)
     copied = _mapping(payload)
-    if set(copied) != _EXAMPLE_KEYS or copied["schema_version"] != EXAMPLE_SCHEMA_VERSION:
+    if set(copied) != _EXAMPLE_KEYS:
         _raise("invalid_schema")
+    _require_schema_version(copied)
     _require_set(copied, variables)
     _require_case(copied, bound_case, variables)
     if (
@@ -315,8 +322,9 @@ def load_label_record(
     """
     bound_case = _bound_case(case)
     copied = _mapping(payload)
-    if set(copied) != _LABEL_KEYS or copied["schema_version"] != LABEL_RECORD_SCHEMA_VERSION:
+    if set(copied) != _LABEL_KEYS:
         _raise("invalid_schema")
+    _require_schema_version(copied)
     _require_set(copied, variables)
     _require_case(copied, bound_case, variables)
     variable = (

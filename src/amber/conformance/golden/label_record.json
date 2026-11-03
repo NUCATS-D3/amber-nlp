@@ -1,0 +1,1 @@
+{"schema_version":"amber/0.1","case_id":"conformance-case-1","variable":"summary","variable_set":"conformance_findings","variable_set_version":"1.0.0","variable_set_ref":"298091a095d44a94be83fad02361ed95948bc3fd1b1b02199a46271a3659c1e7","tier":"silver","outcome_status":"answered","value":{"present":true},"producer":"model:amber-conformance-teacher@1","split":"dev"}

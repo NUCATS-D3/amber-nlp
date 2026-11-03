@@ -10,6 +10,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from amber.ids import source_id as make_source_id
+from amber.schemas._wire import Timestamp
 
 
 class SourceKind(StrEnum):
@@ -46,7 +47,7 @@ class Source(BaseModel):
     patient_id: str = Field(min_length=1)
     kind: SourceKind
     external_id: str | None
-    datetime: DateTime | None
+    datetime: Timestamp | None
     text: str | None
     record: dict[str, Any] | None
     sections: list[Section] = Field(default_factory=list)

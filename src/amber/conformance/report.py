@@ -14,6 +14,7 @@ import amber
 from amber.conformance.catalog import CASES, CATALOG, CATALOG_VERSION, TARGETS, catalog_revision
 from amber.conformance.checks import CHECKS, ConformanceFailure, Subject
 from amber.conformance.fixtures import fixtures_ref
+from amber.schemas._wire import SCHEMA_VERSION, SchemaVersion
 
 CaseStatus = Literal["passed", "failed", "not_applicable", "not_implemented"]
 
@@ -41,7 +42,7 @@ class CaseReport(BaseModel):
 class ConformanceReport(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal["0.1"] = "0.1"
+    schema_version: SchemaVersion = SCHEMA_VERSION
     subject: ReportSubject
     amber_version: str
     targets: tuple[str, ...]

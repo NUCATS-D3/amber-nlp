@@ -10,12 +10,12 @@ own judgement instead.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from datetime import datetime
 from typing import Annotated, Any, overload
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from amber.ids import canonical_json
+from amber.schemas._wire import Timestamp
 from amber.schemas.annotations import AnnotationEvent, EventAction, EventRole
 from amber.schemas.cases import Case, CaseResult
 from amber.schemas.examples import LabelRecord
@@ -92,7 +92,7 @@ class EventLabel(BaseModel):
     stream: _Text | None
     action: EventAction
     target_id: _Text | None
-    at: datetime
+    at: Timestamp
     external_ref: _Text | None
 
 
@@ -129,7 +129,7 @@ def _result_labels(
         try:
             records.append(
                 LabelRecord(
-                    schema_version="0.1",
+                    schema_version="amber/0.1",
                     case_id=result.case_id,
                     variable=name,
                     variable_set=result.variable_set,

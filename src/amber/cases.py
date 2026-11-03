@@ -7,10 +7,13 @@ from typing import Any, Literal, NoReturn, TypeAlias
 
 from amber.graph import EvidenceGraph
 from amber.ids import validate_ulid
+from amber.schemas._wire import SCHEMA_VERSION, check_schema_version
 from amber.schemas.cases import (
+    Budget,
     Case,
     CaseOutcome,
     CaseResult,
+    Usage,
     VariableOutcome,
     _mint_case_result,
     case_status,
@@ -29,6 +32,7 @@ CaseValidationCode: TypeAlias = Literal[
     "invalid_outcome",
     "variable_set_mismatch",
     "run_mismatch",
+    "budget_exceeded",
 ]
 _RESULT_KEYS = frozenset(CaseResult.model_fields)
 _VARIABLE_OUTCOME_KEYS = frozenset(VariableOutcome.model_fields)
@@ -129,6 +133,28 @@ def validate_case_outcome(*, case: Case, graph: EvidenceGraph, outcome: CaseOutc
     return bound_outcome
 
 
+def _budget(value: Any) -> Budget | None:
+    try:
+        if value is None:
+            return None
+        if isinstance(value, Budget):
+            value = value.model_dump()
+        return Budget.model_validate(value)
+    except (TypeError, ValueError):
+        _raise("invalid_schema")
+
+
+def _usage(value: Any) -> Usage | None:
+    try:
+        if value is None:
+            return None
+        if isinstance(value, Usage):
+            value = value.model_dump()
+        return Usage.model_validate(value)
+    except (TypeError, ValueError):
+        _raise("invalid_schema")
+
+
 def _identifiers(value: Any) -> list[str]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
         _raise("invalid_schema")
@@ -218,10 +244,29 @@ def _finish(case: Case, graph: EvidenceGraph, payload: Mapping[str, Any]) -> Cas
     # Every node of a result was produced by its run (contract v0.1 section 6.6 decision 4).
     if any(provenance.run_id != run_id for provenance in provenances):
         _raise("run_mismatch")
+    budget, usage = _budget(payload["budget"]), _usage(payload["usage"])
+    # Loading never rewrites an outcome: an over-budget run must already say so (6.6 decision 8).
+    if (
+        budget is not None
+        and usage is not None
+        and usage.exceeds(budget)
+        and any(
+            item.outcome.status != "failed" or item.outcome.failure_kind != "budget"
+            for item in outcomes.values()
+        )
+    ):
+        _raise("budget_exceeded")
+    try:
+        schema_version = check_schema_version(payload["schema_version"])
+    except ValueError:
+        _raise("invalid_schema")
     try:
         return _mint_case_result(
             {
                 **payload,
+                "schema_version": schema_version,
+                "budget": budget,
+                "usage": usage,
                 "variable_set": variables.name,
                 "variable_set_version": variables.version,
                 "variable_set_ref": variables.schema_ref,
@@ -247,6 +292,8 @@ def create_case_result(
     outcome: CaseOutcome | None = None,
     final_claim_ids: Sequence[str] | None = None,
     variable_outcomes: Mapping[str, VariableOutcome] | None = None,
+    budget: Budget | None = None,
+    usage: Usage | None = None,
     grounding_failures: int = 0,
     tool_calls: int = 0,
     escalated: bool = False,
@@ -290,8 +337,11 @@ def create_case_result(
         bound_case,
         validated_graph,
         {
+            "schema_version": SCHEMA_VERSION,
             "case_id": bound_case.case_id,
             "run_id": run_id,
+            "budget": budget,
+            "usage": usage,
             "variable_outcomes": supplied,
             "claims": [],
             "evidence": [],

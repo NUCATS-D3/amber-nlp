@@ -140,7 +140,7 @@ def check_ann_05(subject: Subject) -> None:
     )
     label = load_label_record(
         {
-            "schema_version": "0.1",
+            "schema_version": "amber/0.1",
             "case_id": "conformance-case-1",
             "variable": "summary",
             "variable_set": fx.VARIABLES.name,

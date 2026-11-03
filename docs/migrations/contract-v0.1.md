@@ -123,9 +123,27 @@ decision 4). `Case` gains an optional `dataset`.
   each node's `provenance.run_id` to it only if they truly came from one run; otherwise
   regenerate them.
 
+### JSON records carry `amber/0.1`, budgets, and UTC timestamps
+
+Every §5.3 JSON record carries `schema_version: "amber/0.1"`: `CaseResult`, `Example`,
+`AnnotationEvent`, `LabelRecord`, `Decision`, and the new VariableSet JSON
+(`amber.wire.variable_set_json` / `load_variable_set`). Readers accept `amber/0.<n>` with
+`n` ≤ 1, normalize it to `amber/0.1`, and reject other majors and newer minors. `CaseResult`
+gains `budget` and `usage` (§6.3), and its keys follow the §5.3 order. JSON timestamps are
+UTC with `Z` and six fractional digits (§5.2); hashes and Python values are unchanged.
+
+- **Affected:** stored case results (missing `schema_version`, `budget`, `usage`:
+  `invalid_schema`); stored Examples, label records, and events written with
+  `schema_version: "0.1"`; readers comparing timestamp strings; results whose `usage`
+  exceeds their `budget` without every variable `failed` with `failure_kind="budget"`
+  (`budget_exceeded`).
+- **Upgrade:** add `"schema_version": "amber/0.1"`, `"budget": null`, and `"usage": null` to
+  stored case results; rewrite `"0.1"` as `"amber/0.1"` elsewhere. Parse timestamps instead
+  of comparing strings. An over-budget run must record `failed(budget)` itself; loading
+  never rewrites an outcome.
+
 ## Still to implement
 
 Each entry moves to "Implemented" in the commit that makes the change:
 
 - A structured source's `source_id` includes its canonical `record` (§2.6, `amber-ndt.3`).
-- `CaseResult` gains `budget` and `usage` (§5.4, §6.6).

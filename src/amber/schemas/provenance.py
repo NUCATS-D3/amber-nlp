@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from amber.ids import parse_producer
 from amber.schemas._immutable import freeze_json
+from amber.schemas._wire import Timestamp
 
 
 class Zone(StrEnum):
@@ -40,7 +40,7 @@ class Provenance(BaseModel):
     restriction_ids: tuple[str, ...] = ()
     zone: Zone
     sensitivity: Sensitivity
-    created_at: datetime
+    created_at: Timestamp
     version: str = Field(min_length=1)
 
     @field_validator("producer")

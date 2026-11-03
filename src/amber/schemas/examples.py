@@ -7,7 +7,6 @@ complete validation against the authoritative Source, Case, and VariableSet.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Any, Literal, Self
 
@@ -23,13 +22,12 @@ from pydantic import (
 
 from amber.ids import parse_producer, validate_ulid
 from amber.schemas._immutable import FrozenMapping, freeze_json
+from amber.schemas._wire import SchemaVersion, Timestamp
 from amber.schemas.cases import CaseOutcome, OutcomeStatus, Split, _FrozenRecords
 from amber.schemas.claims import Claim
 from amber.schemas.evidence import EvidenceEdge, Inclusion, InferenceEvidence
 from amber.schemas.mentions import Mention, MentionReading
 
-EXAMPLE_SCHEMA_VERSION = "0.1"
-LABEL_RECORD_SCHEMA_VERSION = "0.1"
 _Identifier = Annotated[str, Field(strict=True, min_length=1)]
 _EXAMPLE_MINT_CONTEXT = object()
 _EXAMPLE_GUARD_MESSAGE = "Example requires the validated annotated-data boundary"
@@ -130,7 +128,7 @@ class Example(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     example_id: _Identifier
-    schema_version: Literal["0.1"]
+    schema_version: SchemaVersion
     case_id: _Identifier
     variable_set: _Identifier
     variable_set_version: _Identifier
@@ -145,7 +143,7 @@ class Example(BaseModel):
     mention_readings: list[MentionReading]
     evidence: list[SkipValidation[Inclusion | InferenceEvidence]]
     edges: list[EvidenceEdge]
-    created_at: datetime
+    created_at: Timestamp
 
     @model_validator(mode="before")
     @classmethod
@@ -187,7 +185,7 @@ class LabelRecord(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal["0.1"]
+    schema_version: SchemaVersion
     case_id: _Identifier
     variable: _Identifier
     variable_set: _Identifier

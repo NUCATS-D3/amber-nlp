@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from amber.ids import canonical_sha256, validate_ulid
 from amber.schemas._immutable import FrozenMapping
+from amber.schemas._wire import SCHEMA_VERSION, SchemaVersion, Timestamp
 from amber.schemas.provenance import Provenance, Sensitivity, Zone
 
 PayloadKind: TypeAlias = Literal[
@@ -139,7 +140,7 @@ class Restriction(BaseModel):
     forbids_training_on_inputs: bool = False
     requires_tags: frozenset[str] = frozenset()
     forbids_payloads: frozenset[PayloadKind] = frozenset()
-    valid_until: datetime | None = None
+    valid_until: Timestamp | None = None
     note: _Name
 
     @field_validator("id", "note")
@@ -274,7 +275,8 @@ class Decision(BaseModel):
     dataset: str | None
     run_id: str | None
     case_id: str | None
-    checked_at: datetime
+    checked_at: Timestamp
+    schema_version: SchemaVersion = SCHEMA_VERSION
 
     @field_validator("checked_at")
     @classmethod

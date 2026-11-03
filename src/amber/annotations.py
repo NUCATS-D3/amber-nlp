@@ -600,7 +600,7 @@ def example_from_projection(
             variable_set_ref=variables.schema_ref,
             as_of_event=projection.as_of_event,
         ),
-        "schema_version": "0.1",
+        "schema_version": "amber/0.1",
         "case_id": case.case_id,
         "variable_set": variables.name,
         "variable_set_version": variables.version,

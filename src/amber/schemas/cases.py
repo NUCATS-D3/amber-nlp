@@ -17,6 +17,7 @@ from pydantic import (
 
 from amber.ids import validate_ulid
 from amber.schemas._immutable import FrozenMapping, _FrozenList, freeze_json
+from amber.schemas._wire import SchemaVersion
 from amber.schemas.claims import Claim
 from amber.schemas.evidence import EvidenceEdge, Inclusion, InferenceEvidence
 from amber.schemas.mentions import Mention, MentionReading
@@ -127,6 +128,41 @@ class CaseOutcome(BaseModel):
         return self
 
 
+_Count = Annotated[int, Field(strict=True, ge=0)]
+_Seconds = Annotated[float, Field(allow_inf_nan=False, ge=0)]
+
+
+class Budget(BaseModel):
+    """Limits a run was given; ``None`` means unlimited (contract v0.1 section 6.3)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    max_calls: _Count | None = None
+    max_tokens: _Count | None = None
+    max_retries: _Count | None = None
+    max_seconds: _Seconds | None = None
+
+
+class Usage(BaseModel):
+    """What a run actually used."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    calls: _Count = 0
+    tokens: _Count = 0
+    retries: _Count = 0
+    seconds: _Seconds = 0.0
+
+    def exceeds(self, budget: Budget) -> bool:
+        limits = (
+            (self.calls, budget.max_calls),
+            (self.tokens, budget.max_tokens),
+            (self.retries, budget.max_retries),
+            (self.seconds, budget.max_seconds),
+        )
+        return any(limit is not None and used > limit for used, limit in limits)
+
+
 class VariableOutcome(BaseModel):
     """The outcome and final claims of one final variable of a case."""
 
@@ -174,27 +210,29 @@ class CaseResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    schema_version: SchemaVersion
     case_id: _Identifier
     run_id: _Identifier
     variable_set: _Identifier
     variable_set_version: _Identifier
     variable_set_ref: _Identifier
     claims: list[Claim]
-    # The guarded result boundary supplies records from a fully revalidated graph.
-    # Re-running Inclusion's minter validator here would require a third minting path.
+    # Mentions and inclusions are re-minted by graph validation before reaching this model;
+    # re-running their minter validators here would require another minting path.
+    mentions: list[SkipValidation[Mention]]
+    mention_readings: list[MentionReading]
     evidence: list[SkipValidation[Inclusion | InferenceEvidence]]
     edges: list[EvidenceEdge]
     variable_outcomes: Mapping[str, VariableOutcome]
     # Present exactly when the set has one final variable, and equal to its VariableOutcome.
-    final_claim_ids: list[_Identifier] | None
     outcome: CaseOutcome | None
-    # Mentions, like inclusions, are re-minted by graph validation before reaching this model.
-    mentions: list[SkipValidation[Mention]]
-    mention_readings: list[MentionReading]
+    final_claim_ids: list[_Identifier] | None
     grounding_failures: int = Field(strict=True, ge=0)
     tool_calls: int = Field(strict=True, ge=0)
     escalated: bool = Field(strict=True)
     trace_id: Annotated[str, Field(strict=True)] | None
+    budget: Budget | None
+    usage: Usage | None
 
     @model_validator(mode="before")
     @classmethod

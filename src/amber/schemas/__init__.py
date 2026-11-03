@@ -6,7 +6,7 @@ answer models belong to the projects that define those tasks, not to amber-nlp.
 
 from amber.schemas.annotations import AnnotationEvent
 from amber.schemas.answers import AnswerModel
-from amber.schemas.cases import Case, CaseOutcome, CaseResult, VariableOutcome
+from amber.schemas.cases import Budget, Case, CaseOutcome, CaseResult, Usage, VariableOutcome
 from amber.schemas.claims import Claim
 from amber.schemas.evidence import EvidenceEdge, GroundingFailure, Inclusion, InferenceEvidence
 from amber.schemas.examples import Example, LabelRecord, ReferenceTier, VariableReference
@@ -17,6 +17,7 @@ from amber.schemas.tasks import Task
 from amber.schemas.variables import AttributeRequirement, Variable, VariableSet
 
 __all__ = [
+    "Budget",
     "Case",
     "CaseOutcome",
     "CaseResult",
@@ -41,6 +42,7 @@ __all__ = [
     "Source",
     "SourceKind",
     "Task",
+    "Usage",
     "Variable",
     "VariableOutcome",
     "VariableReference",

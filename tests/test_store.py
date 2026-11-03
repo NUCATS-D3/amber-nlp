@@ -366,7 +366,7 @@ def test_current_example_is_none_without_events() -> None:
 
 def _label(split: str | None) -> Any:
     payload = {
-        "schema_version": "0.1",
+        "schema_version": "amber/0.1",
         "case_id": CASE.case_id,
         "variable": "summary",
         "variable_set": VARIABLES.name,
