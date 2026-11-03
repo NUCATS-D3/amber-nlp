@@ -4,6 +4,8 @@ This document describes the contract that amber-nlp implements today. Planned ad
 listed at the end and tracked in Beads. The pre-reset specification is preserved in
 [history/02-v1-schemas-and-tools.md](history/02-v1-schemas-and-tools.md) as design input; it is
 not binding where it describes pipelines, agents, tables, or tools that amber-nlp no longer owns.
+Upgrading code or stored payloads from before contract v0.1 is covered in
+[migrations/contract-v0.1.md](migrations/contract-v0.1.md).
 
 Every model is Pydantic v2 with `extra="forbid"`. Value objects are frozen, and nested values
 resist mutation. Offsets are end-exclusive Python code points into the immutable

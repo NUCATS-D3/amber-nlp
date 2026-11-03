@@ -2,11 +2,18 @@
 
 Contract v0.1 ([design](../design/contract-v0.1.md)) changes some records and identifiers that
 existing code and stored payloads depend on. Each change is listed here when it is implemented,
-with who is affected and how to upgrade. Changes still to be implemented are listed at the end.
+with who is affected, how to upgrade, and the commit that made it. Changes still to be
+implemented are listed at the end.
+
+The other v0.1 additions (labelers, review backends, derivations and rules, the evaluation
+harness) are additive: old payloads load unchanged and keep their IDs, so they need no
+migration.
 
 ## Implemented
 
 ### Provenance gains destination, policy version, and restrictions
+
+Commit: `6d1de59`.
 
 `Provenance` now requires `destination` and `policy_version`, and accepts `restriction_ids`
 (contract §1.6).
@@ -22,6 +29,8 @@ with who is affected and how to upgrade. Changes still to be implemented are lis
 
 ### Producer references are validated
 
+Commit: `6d1de59`.
+
 `Provenance.producer` must be a producer reference: `rule:<name>@<version>[+<hash>]`,
 `model:<name>[@<version>]`, `human:<user>`, or `tool:<name>[@<version>]` (contract §1.6).
 
@@ -29,6 +38,8 @@ with who is affected and how to upgrade. Changes still to be implemented are lis
 - **Upgrade:** rewrite each producer in the grammar. A rule without a version needs one.
 
 ### Canonical JSON follows RFC 8785
+
+Commit: `6d1de59`.
 
 `amber.ids.canonical_json` and `canonical_sha256` implement RFC 8785 (contract §5.2).
 
@@ -50,6 +61,8 @@ with who is affected and how to upgrade. Changes still to be implemented are lis
 
 ### `Inclusion.mention_id` is removed; `mention_id` hashes fragments
 
+Commit: `2a7fd4e`.
+
 Inclusions are positions only (§2.3), so `Inclusion` no longer has a `mention_id` field.
 `amber.ids.mention_id` accepts `fragments` and hashes them only when nonempty (§2.2).
 
@@ -63,6 +76,8 @@ Inclusions are positions only (§2.3), so `Inclusion` no longer has a `mention_i
 
 ### Graph snapshots and case results carry mentions and readings
 
+Commit: `4b0fd80`.
+
 `EvidenceGraph.to_payload` writes `mentions` and `mention_readings` lists (introduced in
 `format_version` 2, now 3; see below), and `from_payload` requires them. `CaseResult.mentions` holds
 `Mention` records instead of being forced empty, and `CaseResult` gains a required
@@ -75,6 +90,8 @@ Inclusions are positions only (§2.3), so `Inclusion` no longer has a `mention_i
   produced before this change never had mentions, so nothing else changes.
 
 ### `Task` is a one-variable `VariableSet`; claims name their variable
+
+Commit: `a517856`.
 
 `EvidenceGraph`, `from_payload`, and `load_case_result` accept `task=` or `variables=`; a
 `Task` is wrapped by `VariableSet.from_task` (version label `task`) (§3.2). `Claim` gains a
@@ -93,6 +110,8 @@ required `variable` (§3.3). Graph snapshots move to `format_version` 3, whose `
 
 ### Case results record their variable set and per-variable outcomes
 
+Commit: `c19f896`.
+
 `CaseResult` gains `variable_set`, `variable_set_version`, `variable_set_ref`, and
 `variable_outcomes` (one `VariableOutcome` per final variable). `outcome` and
 `final_claim_ids` become nullable: they equal the single final variable's outcome when the set
@@ -110,6 +129,8 @@ has one, and are null otherwise (§3.5). `create_case_result` takes `outcome` an
 
 ### Case results carry their run
 
+Commit: `540ec2a`.
+
 `CaseResult` gains a required `run_id` (a ULID), and `create_case_result` takes `run_id`.
 Every claim, inference, mention reading, and variable outcome in the result must have
 `provenance.run_id` equal to it, so stores can key results by `(case_id, run_id)` (§6.6
@@ -124,6 +145,8 @@ decision 4). `Case` gains an optional `dataset`.
   regenerate them.
 
 ### JSON records carry `amber/0.1`, budgets, and UTC timestamps
+
+Commit: `00c8932` (key order: `0aea5b8`.
 
 Every §5.3 JSON record carries `schema_version: "amber/0.1"`: `CaseResult`, `Example`,
 `AnnotationEvent`, `LabelRecord`, `Decision`, and the new VariableSet JSON
@@ -146,6 +169,8 @@ UTC with `Z` and six fractional digits (§5.2); hashes and Python values are unc
   never rewrites an outcome.
 
 ### A structured source's `source_id` includes its record
+
+Commit: `62fb532`.
 
 `ids.source_id` hashes the canonical `record` whenever it is set (§2.6, decision 2.9.13), and
 `Source.record` is frozen. Note sources (no record) hash exactly as before.
