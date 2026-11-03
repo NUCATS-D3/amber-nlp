@@ -168,7 +168,8 @@ class AmberClaimsAdapter:
 
     # records ---------------------------------------------------------------------------------
 
-    def _source_and_case(self, example: dict[str, Any]) -> tuple[Source, Case]:
+    def source_and_case(self, example: dict[str, Any]) -> tuple[Source, Case]:
+        """The amber note source and case a loupe example stands for."""
         record = example.get("source_record") or {}
         metadata = record.get("metadata") if isinstance(record, dict) else None
         text = example.get("source_text")
@@ -278,7 +279,7 @@ class AmberClaimsAdapter:
         inventory: dict[str, Any],
         configuration_sha256: str,
     ) -> dict[str, Any]:
-        source, case = self._source_and_case(example)
+        source, case = self.source_and_case(example)
         reviewer, normalized = self._normalize(request)
         producer = "human:" + re.sub(r"\s+", "-", reviewer.strip())
         seed = canonical_sha256(
@@ -428,7 +429,7 @@ class AmberClaimsAdapter:
         )
         if expected != result:
             _fail("result_mismatch")
-        source, case = self._source_and_case(example)
+        source, case = self.source_and_case(example)
         try:
             load_case_result(
                 result["case_result"], case=case, source=source, variables=self.variables

@@ -25,6 +25,7 @@ The suite is flat and grouped by the boundary under test. All inputs are invente
 | `test_scoring.py` | Score reports, self-reference refusal, move-on inclusion, reference scorers |
 | `test_labeling.py` | Labelers: silver-only admission, import events that replay to the Example, ImportLabeler outcomes |
 | `test_evaluation.py` | Binary metric harness: protocol arithmetic, P=0, Q=0, no answers, provisional and label-only gates, Wilson and bootstrap |
+| `test_loupe_reference.py` | loupe export manifests, publication import (adjudicated, single review, unresolved, excluded), tampered publications, the loupe ReviewBackend |
 | `test_loupe_adapter.py` | loupe claim-mode adapter: CaseResults from requests, Unicode and CRLF offsets, repeated quotes, forged offsets, field evidence, outcomes, reproducible rebuilds, tampered results |
 | `test_mlflow_tracking.py` | Gated run, decision, and trace logging; local tracking; redacted prompts; refused destinations (needs tracking) |
 | `test_mlflow_datasets.py` | Examples as MLflow evaluation datasets: lossless records, gating, reload and event verification (needs tracking) |

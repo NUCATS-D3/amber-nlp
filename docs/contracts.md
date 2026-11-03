@@ -284,6 +284,30 @@ complete the case.
   `missing_field_evidence`, `invalid_outcome`, `source_identity_mismatch`, ...).
   Mention-level variables are refused (`unsupported_variable_level`).
 
+Export and import (`amber.loupe.reference`):
+
+- `source_manifest(cases, *, name, variables, project_configuration, streams, synthetic,
+  gate, data, destination, now)` builds a loupe source manifest for claim mode after a
+  `source_text` decision for the `review` destination: one record per note (`record_id` =
+  `source_id`, exact text, metadata with patient, external ID, case, split, sensitivity,
+  dataset, and variable set; no labels).
+- `import_reference(reference, *, resolver, variables)` imports a `loupe-reference-v1`
+  publication. The publication's `snapshot_sha256` and `adapter_sha256` must match its content
+  and the installed adapter; each record's text must be its resolved source; every considered
+  review is rebuilt by the adapter and reloaded at amber's boundary, so quotes are regrounded
+  and tampered values, offsets, or failed outcomes are refused. Reviews become reviewer events
+  in their streams (claims with support, outcomes, `review.submit` with the submission ID).
+  With one stream the reviewer sets `single_review`; otherwise the adjudicator rejects the
+  unselected reviews' claims, sets the selected outcomes, resolves with the publication hash
+  as `external_ref`, and sets `adjudicated`. `unresolved` and `excluded` records are resolved
+  with their reason and give a `RecordDiagnostic` instead of an Example. Event IDs increase
+  per case and event times are ordinal, so imports are reproducible. Returns
+  `ImportedReference(examples, events, spans, diagnostics)`; `ReferenceError` codes are
+  source-free.
+- `LoupeReviewBackend` implements `ReviewBackend` over these files: `export_cases` writes
+  `source.json` into a batch directory (proposals are refused until loupe supports them), and
+  `import_references` reads the publication's `reference.json` placed beside it.
+
 ## Rules (`amber.rules`, experimental)
 
 - `RoleSpec` (`source`: a variable or `evidence:inclusion`; `cardinality` `one` or `many`;
