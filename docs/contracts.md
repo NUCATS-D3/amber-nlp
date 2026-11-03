@@ -18,7 +18,7 @@ normalization. Timestamps must be timezone-aware and hash as UTC with six fracti
 
 | Identifier | Derivation |
 |---|---|
-| `source_id` | Canonical SHA-256 of `patient_id`, `kind`, `external_id`, `text` |
+| `source_id` | Canonical SHA-256 of `patient_id`, `kind`, `external_id`, `text`, and `record` only when set |
 | Inclusion `evidence_id` | Canonical SHA-256 of `source_id`, `start`, `end` |
 | `mention_id` | Canonical SHA-256 of `source_id`, `start`, `end`, `mention_type`, and `fragments` only when nonempty |
 | structured `evidence_id` | Canonical SHA-256 (helper exists; the model is deferred) |

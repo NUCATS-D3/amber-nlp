@@ -202,15 +202,25 @@ def producer_configuration(producers: Iterable[str]) -> frozenset[str]:
     return frozenset(key for key in keys if key is not None)
 
 
-def source_id(*, patient_id: str, kind: str, external_id: str | None, text: str | None) -> str:
-    return canonical_sha256(
-        {
-            "external_id": external_id,
-            "kind": kind,
-            "patient_id": patient_id,
-            "text": text,
-        }
-    )
+def source_id(
+    *,
+    patient_id: str,
+    kind: str,
+    external_id: str | None,
+    text: str | None,
+    record: Mapping[str, Any] | None = None,
+) -> str:
+    """Hash a source; the canonical ``record`` enters only when set, so note-source IDs are
+    unchanged and two structured rows differing only in content never share an ID."""
+    fields: dict[str, Any] = {
+        "external_id": external_id,
+        "kind": kind,
+        "patient_id": patient_id,
+        "text": text,
+    }
+    if record is not None:
+        fields["record"] = record
+    return canonical_sha256(fields)
 
 
 def mention_id(

@@ -145,8 +145,17 @@ UTC with `Z` and six fractional digits (§5.2); hashes and Python values are unc
   of comparing strings. An over-budget run must record `failed(budget)` itself; loading
   never rewrites an outcome.
 
+### A structured source's `source_id` includes its record
+
+`ids.source_id` hashes the canonical `record` whenever it is set (§2.6, decision 2.9.13), and
+`Source.record` is frozen. Note sources (no record) hash exactly as before.
+
+- **Affected:** stored structured sources (`record` set): their `source_id` changes, and so do
+  the IDs of inclusions and mentions on them. Before this change, rows with the same patient,
+  kind, and external ID collided.
+- **Upgrade:** recompute structured sources with `Source.create` and re-key anything that
+  referenced their old IDs. Note sources need nothing.
+
 ## Still to implement
 
-Each entry moves to "Implemented" in the commit that makes the change:
-
-- A structured source's `source_id` includes its canonical `record` (§2.6, `amber-ndt.3`).
+Nothing: every breaking change listed by the contract v0.1 design is implemented above.

@@ -7,9 +7,10 @@ from datetime import datetime as DateTime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from amber.ids import source_id as make_source_id
+from amber.schemas._immutable import freeze_json
 from amber.schemas._wire import Timestamp
 
 
@@ -49,6 +50,7 @@ class Source(BaseModel):
     external_id: str | None
     datetime: Timestamp | None
     text: str | None
+    # Frozen: a structured row's content is part of its source_id.
     record: dict[str, Any] | None
     sections: list[Section] = Field(default_factory=list)
     meta: dict[str, Any] = Field(default_factory=dict)
@@ -72,6 +74,7 @@ class Source(BaseModel):
                 kind=kind.value,
                 external_id=external_id,
                 text=text,
+                record=record,
             ),
             patient_id=patient_id,
             kind=kind,
@@ -83,16 +86,30 @@ class Source(BaseModel):
             meta={} if meta is None else meta,
         )
 
+    @field_validator("record")
+    @classmethod
+    def freeze_record(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        try:
+            return freeze_json(value)  # type: ignore[no-any-return]
+        except TypeError:
+            raise ValueError("record must hold JSON values only") from None
+
     @model_validator(mode="after")
     def validate_content_and_id(self) -> Source:
         if self.text is None and self.record is None:
             raise ValueError("source must contain text or a structured record")
-        expected_id = make_source_id(
-            patient_id=self.patient_id,
-            kind=self.kind.value,
-            external_id=self.external_id,
-            text=self.text,
-        )
+        try:
+            expected_id = make_source_id(
+                patient_id=self.patient_id,
+                kind=self.kind.value,
+                external_id=self.external_id,
+                text=self.text,
+                record=self.record,
+            )
+        except (TypeError, ValueError):
+            raise ValueError("record must be canonical JSON") from None
         if self.source_id != expected_id:
             raise ValueError("source_id does not match the source identity fields")
         if self.text is None and self.sections:
