@@ -11,7 +11,7 @@ The suite is flat and grouped by the boundary under test. All inputs are invente
 | `test_variables.py` | Variable sets: validation, identity, `Task` sugar, multi-variable claims, dependencies |
 | `test_mention_claims.py` | Mention-level claims: readings, span citation, required attributes, sections |
 | `test_variable_outcomes.py` | Per-variable outcomes, `case_status`, case-level mirroring, variable-set binding |
-| `test_examples.py` | Examples and label records: tiers and claim status, references, identity, split, mentions |
+| `test_examples.py` | Examples and label records: tiers and claim status, references, identity, split, mentions; content-addressed `example_id` |
 | `test_annotations.py` | Events, replay determinism and prefixes, blind streams, transitions, tiers, move-on, Examples from events |
 | `test_store.py` | Store protocol and `InMemoryStore`: splits, runs, append-only events, projections, Examples, resolver |
 | `test_conformance_bundle.py` | Bundle conformance: WIR cases against written bundles, diagnostics mapped to cases, blocked cases, bundle reports, plugin bundle mode (needs bundles) |

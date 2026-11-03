@@ -245,11 +245,7 @@ class InMemoryStore:
             _raise("variable_set_mismatch")
         if example.split != case.split:
             _raise("split_mismatch")
-        if example.example_id != example_id(
-            case_id=case.case_id,
-            variable_set_ref=variables.schema_ref,
-            as_of_event=example.as_of_event,
-        ):
+        if example.example_id != example_id(example.model_dump(mode="json")):
             _raise("example_id_mismatch")
         log = self._events.get(case.case_id, [])
         if example.as_of_event not in {event.event_id for event in log}:

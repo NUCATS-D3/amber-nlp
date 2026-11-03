@@ -232,9 +232,46 @@ def load_example(
 ) -> Example:
     """Revalidate an Example against authoritative context (contract v0.1 section 4.3).
 
-    Graph problems raise ``GraphValidationError``; annotated-data problems raise
-    ``ExampleValidationError``. Neither renders payload values.
+    The ``example_id`` must be the hash of the validated content (``amber.ids.example_id``),
+    so any edited value, status, tier, outcome, or attribution fails with
+    ``example_id_mismatch``. Graph problems raise ``GraphValidationError``; annotated-data
+    problems raise ``ExampleValidationError``. Neither renders payload values.
     """
+    return _load_example(
+        payload, case=case, source=source, variables=variables, excluded_spans=excluded_spans
+    )
+
+
+def mint_example(
+    payload: Mapping[str, Any],
+    *,
+    case: Case,
+    source: Source,
+    variables: VariableSet,
+    excluded_spans: Sequence[tuple[int, int]] = (),
+) -> Example:
+    """Validate a payload exactly as ``load_example`` does and give it its content ID,
+    ignoring any supplied ``example_id``. Used to build Examples from projections and to
+    re-key Examples stored before content IDs."""
+    return _load_example(
+        payload,
+        case=case,
+        source=source,
+        variables=variables,
+        excluded_spans=excluded_spans,
+        assign_id=True,
+    )
+
+
+def _load_example(
+    payload: Mapping[str, Any],
+    *,
+    case: Case,
+    source: Source,
+    variables: VariableSet,
+    excluded_spans: Sequence[tuple[int, int]],
+    assign_id: bool = False,
+) -> Example:
     bound_case = _bound_case(case)
     copied = _mapping(payload)
     if set(copied) != _EXAMPLE_KEYS:
@@ -253,12 +290,10 @@ def load_example(
         validate_ulid(as_of_event)
     except (TypeError, ValueError):
         _raise("invalid_schema")
-    if copied["example_id"] != example_id(
-        case_id=bound_case.case_id,
-        variable_set_ref=variables.schema_ref,
-        as_of_event=as_of_event,
-    ):
-        _raise("example_id_mismatch")
+    if assign_id:
+        copied["example_id"] = "0" * 64
+    elif not isinstance(copied["example_id"], str):
+        _raise("invalid_schema")
 
     context = build_context(
         source=source,
@@ -312,6 +347,11 @@ def load_example(
         _raise("invalid_schema")
     if example.created_at.utcoffset() is None:
         _raise("invalid_schema")
+    content_id = example_id(example.model_dump(mode="json"))
+    if assign_id:
+        return example.model_copy(update={"example_id": content_id})
+    if example.example_id != content_id:
+        _raise("example_id_mismatch")
     return example
 
 

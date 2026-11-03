@@ -14,7 +14,7 @@ mlflow = pytest.importorskip("mlflow")
 
 from amber.annotations import AnnotationValidationError  # noqa: E402
 from amber.conformance import fixtures as fx  # noqa: E402
-from amber.examples import ExampleValidationError  # noqa: E402
+from amber.examples import ExampleValidationError, mint_example  # noqa: E402
 from amber.graph_errors import GraphValidationError  # noqa: E402
 from amber.mlflow_ext.datasets import (  # noqa: E402
     EXAMPLE_KEY,
@@ -110,13 +110,20 @@ def test_edited_records_never_reload(edit: Any) -> None:
 
 
 def test_an_edited_value_is_caught_against_the_events() -> None:
-    """Loading alone checks structure; the stored events pin what was reviewed."""
+    """The content ID pins reviewed values; the stored events pin how they were reached."""
     log, _ = fx.adjudicated(CASE.case_id)
     _, example = _gold()
     records = json.loads(json.dumps(examples_to_records([example])))
     assert _load(records, events={CASE.case_id: log.events}) == (example,)
     for claim in records[0]["expectations"][EXAMPLE_KEY]["claims"]:
         claim["value"] = {"present": False}
+    with pytest.raises(ExampleValidationError, match="example_id_mismatch"):
+        _load(records)
+    # A forger who also recomputes the ID is still caught by the events.
+    edited = records[0]["expectations"][EXAMPLE_KEY]
+    edited["example_id"] = mint_example(
+        edited, case=CASE, source=fx.SOURCE, variables=fx.VARIABLES
+    ).example_id
     assert _load(records)[0] != example
     with pytest.raises(AnnotationValidationError, match="events_mismatch"):
         _load(records, events={CASE.case_id: log.events})

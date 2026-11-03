@@ -466,7 +466,7 @@
     "Store",
     "Scorer"
    ],
-   "text": "A store rejects an Example whose `example_id` does not match its `(case_id, variable_set_ref, as_of_event)`; `current_example` returns the snapshot at the latest event; a `ScoreReport` lists the `example_id`s it scored against."
+   "text": "A store rejects an Example whose `example_id` does not match its content; `current_example` returns the snapshot at the latest event; a `ScoreReport` lists the `example_id`s it scored against."
   },
   {
    "id": "ANN-18",

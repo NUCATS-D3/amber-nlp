@@ -1112,7 +1112,7 @@ class VariableReference(BaseModel):           # frozen
     derived_from_events: tuple[str, ...]      # event IDs whose replay yields this reference
 
 class Example(BaseModel):                     # frozen, extra="forbid"; loaded only through amber.examples
-    example_id: str                           # sha256(case_id, variable_set_ref, as_of_event)
+    example_id: str                           # sha256 of the content (decision 4.10.10)
     schema_version: str
     case_id: str
     variable_set: str; variable_set_version: str; variable_set_ref: str
@@ -1129,9 +1129,10 @@ class Example(BaseModel):                     # frozen, extra="forbid"; loaded o
 ```
 
 **Snapshots.** An Example is the projection of a case's events up to and including
-`as_of_event`. Its `example_id` is derived from `(case_id, variable_set_ref, as_of_event)`, so
-anyone replaying the same events gets the same ID and any earlier snapshot can be rebuilt
-exactly from the event prefix. A rising tier, a correction, or an adjudicator's rejection
+`as_of_event`. Its `example_id` is the SHA-256 of its canonical content (every field except
+`example_id` and `schema_version`, record lists in canonical order), so anyone replaying the
+same events gets the same ID, any edit to a value, status, tier, outcome, or attribution breaks
+it, and any earlier snapshot can be rebuilt exactly from the event prefix. A rising tier, a correction, or an adjudicator's rejection
 appends events and so yields a new snapshot; old snapshots stay valid and addressable. The
 **current** Example for a case is the snapshot at its latest event. Score reports record the
 `example_id`s they scored against, so a result always names the exact gold it used.
@@ -1336,8 +1337,8 @@ event diff never contains an ungrounded span.
     `example_id`; appending an event (a tier rise, a correction) gives a new `example_id`, and
     replaying the prefix reproduces the old snapshot exactly.
 15. (Catalog `ANN-17`.) A store rejects an Example whose `example_id` does not match its
-    `(case_id, variable_set_ref, as_of_event)`; `current_example` returns the snapshot at the
-    latest event; a `ScoreReport` lists the `example_id`s it scored against.
+    content; `current_example` returns the snapshot at the latest event; a `ScoreReport` lists
+    the `example_id`s it scored against.
 16. (Catalog `ANN-18`.) A move-on `tier.set` must have `role=system` and a decision reference,
     or it is rejected; a `single_review` snapshot scored under move-on must include that event
     (`as_of_event` at or after it).
@@ -1377,6 +1378,19 @@ Reviewed and accepted 2026-11-02 (whole-document review):
 9. `LabelRecord` uses one producer reference (§1.6) and records the variable set's name,
    version, and `variable_set_ref`. §4.7 cites amber's tools and load boundary instead of the
    undefined `build_result`/`validate_result`.
+
+Reviewed and accepted 2026-11-03 (amber-sei):
+
+10. Revises decision 5: `example_id` is the SHA-256 of the Example's canonical content
+    (excluding `example_id` and `schema_version`; record lists in canonical order) instead of
+    `sha256(case_id, variable_set_ref, as_of_event)`. An ID derived only from the snapshot
+    point let an Example whose values were edited after review load anywhere it travelled
+    without its events; a content ID fails at every load boundary, and the `example_id`s in
+    score reports and datasets now pin the reference values themselves. Snapshots keep their
+    properties: the same events give the same ID, and a new event gives a new one. Replaying
+    against the events (`verify_example`) remains the check that the content came from review.
+    Made before any v0.1 release, so `schema_version` stays `amber/0.1`; stored Examples are
+    re-keyed (migration note).
 
 ## 5. Wire formats
 
@@ -1847,7 +1861,7 @@ results are keyed by `(case_id, run_id)` and `put_result` rejects a duplicate ke
 different methods on the same cases coexist; `append_events` is append-only (no update or
 delete); `project` honors blind streams by role (§4.4); `put_example` rejects a split that
 differs from the case's `(dataset, source_id)` split, a tier that the events do not support, and
-an `example_id` that does not match its `(case_id, variable_set_ref, as_of_event)` or whose
+an `example_id` that does not match its content or whose
 `as_of_event` is not already stored (events are appended first); `current_example` returns the
 snapshot at the case's latest event (§4.3).
 
@@ -2155,7 +2169,7 @@ whitespace-only sources, and the three stand-in variable sets.
 | `ANN-14` | implementation | ReviewBackend | Per-change events derived from a revision diff and a single full-state `review.submit` event replay to the same projection. |
 | `ANN-15` | core | — | Snapshot identity: replaying the same events gives the same `example_id`; appending an event (a tier rise, a correction) gives a new `example_id`, and replaying the prefix reproduces the old snapshot exactly. |
 | `ANN-16` | implementation | Store | A store's `project` returns the same projection as amber's replay of the events it holds, for every actor and every `as_of_event`. |
-| `ANN-17` | implementation | Store, Scorer | A store rejects an Example whose `example_id` does not match its `(case_id, variable_set_ref, as_of_event)`; `current_example` returns the snapshot at the latest event; a `ScoreReport` lists the `example_id`s it scored against. |
+| `ANN-17` | implementation | Store, Scorer | A store rejects an Example whose `example_id` does not match its content; `current_example` returns the snapshot at the latest event; a `ScoreReport` lists the `example_id`s it scored against. |
 | `ANN-18` | core | — | A move-on `tier.set` must have `role=system` and a decision reference, or it is rejected; a `single_review` snapshot scored under move-on must include that event (`as_of_event` at or after it). |
 
 ### 7.6 Wire formats (§5)

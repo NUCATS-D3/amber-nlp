@@ -252,11 +252,24 @@ def structured_evidence_id(*, source_id: str, field: str, value: Any) -> str:
     return canonical_sha256({"field": field, "source_id": source_id, "value": value})
 
 
-def example_id(*, case_id: str, variable_set_ref: str, as_of_event: str) -> str:
-    """Identity of an Example snapshot: the same events replayed give the same ID."""
-    return canonical_sha256(
-        {"as_of_event": as_of_event, "case_id": case_id, "variable_set_ref": variable_set_ref}
-    )
+_EXAMPLE_RECORD_LISTS = ("claims", "mentions", "mention_readings", "evidence", "edges")
+
+
+def example_id(content: Mapping[str, Any]) -> str:
+    """Identity of an Example: SHA-256 of its canonical JSON content without ``example_id``
+    or ``schema_version`` (the ID names the content, not the wire version it was read at).
+
+    Record lists are hashed in canonical order, so the ID pins every value, status, tier,
+    outcome, and attribution but not the order records were listed in. Replaying the same
+    events gives the same content, and so the same ID.
+    """
+    fields = {
+        key: value for key, value in content.items() if key not in ("example_id", "schema_version")
+    }
+    for key in _EXAMPLE_RECORD_LISTS:
+        if isinstance(fields.get(key), list):
+            fields[key] = sorted(fields[key], key=canonical_json)
+    return canonical_sha256(fields)
 
 
 def new_ulid() -> str:

@@ -35,8 +35,8 @@ from types import MappingProxyType
 from typing import Any, Literal, NoReturn, TypeAlias
 
 from amber._graph_validation import build_context, validate_state
-from amber.examples import load_example
-from amber.ids import example_id, parse_producer
+from amber.examples import mint_example
+from amber.ids import parse_producer
 from amber.schemas.annotations import HUMAN_ROLES, AnnotationEvent
 from amber.schemas.cases import Case, CaseOutcome, VariableOutcome
 from amber.schemas.claims import Claim
@@ -595,11 +595,7 @@ def example_from_projection(
             del evidence[key]
     read = {reading.mention_id for reading in readings}
     payload = {
-        "example_id": example_id(
-            case_id=case.case_id,
-            variable_set_ref=variables.schema_ref,
-            as_of_event=projection.as_of_event,
-        ),
+        "example_id": None,
         "schema_version": "amber/0.1",
         "case_id": case.case_id,
         "variable_set": variables.name,
@@ -622,7 +618,7 @@ def example_from_projection(
         ],
         "created_at": projection.events[-1].at.isoformat(),
     }
-    return load_example(
+    return mint_example(
         payload, case=case, source=source, variables=variables, excluded_spans=excluded_spans
     )
 

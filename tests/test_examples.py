@@ -11,7 +11,12 @@ from typing import Any
 import pytest
 from pydantic import Field, ValidationError
 
-from amber.examples import ExampleValidationError, load_example, load_label_record
+from amber.examples import (
+    ExampleValidationError,
+    load_example,
+    load_label_record,
+    mint_example,
+)
 from amber.graph import EvidenceGraph
 from amber.graph_errors import GraphValidationError
 from amber.ids import example_id, new_ulid
@@ -174,12 +179,8 @@ class Fixture:
             record["status"] = status.get(record["claim_id"], record["status"])
         for record in graph_payload["mention_readings"]:
             record["status"] = status.get(record["reading_id"], record["status"])
-        return {
-            "example_id": example_id(
-                case_id=CASE.case_id,
-                variable_set_ref=VARIABLES.schema_ref,
-                as_of_event=self.as_of,
-            ),
+        payload = {
+            "example_id": "0" * 64,
             "schema_version": "amber/0.1",
             "case_id": CASE.case_id,
             "variable_set": VARIABLES.name,
@@ -199,6 +200,17 @@ class Fixture:
             "edges": graph_payload["edges"],
             "created_at": "2026-11-02T12:00:00Z",
         }
+        return _keyed(payload)
+
+
+def _keyed(payload: dict[str, Any]) -> dict[str, Any]:
+    """The payload with its content ID when it validates; tests of other failures keep the
+    placeholder, since the ID is checked last."""
+    try:
+        minted = mint_example(payload, case=CASE, source=SOURCE, variables=VARIABLES)
+    except (ExampleValidationError, GraphValidationError):
+        return payload
+    return {**payload, "example_id": minted.example_id}
 
 
 def _inclusion(text: str) -> Inclusion:
@@ -231,9 +243,7 @@ def test_an_adjudicated_example_loads_and_round_trips() -> None:
     assert example.references["summary"].tier == "adjudicated"
     assert {claim.status for claim in example.claims} == {"gold"}
     assert example.split == "train"
-    assert example.example_id == example_id(
-        case_id=CASE.case_id, variable_set_ref=VARIABLES.schema_ref, as_of_event=fixture.as_of
-    )
+    assert example.example_id == example_id(example.model_dump(mode="json"))
     assert _load(json.loads(example.model_dump_json())) == example
 
 
@@ -593,4 +603,50 @@ def test_created_at_is_timezone_aware() -> None:
     fixture = Fixture()
     payload = fixture.payload()
     payload["created_at"] = datetime(2026, 11, 2, tzinfo=UTC).isoformat()
-    assert _load(payload).created_at.utcoffset() is not None
+    assert _load(_keyed(payload)).created_at.utcoffset() is not None
+
+
+# Content identity --------------------------------------------------------------------------
+
+
+def _loaded_payload() -> tuple[Example, dict[str, Any]]:
+    example = _load(Fixture().payload())
+    return example, json.loads(example.model_dump_json())
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        lambda p: p["claims"][0]["value"].update(present=False),
+        lambda p: p["references"]["summary"].update(annotators=["human:other-a", "human:other-b"]),
+        lambda p: p["references"]["summary"].update(adjudicator="human:someone-else"),
+        lambda p: p["references"]["summary"]["outcome"]["provenance"].update(version="9"),
+        lambda p: p.update(created_at="2026-11-03T00:00:00.000000Z"),
+        lambda p: p["edges"][0].update(weight=0.5),
+    ],
+    ids=["claim_value", "annotators", "adjudicator", "outcome", "created_at", "edge"],
+)
+def test_any_content_edit_breaks_the_example_id(edit: Callable[[dict[str, Any]], None]) -> None:
+    _, payload = _loaded_payload()
+    edit(payload)
+    _assert_code("example_id_mismatch", _load, payload)
+
+
+def test_the_example_id_ignores_record_order_and_wire_version() -> None:
+    example, payload = _loaded_payload()
+    for key in ("claims", "evidence", "edges", "mention_readings"):
+        payload[key] = list(reversed(payload[key]))
+    assert _load(payload) == example
+    assert example_id({**payload, "schema_version": "amber/0.0"}) == example.example_id
+    assert example_id({**payload, "example_id": "ignored"}) == example.example_id
+
+
+def test_mint_example_assigns_the_content_id() -> None:
+    example, payload = _loaded_payload()
+    payload["example_id"] = "0" * 64
+    minted = mint_example(payload, case=CASE, source=SOURCE, variables=VARIABLES)
+    assert minted == example
+    payload["claims"][0]["value"] = {"present": False}
+    edited = mint_example(payload, case=CASE, source=SOURCE, variables=VARIABLES)
+    assert edited.example_id != example.example_id
+    assert _load(json.loads(edited.model_dump_json())) == edited

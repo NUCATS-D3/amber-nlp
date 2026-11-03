@@ -123,11 +123,15 @@ refuse scoring a configuration against its own silver references; rule hashes ar
   annotators and a human adjudicator; `single_review` one human annotator and no
   adjudicator; `silver` no human at all.
 - **`Example`**: the single annotated-data format. A snapshot of a case's annotations as of
-  one event: `example_id` (canonical SHA-256 of `case_id`, `variable_set_ref`,
-  `as_of_event`), the variable set, `split`, one reference per final variable, and the
-  retained claims, mentions, readings, evidence, and edges. Issued only by
-  `amber.examples.load_example`, which revalidates the graph against the authoritative
-  `Case`, `Source`, and `VariableSet` and checks that:
+  one event: `example_id` (canonical SHA-256 of the content, without `example_id` and
+  `schema_version`, record lists in canonical order: `amber.ids.example_id`), the variable
+  set, `split`, one reference per final variable, and the retained claims, mentions,
+  readings, evidence, and edges. Any edit to a value, status, tier, outcome, attribution, or
+  timestamp fails with `example_id_mismatch`, checked after all other validation.
+  `amber.examples.mint_example` validates the same way and assigns the content ID (used by
+  `example_from_projection`, and to re-key Examples). Issued only by `load_example` and
+  `mint_example`; loading revalidates the graph against the authoritative `Case`, `Source`,
+  and `VariableSet` and checks that:
   - every final variable has a reference, and its outcome, citations, and final claims are
     consistent (non-answers have no final claims; mention-level references are never
     `conflicting_evidence`; `not_mentioned` needs full review);

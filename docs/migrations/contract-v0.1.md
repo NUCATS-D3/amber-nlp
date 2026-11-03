@@ -181,6 +181,25 @@ Commit: `62fb532`.
 - **Upgrade:** recompute structured sources with `Source.create` and re-key anything that
   referenced their old IDs. Note sources need nothing.
 
+### `example_id` is the hash of the Example's content
+
+Commit: the one closing `amber-sei` (design decision 4.10.10, revising 4.10.5).
+
+`example_id` was `sha256(case_id, variable_set_ref, as_of_event)`, so an Example whose values
+were edited after review still loaded wherever it travelled without its events. It is now the
+canonical SHA-256 of the Example's content (every field except `example_id` and
+`schema_version`, record lists in canonical order), and `load_example` rejects any mismatch
+with `example_id_mismatch`. `amber.ids.example_id` now takes the content mapping.
+
+- **Affected:** every stored Example (files, gold bundles, MLflow datasets, stores), and
+  anything that recorded its `example_id` (score reports, dataset tags). Code calling
+  `ids.example_id(case_id=..., variable_set_ref=..., as_of_event=...)`.
+- **Upgrade:** re-key stored Examples with `amber.examples.mint_example(payload, case=...,
+  source=..., variables=...)`, or rebuild them from their events with
+  `example_from_projection`; rebuild bundles and datasets from the re-keyed Examples. Score
+  reports made before the change name old IDs and should be regenerated if they must
+  reference current Examples. Call `ids.example_id(example.model_dump(mode="json"))`.
+
 ## Still to implement
 
 Nothing: every breaking change listed by the contract v0.1 design is implemented above.

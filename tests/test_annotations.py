@@ -19,7 +19,7 @@ from amber.annotations import (
     replay,
     verify_example,
 )
-from amber.examples import ExampleValidationError, load_example
+from amber.examples import ExampleValidationError, load_example, mint_example
 from amber.graph_errors import GraphValidationError
 from amber.ids import new_ulid
 from amber.schemas import (
@@ -461,7 +461,11 @@ def test_an_example_asserting_a_tier_its_events_do_not_support_is_rejected() -> 
         claim["status"] = "gold"
     for reading in payload["mention_readings"]:
         reading["status"] = "verified"
-    asserted = load_example(payload, case=CASE, source=SOURCE, variables=VARIABLES)
+    # Edited content no longer matches its ID; a forger who re-keys it is caught by the events.
+    _assert_code(
+        "example_id_mismatch", load_example, payload, case=CASE, source=SOURCE, variables=VARIABLES
+    )
+    asserted = mint_example(payload, case=CASE, source=SOURCE, variables=VARIABLES)
     _assert_code(
         "events_mismatch",
         verify_example,
@@ -481,8 +485,7 @@ def test_a_lower_tier_than_the_events_support_is_rejected() -> None:
     payload = silver.model_dump(mode="json")
     latest = log.events[-1].event_id
     payload["as_of_event"] = latest
-    payload["example_id"] = _example(log.events).example_id
-    stale = load_example(payload, case=CASE, source=SOURCE, variables=VARIABLES)
+    stale = mint_example(payload, case=CASE, source=SOURCE, variables=VARIABLES)
     _assert_code(
         "events_mismatch",
         verify_example,

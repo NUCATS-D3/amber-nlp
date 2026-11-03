@@ -10,7 +10,7 @@ import pytest
 
 from amber.annotations import AnnotationValidationError, example_from_projection, replay
 from amber.cases import create_case_result
-from amber.examples import load_example, load_label_record
+from amber.examples import load_label_record, mint_example
 from amber.graph import EvidenceGraph
 from amber.ids import new_ulid
 from amber.interfaces import SourceResolver, Store
@@ -323,7 +323,8 @@ def test_examples_asserting_an_unsupported_tier_are_rejected() -> None:
         claim["status"] = "gold"
     for reading in payload["mention_readings"]:
         reading["status"] = "verified"
-    asserted = load_example(payload, case=CASE, source=SOURCE, variables=VARIABLES)
+    # Re-keyed so the content ID matches; only the events expose the asserted tier.
+    asserted = mint_example(payload, case=CASE, source=SOURCE, variables=VARIABLES)
     _assert_code("unsupported_tier", store.put_example, asserted, resolver=RESOLVER)
 
 

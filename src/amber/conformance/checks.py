@@ -16,7 +16,7 @@ from amber.annotations import example_from_projection, replay, verify_example
 from amber.cases import load_case_result
 from amber.conformance import fixtures as fx
 from amber.conformance.catalog import CASES, Target
-from amber.examples import load_example, load_label_record
+from amber.examples import load_label_record, mint_example
 from amber.graph_errors import GraphValidationError
 from amber.interfaces import (
     Extractor,
@@ -369,7 +369,8 @@ def _asserted_single_review(events: list[Any]) -> Example:
         claim["status"] = "gold"
     for reading in payload["mention_readings"]:
         reading["status"] = "verified"
-    return load_example(payload, case=bound, source=fx.SOURCE, variables=fx.VARIABLES)
+    # A forger who also recomputes the content ID; only the events can expose it.
+    return mint_example(payload, case=bound, source=fx.SOURCE, variables=fx.VARIABLES)
 
 
 def check_ifc_11(subject: Subject) -> None:
