@@ -3,6 +3,8 @@ name: CI
 on:
   push:
   pull_request:
+    # labeled/unlabeled re-run the protected-artifacts check when contract-approved changes.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 permissions:
   contents: read
@@ -12,6 +14,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  protected-artifacts:
+    name: Protected contract artifacts
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Require the contract-approved label for golden, catalog, fixture, or test-assertion changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          git diff --unified=0 "$BASE_SHA" HEAD > "$RUNNER_TEMP/changes.diff"
+          python3 scripts/check_protected_changes.py "$RUNNER_TEMP/changes.diff" --labels "$LABELS"
+
   core-install:
     name: Core install (Python ${{ matrix.python }})
     runs-on: ubuntu-latest

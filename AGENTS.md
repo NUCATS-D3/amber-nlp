@@ -107,3 +107,7 @@ For the core-only installation check, see [tests/README.md](tests/README.md#ci).
 
 Imperative subject, with a body explaining why for non-trivial changes. Call out contract,
 dependency, or wire-format changes, and their migrations.
+
+Work lands on `main` through pull requests. CI's "Protected contract artifacts" check fails a
+pull request that changes golden records, the catalog, conformance fixtures, or existing test
+assertions until a human adds the `contract-approved` label; agents never add it.
