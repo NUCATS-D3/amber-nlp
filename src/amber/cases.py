@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Literal, NoReturn, TypeAlias
 
 from amber.graph import EvidenceGraph
+from amber.ids import validate_ulid
 from amber.schemas.cases import (
     Case,
     CaseOutcome,
@@ -14,6 +15,7 @@ from amber.schemas.cases import (
     _mint_case_result,
     case_status,
 )
+from amber.schemas.evidence import InferenceEvidence
 from amber.schemas.sources import Source
 from amber.schemas.tasks import Task
 from amber.schemas.variables import VariableSet
@@ -26,6 +28,7 @@ CaseValidationCode: TypeAlias = Literal[
     "unknown_reference",
     "invalid_outcome",
     "variable_set_mismatch",
+    "run_mismatch",
 ]
 _RESULT_KEYS = frozenset(CaseResult.model_fields)
 _VARIABLE_OUTCOME_KEYS = frozenset(VariableOutcome.model_fields)
@@ -170,6 +173,11 @@ def _finish(case: Case, graph: EvidenceGraph, payload: Mapping[str, Any]) -> Cas
     _validate_context(case, graph)
     if type(payload["case_id"]) is not str or payload["case_id"] != case.case_id:
         _raise("invalid_context")
+    run_id = payload["run_id"]
+    try:
+        validate_ulid(run_id)
+    except (TypeError, ValueError):
+        _raise("invalid_schema")
     variables = graph.variables
     finals = sorted(name for name, variable in variables.variables.items() if variable.final)
     supplied = payload["variable_outcomes"]
@@ -197,6 +205,19 @@ def _finish(case: Case, graph: EvidenceGraph, payload: Mapping[str, Any]) -> Cas
             _raise("invalid_outcome")
     elif payload["outcome"] is not None or payload["final_claim_ids"] is not None:
         _raise("invalid_outcome")
+    provenances = [
+        *(claim.provenance for claim in graph.claims.values()),
+        *(
+            record.provenance
+            for record in graph.evidence.values()
+            if isinstance(record, InferenceEvidence)
+        ),
+        *(reading.provenance for reading in graph.mention_readings.values()),
+        *(item.outcome.provenance for item in outcomes.values()),
+    ]
+    # Every node of a result was produced by its run (contract v0.1 section 6.6 decision 4).
+    if any(provenance.run_id != run_id for provenance in provenances):
+        _raise("run_mismatch")
     try:
         return _mint_case_result(
             {
@@ -222,6 +243,7 @@ def create_case_result(
     case: Case,
     *,
     graph: EvidenceGraph,
+    run_id: str,
     outcome: CaseOutcome | None = None,
     final_claim_ids: Sequence[str] | None = None,
     variable_outcomes: Mapping[str, VariableOutcome] | None = None,
@@ -233,7 +255,8 @@ def create_case_result(
     """Snapshot and validate the complete graph before issuing an immutable result.
 
     Give ``variable_outcomes`` (one per final variable), or, for a set with one final
-    variable, ``outcome`` and ``final_claim_ids`` for it.
+    variable, ``outcome`` and ``final_claim_ids`` for it. ``run_id`` names the run; every
+    claim, inference, reading, and outcome must carry it in its provenance.
     """
     bound_case = _case(case)
     _validate_context(bound_case, graph)
@@ -268,6 +291,7 @@ def create_case_result(
         validated_graph,
         {
             "case_id": bound_case.case_id,
+            "run_id": run_id,
             "variable_outcomes": supplied,
             "claims": [],
             "evidence": [],

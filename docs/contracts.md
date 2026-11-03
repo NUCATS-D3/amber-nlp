@@ -73,14 +73,17 @@ refuse scoring a configuration against its own silver references; rule hashes ar
   category. Its value is a strict `str`, `bool`, or `int`; an absent category means not
   assessed. It may cite a cue inclusion and a scope inclusion, and `assigned_by` names another
   producer only when someone other than the reading's producer assigned it.
-- **`Case`**: one note, one task (the variable set's name), declared sensitivity, and the
-  optional `split` (`train`, `dev`, `test`) of its `(dataset, source)` pair.
+- **`Case`**: one note, one task (the variable set's name), declared sensitivity, the
+  optional `dataset` it was drawn from, and the optional `split` (`train`, `dev`, `test`) of
+  its `(dataset, source)` pair.
 - **`CaseOutcome`**: one of `answered`, `not_mentioned`, `conflicting_evidence`,
   `insufficient_evidence`, or `failed`, with a reason, a failure kind, review coverage, and
   cited evidence.
 - **`VariableOutcome`**: one final variable's `CaseOutcome` and its `final_claim_ids`
   (nonempty exactly when answered).
-- **`CaseResult`**: the variable set's name, version, and `variable_set_ref`; claims,
+- **`CaseResult`**: the `run_id` (a ULID) that produced it, which every claim, inference,
+  reading, and outcome's provenance must carry (`run_mismatch`); the variable set's name,
+  version, and `variable_set_ref`; claims,
   evidence, edges, mentions and their readings; one `VariableOutcome` per final variable;
   counters; and a trace ID. When the set has one final variable, `outcome` and
   `final_claim_ids` equal its `VariableOutcome`; otherwise both are null.

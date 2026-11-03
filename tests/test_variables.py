@@ -30,6 +30,7 @@ from amber.schemas import (
 from amber.schemas.variables import TASK_SET_VERSION, variable_set_ref
 
 from ._claim_helpers import (
+    SYNTHETIC_RUN_ID,
     SyntheticFindingAnswer,
     make_inference_record,
     make_provenance,
@@ -592,7 +593,9 @@ def test_case_results_accept_a_task_or_its_variable_set() -> None:
         reviewed_source_ids=[source.source_id],
         provenance=make_provenance(),
     )
-    result = create_case_result(case, graph=graph, outcome=outcome, final_claim_ids=[])
+    result = create_case_result(
+        case, graph=graph, run_id=SYNTHETIC_RUN_ID, outcome=outcome, final_claim_ids=[]
+    )
     payload = json.loads(result.model_dump_json())
 
     by_task = load_case_result(payload, case=case, source=source, task=task)

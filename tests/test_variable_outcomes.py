@@ -28,7 +28,7 @@ from amber.schemas import (
 from amber.schemas.cases import VariableOutcome
 from amber.tools.mention import cite, mention
 
-from ._claim_helpers import make_provenance, make_source, make_task
+from ._claim_helpers import SYNTHETIC_RUN_ID, make_provenance, make_source, make_task
 
 TEXT = "Grade 2 noted.\r\nStage II \U0001f642 assigned; mass seen."
 
@@ -133,6 +133,7 @@ def _pair_result() -> tuple[CaseResult, Case, EvidenceGraph, str]:
     result = create_case_result(
         case,
         graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
         variable_outcomes={
             "grade": _vo("grade", "answered", [grade_id]),
             "stage": _vo("stage", "not_mentioned", **reviewed),
@@ -198,7 +199,9 @@ def test_case_status_is_the_most_severe_variable_status(
     outcomes["finding"] = _vo("finding", "insufficient_evidence")
     if expected in ("answered", "not_mentioned"):
         outcomes["finding"] = _vo("finding", "not_mentioned", reviewed_source_ids=case.source_ids)
-    result = create_case_result(case, graph=graph, variable_outcomes=outcomes)
+    result = create_case_result(
+        case, graph=graph, run_id=SYNTHETIC_RUN_ID, variable_outcomes=outcomes
+    )
     assert case_status(result) == expected
 
 
@@ -256,6 +259,7 @@ def test_final_claims_must_answer_their_own_variable() -> None:
         create_case_result,
         case,
         graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
         variable_outcomes={
             "grade": _vo("grade", "answered", [stage_id]),
             "stage": _vo("stage", "answered", [stage_id]),
@@ -271,6 +275,7 @@ def test_several_final_variables_need_per_variable_outcomes() -> None:
         create_case_result,
         case,
         graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
         outcome=_outcome("insufficient_evidence"),
         final_claim_ids=[],
     )
@@ -314,6 +319,7 @@ def test_mention_level_variables_are_answered_by_mention_claims() -> None:
     result = create_case_result(
         case,
         graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
         variable_outcomes=_with_finding(case, _vo("finding", "answered", [claim_id])),
     )
     assert result.variable_outcomes["finding"].final_claim_ids == [claim_id]
@@ -328,6 +334,7 @@ def test_mention_level_variables_never_report_conflicting_evidence() -> None:
         create_case_result,
         case,
         graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
         variable_outcomes=_with_finding(case, conflicting),
     )
 
@@ -339,6 +346,7 @@ def test_mention_level_not_mentioned_requires_declared_full_review() -> None:
         create_case_result,
         case,
         graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
         variable_outcomes=_with_finding(case, _vo("finding", "not_mentioned")),
     )
 
@@ -350,10 +358,17 @@ def test_one_final_variable_mirrors_its_outcome_at_case_level() -> None:
     case, graph, leaves = _setup(_one_final_with_intermediate())
     stage_id = _commit(graph, "stage", {"stage": "II"}, leaves["stage"])
     by_fields = create_case_result(
-        case, graph=graph, outcome=_outcome("answered"), final_claim_ids=[stage_id]
+        case,
+        graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
+        outcome=_outcome("answered"),
+        final_claim_ids=[stage_id],
     )
     by_outcomes = create_case_result(
-        case, graph=graph, variable_outcomes={"stage": _vo("stage", "answered", [stage_id])}
+        case,
+        graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
+        variable_outcomes={"stage": _vo("stage", "answered", [stage_id])},
     )
 
     assert by_fields == by_outcomes
@@ -365,6 +380,7 @@ def test_one_final_variable_mirrors_its_outcome_at_case_level() -> None:
         create_case_result,
         case,
         graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
         variable_outcomes={"stage": _vo("stage", "answered", [stage_id])},
         outcome=_outcome("answered"),
         final_claim_ids=[],
@@ -388,6 +404,7 @@ def test_one_variable_case_level_fields_must_equal_the_variable_outcome(
     result = create_case_result(
         case,
         graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
         outcome=_outcome("not_mentioned", reviewed_source_ids=case.source_ids),
         final_claim_ids=[],
     )
@@ -417,7 +434,11 @@ def test_task_results_load_with_the_task_or_its_set() -> None:
     task = make_task()
     case, graph, _ = _setup(VariableSet.from_task(task))
     result = create_case_result(
-        case, graph=graph, outcome=_outcome("insufficient_evidence"), final_claim_ids=[]
+        case,
+        graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
+        outcome=_outcome("insufficient_evidence"),
+        final_claim_ids=[],
     )
     payload = json.loads(result.model_dump_json())
     assert payload["variable_set_version"] == "task"

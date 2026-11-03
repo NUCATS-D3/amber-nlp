@@ -82,8 +82,10 @@ def main() -> None:
         instructions="Exercise an invented evidence-backed answer.",
         evidence_policy="field",
     )
+    run_id = "01K00000000000000000000000"
     provenance = Provenance(
         producer="tool:core-smoke@1",
+        run_id=run_id,
         destination="local:core-smoke",
         policy_version="core-smoke-policy@1",
         zone=Zone.local,
@@ -123,6 +125,7 @@ def main() -> None:
     result = create_case_result(
         case,
         graph=graph,
+        run_id=run_id,
         final_claim_ids=[claim.claim_id],
         outcome=CaseOutcome(status="answered", provenance=provenance),
     )
@@ -143,7 +146,9 @@ def main() -> None:
         graph=graph,
         provenance=provenance,
     )
-    diagnostic = create_case_result(case, graph=graph, outcome=unanswered, final_claim_ids=[])
+    diagnostic = create_case_result(
+        case, graph=graph, run_id=run_id, outcome=unanswered, final_claim_ids=[]
+    )
     assert diagnostic.final_claim_ids == []
     assert diagnostic.claims[0].value["finding_present"] is False
 

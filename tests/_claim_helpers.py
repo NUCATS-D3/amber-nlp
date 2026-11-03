@@ -34,9 +34,13 @@ def make_source(text: str = "Alpha beta") -> Source:
     )
 
 
+SYNTHETIC_RUN_ID = "01K00000000000000000000000"
+
+
 def make_provenance() -> Provenance:
     return Provenance(
         producer="tool:synthetic@1",
+        run_id=SYNTHETIC_RUN_ID,
         prompt_versions={"extractor": "prompts:/synthetic/1"},
         destination="local:synthetic",
         policy_version="synthetic-policy@1",

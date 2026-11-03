@@ -15,6 +15,7 @@ from pydantic import (
     model_validator,
 )
 
+from amber.ids import validate_ulid
 from amber.schemas._immutable import FrozenMapping, _FrozenList, freeze_json
 from amber.schemas.claims import Claim
 from amber.schemas.evidence import EvidenceEdge, Inclusion, InferenceEvidence
@@ -70,13 +71,15 @@ class Case(BaseModel):
     patient_id: _Identifier
     source_ids: list[_Identifier] = Field(min_length=1, max_length=1)
     sensitivity: Sensitivity
-    # The split of the (dataset, source) pair; Examples and LabelRecords must match it.
+    # The dataset the source was drawn from; split belongs to the (dataset, source) pair.
+    dataset: _Identifier | None = None
+    # Examples and LabelRecords must match it.
     split: Split | None = None
 
-    @field_validator("case_id", "task", "patient_id")
+    @field_validator("case_id", "task", "patient_id", "dataset")
     @classmethod
-    def require_nonblank_identity(cls, value: str) -> str:
-        return _nonblank(value)
+    def require_nonblank_identity(cls, value: str | None) -> str | None:
+        return None if value is None else _nonblank(value)
 
     @field_validator("source_ids")
     @classmethod
@@ -172,6 +175,7 @@ class CaseResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     case_id: _Identifier
+    run_id: _Identifier
     variable_set: _Identifier
     variable_set_version: _Identifier
     variable_set_ref: _Identifier
@@ -198,6 +202,11 @@ class CaseResult(BaseModel):
         if (info.context or {}).get("case_result_minter") is not _RESULT_MINT_CONTEXT:
             raise ValueError(_RESULT_GUARD_MESSAGE)
         return data
+
+    @field_validator("run_id")
+    @classmethod
+    def require_ulid_run_id(cls, value: str) -> str:
+        return validate_ulid(value)
 
     @field_validator("case_id", "trace_id")
     @classmethod

@@ -17,7 +17,7 @@ from amber.grounding import exact_quote
 from amber.ids import new_ulid
 from amber.schemas import Case, CaseOutcome, CaseResult, Inclusion, InferenceEvidence, Sensitivity
 
-from ._claim_helpers import make_provenance, make_source, make_task
+from ._claim_helpers import SYNTHETIC_RUN_ID, make_provenance, make_source, make_task
 
 
 def _setup() -> tuple[Case, EvidenceGraph, Inclusion]:
@@ -70,6 +70,7 @@ def test_answered_result_retains_exact_source_support_and_final_claims(value: bo
     result = create_case_result(
         case,
         graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
         outcome=_outcome("answered"),
         final_claim_ids=[claim_id],
         grounding_failures=1,
@@ -98,6 +99,7 @@ def test_empty_graph_can_record_complete_review_without_minting_claim() -> None:
     result = create_case_result(
         case,
         graph=empty,
+        run_id=SYNTHETIC_RUN_ID,
         outcome=_outcome("not_mentioned", reviewed_source_ids=case.source_ids),
         final_claim_ids=[],
     )
@@ -114,7 +116,9 @@ def test_partial_review_and_failure_retain_supporting_claims_without_final_answe
 ) -> None:
     case, graph, inclusion = _setup()
     supporting_id = _commit(graph, inclusion)
-    result = create_case_result(case, graph=graph, outcome=_outcome(status), final_claim_ids=[])
+    result = create_case_result(
+        case, graph=graph, run_id=SYNTHETIC_RUN_ID, outcome=_outcome(status), final_claim_ids=[]
+    )
 
     assert result.outcome.reviewed_source_ids == []
     assert [claim.claim_id for claim in result.claims] == [supporting_id]
@@ -130,7 +134,9 @@ def test_conflict_retains_opposing_evidence_and_support_closure() -> None:
     _commit(graph, first, True)
     _commit(graph, second, False)
     outcome = _outcome("conflicting_evidence", evidence_ids=[first.evidence_id, second.evidence_id])
-    result = create_case_result(case, graph=graph, outcome=outcome, final_claim_ids=[])
+    result = create_case_result(
+        case, graph=graph, run_id=SYNTHETIC_RUN_ID, outcome=outcome, final_claim_ids=[]
+    )
 
     assert set(result.outcome.evidence_ids) == {first.evidence_id, second.evidence_id}
     assert len(result.claims) == 2
@@ -149,7 +155,9 @@ def test_non_answered_result_rejects_final_claims(status: str) -> None:
     )
     before = graph.to_payload()
     with pytest.raises(CaseValidationError, match="invalid_final_claims"):
-        create_case_result(case, graph=graph, outcome=outcome, final_claim_ids=[claim_id])
+        create_case_result(
+            case, graph=graph, run_id=SYNTHETIC_RUN_ID, outcome=outcome, final_claim_ids=[claim_id]
+        )
     assert graph.to_payload() == before
 
 
@@ -157,14 +165,26 @@ def test_answered_result_rejects_empty_final_claims() -> None:
     case, graph, inclusion = _setup()
     _commit(graph, inclusion)
     with pytest.raises(CaseValidationError, match="invalid_final_claims"):
-        create_case_result(case, graph=graph, outcome=_outcome("answered"), final_claim_ids=[])
+        create_case_result(
+            case,
+            graph=graph,
+            run_id=SYNTHETIC_RUN_ID,
+            outcome=_outcome("answered"),
+            final_claim_ids=[],
+        )
 
 
 @pytest.mark.parametrize("ids", [["unknown"], [" "], [1], "not-a-sequence", ["same", "same"]])
 def test_result_rejects_unknown_or_malformed_final_ids(ids: Any) -> None:
     case, graph, _ = _setup()
     with pytest.raises(CaseValidationError):
-        create_case_result(case, graph=graph, outcome=_outcome("answered"), final_claim_ids=ids)
+        create_case_result(
+            case,
+            graph=graph,
+            run_id=SYNTHETIC_RUN_ID,
+            outcome=_outcome("answered"),
+            final_claim_ids=ids,
+        )
 
 
 def test_result_rejects_rejected_claim_as_final_answer() -> None:
@@ -177,14 +197,24 @@ def test_result_rejects_rejected_claim_as_final_answer() -> None:
     )
     with pytest.raises(CaseValidationError, match="invalid_final_claims"):
         create_case_result(
-            case, graph=rejected_graph, outcome=_outcome("answered"), final_claim_ids=[claim_id]
+            case,
+            graph=rejected_graph,
+            run_id=SYNTHETIC_RUN_ID,
+            outcome=_outcome("answered"),
+            final_claim_ids=[claim_id],
         )
 
 
 def test_not_mentioned_requires_declared_complete_review() -> None:
     case, graph, _ = _setup()
     with pytest.raises(CaseValidationError, match="incomplete_review"):
-        create_case_result(case, graph=graph, outcome=_outcome("not_mentioned"), final_claim_ids=[])
+        create_case_result(
+            case,
+            graph=graph,
+            run_id=SYNTHETIC_RUN_ID,
+            outcome=_outcome("not_mentioned"),
+            final_claim_ids=[],
+        )
 
 
 @pytest.mark.parametrize("reviewed", [["foreign-source"], ["foreign-source", "another"]])
@@ -194,6 +224,7 @@ def test_outcome_review_ids_must_belong_to_case(reviewed: list[str]) -> None:
         create_case_result(
             case,
             graph=graph,
+            run_id=SYNTHETIC_RUN_ID,
             outcome=_outcome("insufficient_evidence", reviewed_source_ids=reviewed),
             final_claim_ids=[],
         )
@@ -206,6 +237,7 @@ def test_outcome_citations_must_be_evidence_ids_not_claim_ids() -> None:
         create_case_result(
             case,
             graph=graph,
+            run_id=SYNTHETIC_RUN_ID,
             outcome=_outcome("conflicting_evidence", evidence_ids=[claim_id]),
             final_claim_ids=[],
         )
@@ -219,7 +251,13 @@ def test_case_must_match_authoritative_graph_context(changes: dict[str, Any]) ->
     case, graph, _ = _setup()
     other = Case.model_validate({**case.model_dump(), **changes})
     with pytest.raises(CaseValidationError, match="invalid_context"):
-        create_case_result(other, graph=graph, outcome=_outcome("failed"), final_claim_ids=[])
+        create_case_result(
+            other,
+            graph=graph,
+            run_id=SYNTHETIC_RUN_ID,
+            outcome=_outcome("failed"),
+            final_claim_ids=[],
+        )
 
 
 def test_outcome_sensitivity_must_match_case() -> None:
@@ -227,7 +265,11 @@ def test_outcome_sensitivity_must_match_case() -> None:
     provenance = make_provenance().model_copy(update={"sensitivity": Sensitivity.phi})
     with pytest.raises(CaseValidationError, match="invalid_context"):
         create_case_result(
-            case, graph=graph, outcome=_outcome("failed", provenance=provenance), final_claim_ids=[]
+            case,
+            graph=graph,
+            run_id=SYNTHETIC_RUN_ID,
+            outcome=_outcome("failed", provenance=provenance),
+            final_claim_ids=[],
         )
 
 
@@ -249,7 +291,12 @@ def test_result_counters_and_trace_are_strict(changes: dict[str, Any]) -> None:
     case, graph, _ = _setup()
     with pytest.raises(CaseValidationError, match="invalid_schema"):
         create_case_result(
-            case, graph=graph, outcome=_outcome("failed"), final_claim_ids=[], **changes
+            case,
+            graph=graph,
+            run_id=SYNTHETIC_RUN_ID,
+            outcome=_outcome("failed"),
+            final_claim_ids=[],
+            **changes,
         )
 
 
@@ -258,7 +305,11 @@ def test_result_is_detached_immutable_and_requires_validated_boundary() -> None:
     claim_id = _commit(graph, inclusion)
     ids = [claim_id]
     result = create_case_result(
-        case, graph=graph, outcome=_outcome("answered"), final_claim_ids=ids
+        case,
+        graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
+        outcome=_outcome("answered"),
+        final_claim_ids=ids,
     )
     before = result.model_dump(mode="json")
     ids.clear()
@@ -302,7 +353,11 @@ def test_load_revalidates_full_graph_without_leaking_source_data(mutation: Any, 
     case, graph, inclusion = _setup()
     claim_id = _commit(graph, inclusion)
     result = create_case_result(
-        case, graph=graph, outcome=_outcome("answered"), final_claim_ids=[claim_id]
+        case,
+        graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
+        outcome=_outcome("answered"),
+        final_claim_ids=[claim_id],
     )
     payload = result.model_dump(mode="json")
     # Fixed order for these deliberately corrupt, invented records.
@@ -322,7 +377,11 @@ def test_load_rejects_missing_field_evidence_and_incomplete_retained_support() -
     case, graph, inclusion = _setup()
     claim_id = _commit(graph, inclusion)
     result = create_case_result(
-        case, graph=graph, outcome=_outcome("answered"), final_claim_ids=[claim_id]
+        case,
+        graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
+        outcome=_outcome("answered"),
+        final_claim_ids=[claim_id],
     )
     payload = result.model_dump(mode="json")
     payload["edges"] = [edge for edge in payload["edges"] if edge["role"] is None]
@@ -339,7 +398,11 @@ def test_load_revalidates_components_not_cited_as_final_answers() -> None:
     final_id = _commit(graph, inclusion)
     _commit(graph, inclusion, False)
     result = create_case_result(
-        case, graph=graph, outcome=_outcome("answered"), final_claim_ids=[final_id]
+        case,
+        graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
+        outcome=_outcome("answered"),
+        final_claim_ids=[final_id],
     )
     payload = result.model_dump(mode="json")
     support = next(claim for claim in payload["claims"] if claim["claim_id"] != final_id)
@@ -365,7 +428,11 @@ def test_load_rejects_invalid_envelope_without_rendering_payload(changes: dict[s
     case, graph, inclusion = _setup()
     claim_id = _commit(graph, inclusion)
     result = create_case_result(
-        case, graph=graph, outcome=_outcome("answered"), final_claim_ids=[claim_id]
+        case,
+        graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
+        outcome=_outcome("answered"),
+        final_claim_ids=[claim_id],
     )
     payload = {**result.model_dump(mode="json"), **changes}
     with pytest.raises((CaseValidationError, GraphValidationError)) as failure:
@@ -375,7 +442,9 @@ def test_load_rejects_invalid_envelope_without_rendering_payload(changes: dict[s
 
 def test_load_rejects_missing_result_fields() -> None:
     case, graph, _ = _setup()
-    result = create_case_result(case, graph=graph, outcome=_outcome("failed"), final_claim_ids=[])
+    result = create_case_result(
+        case, graph=graph, run_id=SYNTHETIC_RUN_ID, outcome=_outcome("failed"), final_claim_ids=[]
+    )
     payload = result.model_dump(mode="json")
     del payload["final_claim_ids"]
     with pytest.raises(CaseValidationError, match="invalid_schema"):
@@ -388,12 +457,15 @@ def test_builder_revalidates_forged_case_and_outcome_before_use() -> None:
         create_case_result(
             case.model_copy(update={"source_ids": []}),
             graph=graph,
+            run_id=SYNTHETIC_RUN_ID,
             outcome=_outcome("failed"),
             final_claim_ids=[],
         )
     forged = _outcome("failed").model_copy(update={"reason": "", "failure_kind": None})
     with pytest.raises(CaseValidationError, match="invalid_schema"):
-        create_case_result(case, graph=graph, outcome=forged, final_claim_ids=[])
+        create_case_result(
+            case, graph=graph, run_id=SYNTHETIC_RUN_ID, outcome=forged, final_claim_ids=[]
+        )
 
 
 def test_result_preserves_supporting_claim_chain_and_loaded_input_is_detached() -> None:
@@ -418,7 +490,11 @@ def test_result_preserves_supporting_claim_chain_and_loaded_input_is_detached() 
         provenance=make_provenance(),
     )
     result = create_case_result(
-        case, graph=graph, outcome=_outcome("answered"), final_claim_ids=[final.claim_id]
+        case,
+        graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
+        outcome=_outcome("answered"),
+        final_claim_ids=[final.claim_id],
     )
     payload = result.model_dump(mode="json")
     restored = _load(payload, case, graph)
@@ -434,7 +510,11 @@ def test_load_rechecks_outcome_final_consistency_and_review_scope() -> None:
     case, graph, inclusion = _setup()
     claim_id = _commit(graph, inclusion)
     result = create_case_result(
-        case, graph=graph, outcome=_outcome("answered"), final_claim_ids=[claim_id]
+        case,
+        graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
+        outcome=_outcome("answered"),
+        final_claim_ids=[claim_id],
     )
     for outcome, final_ids, code in (
         (_outcome("answered"), [], "invalid_final_claims"),
@@ -458,7 +538,11 @@ def test_load_enforces_authoritative_exclusions_and_source() -> None:
     case, graph, inclusion = _setup()
     claim_id = _commit(graph, inclusion)
     result = create_case_result(
-        case, graph=graph, outcome=_outcome("answered"), final_claim_ids=[claim_id]
+        case,
+        graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
+        outcome=_outcome("answered"),
+        final_claim_ids=[claim_id],
     )
     payload = result.model_dump(mode="json")
     with pytest.raises(GraphValidationError, match="invalid_context"):
@@ -473,7 +557,11 @@ def test_load_rejects_source_free_and_duplicate_retained_components() -> None:
     case, graph, inclusion = _setup()
     claim_id = _commit(graph, inclusion)
     result = create_case_result(
-        case, graph=graph, outcome=_outcome("answered"), final_claim_ids=[claim_id]
+        case,
+        graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
+        outcome=_outcome("answered"),
+        final_claim_ids=[claim_id],
     )
     payload = result.model_dump(mode="json")
     rejected_id = new_ulid()
@@ -503,8 +591,56 @@ def test_outcome_can_cite_a_source_backed_inference() -> None:
     result = create_case_result(
         case,
         graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
         outcome=_outcome("insufficient_evidence", evidence_ids=[inference_id]),
         final_claim_ids=[],
     )
     assert result.outcome.evidence_ids == [inference_id]
     assert _load(result.model_dump(mode="json"), case, graph) == result
+
+
+def test_results_carry_their_run_and_every_node_must_match_it() -> None:
+    case, graph, inclusion = _setup()
+    claim_id = _commit(graph, inclusion)
+    result = create_case_result(
+        case,
+        graph=graph,
+        run_id=SYNTHETIC_RUN_ID,
+        outcome=_outcome("answered"),
+        final_claim_ids=[claim_id],
+    )
+    assert result.run_id == SYNTHETIC_RUN_ID
+    other_run = new_ulid()
+    with pytest.raises(CaseValidationError, match="run_mismatch"):
+        create_case_result(
+            case,
+            graph=graph,
+            run_id=other_run,
+            outcome=_outcome("answered"),
+            final_claim_ids=[claim_id],
+        )
+    with pytest.raises(CaseValidationError, match="invalid_schema"):
+        create_case_result(
+            case,
+            graph=graph,
+            run_id="run-1",
+            outcome=_outcome("answered"),
+            final_claim_ids=[claim_id],
+        )
+    payload = result.model_dump(mode="json")
+    with pytest.raises(CaseValidationError, match="run_mismatch"):
+        _load({**payload, "run_id": other_run}, case, graph)
+    foreign = make_provenance().model_dump(mode="json") | {"run_id": other_run}
+    payload["outcome"]["provenance"] = foreign
+    payload["variable_outcomes"][case.task]["outcome"]["provenance"] = foreign
+    with pytest.raises(CaseValidationError, match="run_mismatch"):
+        _load(payload, case, graph)
+
+
+@pytest.mark.parametrize("dataset", ["", "  "])
+def test_case_dataset_is_nonblank_when_given(dataset: str) -> None:
+    case, _, _ = _setup()
+    assert case.dataset is None
+    assert Case.model_validate({**case.model_dump(), "dataset": "synthetic-set"}).dataset
+    with pytest.raises(ValidationError):
+        Case.model_validate({**case.model_dump(), "dataset": dataset})

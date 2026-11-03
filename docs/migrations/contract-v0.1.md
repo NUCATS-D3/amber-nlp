@@ -108,9 +108,24 @@ has one, and are null otherwise (§3.5). `create_case_result` takes `outcome` an
   `amber.cases.case_status` instead of `result.outcome.status` where several final variables
   are possible.
 
+### Case results carry their run
+
+`CaseResult` gains a required `run_id` (a ULID), and `create_case_result` takes `run_id`.
+Every claim, inference, mention reading, and variable outcome in the result must have
+`provenance.run_id` equal to it, so stores can key results by `(case_id, run_id)` (§6.6
+decision 4). `Case` gains an optional `dataset`.
+
+- **Affected:** stored case results (missing `run_id`, `invalid_schema`), results whose nodes
+  have no or different `provenance.run_id` (`run_mismatch`), and every `create_case_result`
+  call site.
+- **Upgrade:** mint one ULID per run, stamp it in the provenance of every node the run
+  produces, and pass it to `create_case_result`. For stored results, add `run_id` and set
+  each node's `provenance.run_id` to it only if they truly came from one run; otherwise
+  regenerate them.
+
 ## Still to implement
 
 Each entry moves to "Implemented" in the commit that makes the change:
 
 - A structured source's `source_id` includes its canonical `record` (§2.6, `amber-ndt.3`).
-- `CaseResult` gains `run_id`, `budget`, and `usage` (§5.4, §6.6).
+- `CaseResult` gains `budget` and `usage` (§5.4, §6.6).

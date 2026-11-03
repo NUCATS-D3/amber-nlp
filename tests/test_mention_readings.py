@@ -30,7 +30,7 @@ from amber.schemas import (
 from amber.tools.mention import mention
 from amber.tools.quote import quote
 
-from ._claim_helpers import make_provenance, make_task
+from ._claim_helpers import SYNTHETIC_RUN_ID, make_provenance, make_task
 
 TEXT = "Findings: no evidence of e\u0301 distant metastasis.\r\nNodes \U0001f642 positive."
 RULE = "rule:synthetic_negation@1+abc123"
@@ -516,7 +516,9 @@ def _result_payload() -> tuple[dict[str, Any], Case, EvidenceGraph]:
         reviewed_source_ids=[SOURCE.source_id],
         provenance=make_provenance(),
     )
-    result = create_case_result(_case(), graph=graph, outcome=outcome, final_claim_ids=[])
+    result = create_case_result(
+        _case(), graph=graph, run_id=SYNTHETIC_RUN_ID, outcome=outcome, final_claim_ids=[]
+    )
     return json.loads(result.model_dump_json()), _case(), graph
 
 

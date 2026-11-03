@@ -8,7 +8,7 @@ from amber.cases import CaseValidationError, create_case_result
 from amber.schemas import Sensitivity
 from amber.tools.outcomes import no_claim
 
-from ._claim_helpers import make_provenance
+from ._claim_helpers import SYNTHETIC_RUN_ID, make_provenance
 from .test_cases import _commit, _setup
 
 
@@ -31,7 +31,9 @@ def test_no_claim_validates_citations_and_leaves_graph_unchanged(reason: str) ->
     assert outcome.status == reason
     assert outcome.failure_kind is None
     assert graph.to_payload() == before
-    result = create_case_result(case, graph=graph, outcome=outcome, final_claim_ids=[])
+    result = create_case_result(
+        case, graph=graph, run_id=SYNTHETIC_RUN_ID, outcome=outcome, final_claim_ids=[]
+    )
     assert result.claims == []
     assert result.final_claim_ids == []
 
