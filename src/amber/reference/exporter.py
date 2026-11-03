@@ -27,6 +27,7 @@ from amber.bundles import (
 from amber.bundles.parquet import MANIFEST, write_bundle
 from amber.interfaces import ExportedFile, ExportItem, ExportReceipt, PolicyGate
 from amber.policy import DataPolicy, Decision, Destination, PayloadKind, PolicyViolation
+from amber.reference._guard import require_synthetic
 from amber.schemas import Case, CaseResult, Example, LabelRecord, Source, VariableSet
 
 ExportFormat = Literal["amber-bundle/0.1", "amber-labels/0.1"]
@@ -109,6 +110,7 @@ class LocalExporter:
         now: datetime,
     ) -> ExportReceipt:
         """Gate every file, then write all of them or none."""
+        require_synthetic(data.sensitivity, self._dataset.sensitivity)
         bundle = self._bundle(items, now)
         kinds: dict[str, PayloadKind] = {**bundle.manifest.payload_kinds, MANIFEST: "labels_only"}
         decisions = {

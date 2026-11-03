@@ -15,6 +15,7 @@ from amber.graph_errors import GraphValidationError
 from amber.interfaces import PolicyGate
 from amber.labeling import LabelerFailure, LabelerOutput, import_events
 from amber.policy import RunContext
+from amber.reference._guard import require_synthetic
 from amber.schemas import Case, ReferenceTier, Source, VariableSet
 
 
@@ -62,6 +63,7 @@ class ImportLabeler:
         gate: PolicyGate,
         context: RunContext,
     ) -> LabelerOutput:
+        require_synthetic(case.sensitivity, context.data.sensitivity)
         entry = self._entry(case.case_id)
         if not isinstance(entry, dict) or len(entry) != 1:
             return LabelerFailure(reason="missing")

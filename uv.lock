@@ -104,6 +104,9 @@ dev = [
     { name = "pytest-cov" },
     { name = "ruff" },
 ]
+reference = [
+    { name = "pyarrow" },
+]
 tracking = [
     { name = "mlflow" },
 ]
@@ -115,6 +118,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "amber", extras = ["bundles"], marker = "extra == 'reference'" },
     { name = "hypothesis", marker = "extra == 'dev'" },
     { name = "import-linter", marker = "extra == 'dev'", specifier = ">=2.15" },
     { name = "mlflow", marker = "extra == 'tracking'", specifier = ">=3.17,<3.18" },
@@ -128,7 +132,7 @@ requires-dist = [
     { name = "python-ulid", specifier = ">=2.7" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
 ]
-provides-extras = ["tracking", "bundles", "conformance", "dev"]
+provides-extras = ["tracking", "bundles", "reference", "conformance", "dev"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=9.1.1" }]

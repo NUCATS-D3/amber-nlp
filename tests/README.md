@@ -33,6 +33,7 @@ The suite is flat and grouped by the boundary under test. All inputs are invente
 | `test_derivations.py` | Derivation records: inputs within the inference, defaults only on rule derivations and empty roles, unset derivations omitted from JSON |
 | `test_properties.py` | Hypothesis properties: canonical hashing, quote offsets, graph/result/bundle round trips, replay prefixes, random support graphs |
 | `test_protected_changes.py` | CI guard for pinned contract artifacts and existing test assertions (uses git) |
+| `test_reference_guard.py` | Reference implementations refuse non-synthetic cases, runs, results, and exports |
 | `test_review.py` | Review backends: file round trips (single review, adjudication, unresolved, excluded, unreviewed), export gating, import refusals |
 | `test_rules.py` | Rules: specs and registry, reduction (equal, conflicting, many, rejected), on_missing, conflict propagation, replay and tampering, events and bundles |
 | `test_seeded_ids.py` | Seeded ULID sources: reproducible graphs, invalid or repeating IDs rejected |
