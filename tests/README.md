@@ -17,6 +17,7 @@ The suite is flat and grouped by the boundary under test. All inputs are invente
 | `test_conformance.py` | Conformance catalog, fixtures, store checks against the reference and broken stores, report, pytest plugin |
 | `test_labels.py` | `labels_only_view` for results and events, schema closedness, no source text in output |
 | `test_wire.py` | JSON records: golden bytes and keys, schema versions, timestamps, budgets, VariableSet JSON |
+| `test_bundles.py` | Bundles: Parquet round trips, structure, hashes, payload kinds, resolver loading, `x_` columns (needs pyarrow) |
 | `test_answer_schemas.py` | Frozen, closed, strict `AnswerModel` subclasses |
 | `test_claim_schemas.py` | Task, claim, inference, and edge records; canonical IDs; immutability; wire shapes |
 | `test_graph_validation.py` | Full graph, context, and source validation; field citations; cycles; deep chains |
@@ -33,7 +34,7 @@ exercise the task-agnostic kernel.
 ## Local checks
 
 ```sh
-uv sync --locked --extra dev --extra tracking
+uv sync --locked --extra dev --extra tracking --extra bundles
 uv run --no-sync pytest --strict-markers -ra -m "not slow"
 uv run --no-sync ruff check . && uv run --no-sync ruff format --check .
 uv run --no-sync mypy src

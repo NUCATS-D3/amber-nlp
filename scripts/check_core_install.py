@@ -188,9 +188,45 @@ def main() -> None:
     else:
         raise AssertionError("the conformance plugin must require the conformance extra")
     assert "pytest" not in sys.modules
+
+    # Bundles validate in memory without pyarrow; only Parquet files need the extra.
+    from amber.bundles import (
+        BundleContents,
+        ManifestDataset,
+        ManifestProducer,
+        build_bundle,
+        load_bundle,
+    )
+    from amber.conformance import fixtures
+
+    bundle_case = fixtures.case(dataset=fixtures.DATASET)
+    bundle = build_bundle(
+        kind="run",
+        variables=fixtures.VARIABLES,
+        dataset=ManifestDataset(
+            name=fixtures.DATASET, manifest_hash="core-smoke", sensitivity=Sensitivity.synthetic
+        ),
+        producer=ManifestProducer(name="core-smoke", version="0", run_id=fixtures.RUN_IDS[0]),
+        policy_version="core-smoke-policy@1",
+        created_at=datetime(2026, 1, 2, tzinfo=UTC),
+        sources=[fixtures.SOURCE],
+        cases=[bundle_case],
+        results=[fixtures.result(fixtures.RUN_IDS[0])],
+    )
+    loaded = load_bundle(
+        bundle, variables=fixtures.VARIABLES, resolver=InMemoryResolver([fixtures.SOURCE])
+    )
+    assert isinstance(loaded, BundleContents) and len(loaded.results) == 1
+    try:
+        importlib.import_module("amber.bundles.parquet")
+    except ImportError as error:
+        assert "amber[bundles]" in str(error)
+    else:
+        raise AssertionError("Parquet bundles must require the bundles extra")
+    assert "pyarrow" not in sys.modules
     print(
-        "Core-only installed grounding, claim commit, case results, restore, policy, and "
-        "conformance-kit checks passed."
+        "Core-only installed grounding, claim commit, case results, restore, policy, "
+        "conformance-kit, and in-memory bundle checks passed."
     )
 
 

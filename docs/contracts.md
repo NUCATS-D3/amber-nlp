@@ -241,6 +241,31 @@ Pure data and functions; no I/O, credentials, or clock (contract v0.1 §1).
 Structural validity and source traceability do not establish semantic support or clinical
 correctness. Those are measured separately.
 
+## Bundles (`amber.bundles`; Parquet files need the `bundles` extra)
+
+- A bundle is one dataset and one variable set: a manifest plus the §5.4 tables (`sources`,
+  `mentions`, `mention_readings`, `claims`, `evidence`, `evidence_edges`, `cases`,
+  `variable_outcomes`, and per kind `results` (run), `examples` (gold), or
+  `annotation_events` (review); `decisions` optional). Tables hold `text_hash`, never full
+  source text.
+- `build_bundle` assembles one from validated records: a `run` bundle holds the results of
+  `producer.run_id`; a `gold` bundle one Example per case, with optional events; a `review`
+  bundle events and the spans they name. Cases must match the manifest's dataset,
+  sensitivity, and variable set, one case per source.
+- `check_bundle` rejects missing tables or columns, wrong types, nulls, duplicate keys,
+  unknown non-`x_` columns, a `content_sha256` that differs from the key-sorted canonical
+  rows, payload kinds other than those derived from the schemas and answer models, and case
+  rows outside the manifest's scope. It runs before any validation.
+- `load_bundle` with a resolver checks every source against its `text_hash`
+  (`source_unavailable`, `source_hash_mismatch`), re-mints spans, and revalidates results,
+  Examples (against their events when present), events, and decisions through amber's
+  boundaries. Without a resolver it returns an `UnvalidatedBundle` whose rows those
+  boundaries refuse.
+- `amber.bundles.parquet.write_bundle` / `read_bundle`: JSON columns as canonical JSON
+  strings (non-canonical JSON is rejected), timestamps as `timestamp[us, UTC]`, rows sorted
+  by key, optional per-file `file_sha256`, and `x_` columns preserved.
+- Results and Examples list their records in key order, so equal content has one JSON form.
+
 ## Interfaces (`amber.interfaces`) and references (`amber.reference`)
 
 Protocols are structural and experimental until a real consumer uses them. Reference

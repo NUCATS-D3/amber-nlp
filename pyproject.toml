@@ -18,6 +18,10 @@ dependencies = [
 tracking = [
     "mlflow>=3.17,<3.18",
 ]
+# Parquet bundle files; the bundle model, hashing, and validation need only the core.
+bundles = [
+    "pyarrow>=17",
+]
 # The conformance kit's pytest plugin; the rest of the kit needs only the core.
 conformance = [
     "pytest>=8",
@@ -63,6 +67,10 @@ ignore = ["UP040"]
 python_version = "3.12"
 plugins = ["pydantic.mypy"]
 strict = false
+
+[[tool.mypy.overrides]]
+module = ["pyarrow", "pyarrow.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

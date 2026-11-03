@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any, Literal, NoReturn, TypeAlias
 
+from amber._graph_validation import ordered_records
 from amber.graph import EvidenceGraph
 from amber.ids import validate_ulid
 from amber.schemas._wire import SCHEMA_VERSION, check_schema_version
@@ -270,11 +271,13 @@ def _finish(case: Case, graph: EvidenceGraph, payload: Mapping[str, Any]) -> Cas
                 "variable_set": variables.name,
                 "variable_set_version": variables.version,
                 "variable_set_ref": variables.schema_ref,
-                "claims": list(graph.claims.values()),
-                "evidence": list(graph.evidence.values()),
-                "edges": list(graph.edges),
-                "mentions": list(graph.mentions.values()),
-                "mention_readings": list(graph.mention_readings.values()),
+                **ordered_records(
+                    claims=graph.claims,
+                    evidence=graph.evidence,
+                    edges=graph.edges,
+                    mentions=graph.mentions,
+                    readings=graph.mention_readings,
+                ),
                 "variable_outcomes": outcomes,
                 "final_claim_ids": final_ids,
                 "outcome": outcome,

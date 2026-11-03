@@ -17,6 +17,7 @@ from amber._graph_validation import (
     RETAINED_STATUSES,
     _ValidatedState,
     build_context,
+    ordered_records,
     validate_state,
 )
 from amber.ids import example_id, validate_ulid
@@ -298,11 +299,13 @@ def load_example(
             {
                 **copied,
                 "references": references,
-                "claims": list(state.claims.values()),
-                "evidence": list(state.evidence.values()),
-                "edges": list(state.edges),
-                "mentions": list(state.mentions.values()),
-                "mention_readings": list(state.readings.values()),
+                **ordered_records(
+                    claims=state.claims,
+                    evidence=state.evidence,
+                    edges=state.edges,
+                    mentions=state.mentions,
+                    readings=state.readings,
+                ),
             }
         )
     except (AttributeError, TypeError, ValueError, ValidationError):

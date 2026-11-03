@@ -35,6 +35,8 @@ src/amber/annotations.py  annotation-event replay, projections, Examples from ev
 src/amber/interfaces.py   protocols (Store, SourceResolver)
 src/amber/reference/      synthetic reference implementations (not loaded by import amber)
 src/amber/conformance/    conformance catalog, fixtures, checks, report, pytest plugin
+src/amber/bundles/        bundle tables, manifest, hashing, loading; Parquet I/O (bundles extra)
+src/amber/wire.py         JSON forms that are not plain model dumps (VariableSet)
 src/amber/mlflow_ext/     optional MLflow plugins (tracking extra)
 tests/                    synthetic, offline tests
 scripts/                  core-install check and local MLflow launcher
@@ -49,7 +51,7 @@ scripts/                  core-install check and local MLflow launcher
 ## Commands
 
 ```sh
-uv sync --extra dev --extra tracking      # full development environment
+uv sync --extra dev --extra tracking --extra bundles   # full development environment
 uv run pytest
 uv run ruff check . && uv run ruff format --check .
 uv run mypy src

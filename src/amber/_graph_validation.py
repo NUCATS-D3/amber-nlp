@@ -706,3 +706,21 @@ def validate_state(
         mentions=MappingProxyType(dict(mention_records)),
         readings=MappingProxyType(dict(reading_records)),
     )
+
+
+def ordered_records(
+    *,
+    claims: Mapping[str, Claim],
+    evidence: Mapping[str, Inclusion | InferenceEvidence],
+    edges: Iterable[EvidenceEdge],
+    mentions: Mapping[str, Mention],
+    readings: Mapping[str, MentionReading],
+) -> dict[str, list[Any]]:
+    """Graph records in key order, so equal content has one order and one JSON form."""
+    return {
+        "claims": [claims[key] for key in sorted(claims)],
+        "evidence": [evidence[key] for key in sorted(evidence)],
+        "edges": sorted(edges, key=lambda edge: (edge.claim_id, edge.evidence_id, edge.role or "")),
+        "mentions": [mentions[key] for key in sorted(mentions)],
+        "mention_readings": [readings[key] for key in sorted(readings)],
+    }

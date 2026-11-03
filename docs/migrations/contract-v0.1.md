@@ -137,6 +137,9 @@ UTC with `Z` and six fractional digits (§5.2); hashes and Python values are unc
   `schema_version: "0.1"`; readers comparing timestamp strings; results whose `usage`
   exceeds their `budget` without every variable `failed` with `failure_kind="budget"`
   (`budget_exceeded`).
+- **Also:** results and Examples now list claims, mentions, readings, evidence, and edges in
+  key order, so stored JSON written in another order reloads equal but re-serializes in key
+  order.
 - **Upgrade:** add `"schema_version": "amber/0.1"`, `"budget": null`, and `"usage": null` to
   stored case results; rewrite `"0.1"` as `"amber/0.1"` elsewhere. Parse timestamps instead
   of comparing strings. An over-budget run must record `failed(budget)` itself; loading

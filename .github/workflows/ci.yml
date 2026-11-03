@@ -54,7 +54,7 @@ jobs:
       - name: Check lockfile consistency
         run: uv lock --check
       - name: Install the locked test and optional interface dependencies
-        run: uv sync --locked --no-editable --extra dev --extra tracking
+        run: uv sync --locked --no-editable --extra dev --extra tracking --extra bundles
       - name: Require optional plugins before tests can skip them
         run: uv run --no-sync python -c "import mlflow"
       - name: Run offline CPU tests using synthetic inputs only
