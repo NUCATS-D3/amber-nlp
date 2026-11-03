@@ -10,7 +10,7 @@ from amber.policy import PayloadKind
 from amber.schemas.variables import VariableSet
 
 ColumnType: TypeAlias = Literal["string", "int64", "float64", "bool", "timestamp", "json"]
-BundleKind: TypeAlias = Literal["run", "review", "gold"]
+BundleKind: TypeAlias = Literal["run", "review", "gold", "labels"]
 
 
 @dataclass(frozen=True)
@@ -259,6 +259,23 @@ TABLES: dict[str, TableSchema] = {
             "labels_only",
         ),
         TableSchema(
+            "label_records",
+            (
+                _c("case_id"),
+                _c("variable"),
+                _c("variable_set"),
+                _c("variable_set_version"),
+                _c("variable_set_ref"),
+                _c("tier"),
+                _c("outcome_status"),
+                _c("value", "json", True),
+                _c("producer"),
+                _c("split", nullable=True),
+            ),
+            ("case_id", "variable"),
+            None,
+        ),
+        TableSchema(
             "decisions",
             (
                 _c("decision_id"),
@@ -296,11 +313,17 @@ REQUIRED: dict[BundleKind, tuple[str, ...]] = {
     "run": (*ALWAYS_REQUIRED, "results"),
     "review": (*ALWAYS_REQUIRED, "annotation_events"),
     "gold": (*ALWAYS_REQUIRED, "examples"),
+    # amber-labels/0.1: only files that are labels_only by construction (section 6.2).
+    "labels": ("cases", "label_records"),
 }
+LABELS_TABLES = frozenset(
+    {"cases", "results", "evidence_edges", "examples", "decisions", "claims", "label_records"}
+)
 
 
 def payload_kind(table: str, variables: VariableSet) -> PayloadKind:
-    """A file's payload kind from its schema; ``claims`` follows the answer models."""
+    """A file's payload kind from its schema; ``claims`` and ``label_records`` follow the
+    answer models, since their values are answers."""
     declared = TABLES[table].payload_kind
     if declared is not None:
         return declared

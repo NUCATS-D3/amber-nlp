@@ -217,12 +217,13 @@ def main() -> None:
         bundle, variables=fixtures.VARIABLES, resolver=InMemoryResolver([fixtures.SOURCE])
     )
     assert isinstance(loaded, BundleContents) and len(loaded.results) == 1
-    try:
-        importlib.import_module("amber.bundles.parquet")
-    except ImportError as error:
-        assert "amber[bundles]" in str(error)
-    else:
-        raise AssertionError("Parquet bundles must require the bundles extra")
+    for module in ("amber.bundles.parquet", "amber.reference.exporter"):
+        try:
+            importlib.import_module(module)
+        except ImportError as error:
+            assert "amber[bundles]" in str(error)
+        else:
+            raise AssertionError(f"{module} must require the bundles extra")
     assert "pyarrow" not in sys.modules
     print(
         "Core-only installed grounding, claim commit, case results, restore, policy, "

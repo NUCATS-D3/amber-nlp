@@ -265,13 +265,28 @@ correctness. Those are measured separately.
   strings (non-canonical JSON is rejected), timestamps as `timestamp[us, UTC]`, rows sorted
   by key, optional per-file `file_sha256`, and `x_` columns preserved.
 - Results and Examples list their records in key order, so equal content has one JSON form.
+- **`amber-labels/0.1`** (`build_labels_bundle`, `load_labels`): bundle kind `labels`, holding
+  only files that are `labels_only` by construction (`cases`, `results`, `examples`,
+  `evidence_edges`, `decisions`, `claims` when every answer model is closed, and
+  `label_records` from `labels_only_view`). It is for tracking servers, cannot be validated
+  against sources, and any other or `derived_text` table is rejected. Variable sets with open
+  answer models cannot produce one.
 
 ## Interfaces (`amber.interfaces`) and references (`amber.reference`)
 
 Protocols are structural and experimental until a real consumer uses them. Reference
 implementations are synthetic and are not loaded by `import amber`.
 
+- **`PolicyGate`**: `check`/`require` against a matrix. Reference: `amber.policy.StaticGate`.
+  `PolicyViolation` carries the first refusal and, for multi-file transfers, every decision.
 - **`SourceResolver`**: `resolve(source_id) -> Source | None`. Reference: `InMemoryResolver`.
+- **`Exporter`**: `export(items, target, *, gate, data, now) -> ExportReceipt`. It derives each
+  output file's payload kind from its schema, gates every file (the manifest included) before
+  writing anything, and writes all of them or none; a refusal raises `PolicyViolation` with
+  every decision. `ExportReceipt` lists each file's payload kind, decision, and
+  `content_sha256`, and where the export went. Reference: `amber.reference.exporter.LocalExporter`
+  (`bundles` extra), writing `amber-bundle/0.1` (run or gold bundles) or `amber-labels/0.1`
+  directories through a staging directory.
 - **`Store`**: cases bound to their variable set, results keyed by `(case_id, run_id)`,
   append-only events with the spans they name, Examples, and label records. Every read
   revalidates through amber's load boundaries with the caller's resolver (`source_unavailable`
@@ -321,12 +336,10 @@ implementations are synthetic and are not loaded by `import amber`.
 
 These items are tracked in Beads (`bd list --status=open`):
 
-- the `PolicyGate` protocol and its reference implementation;
-- claims that rely on readings and required attributes (`StructuredEvidence` is deferred to a
-  later minor; contract v0.1 §2.6);
+- structured evidence (deferred to a later minor; contract v0.1 §2.6);
 - derivations and rule replay;
-- the remaining interfaces (`Extractor`, `Provider`, `Exporter`, `Scorer`, `ReviewBackend`,
-  `Labeler`, `PolicyGate`);
+- the remaining interfaces (`Extractor`, `Provider`, `Rule`, `Scorer`, `ReviewBackend`,
+  `Labeler`);
 - conformance checks for the remaining targets and for bundles;
 - MLflow plugins for evaluation, datasets, the loupe bridge, and deployment.
 

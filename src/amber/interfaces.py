@@ -8,9 +8,20 @@ reference implementations live in ``amber.reference``, which ``import amber`` do
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from datetime import datetime
 from typing import Literal, Protocol, TypeAlias, runtime_checkable
 
+from pydantic import BaseModel, ConfigDict
+
 from amber.annotations import Projection
+from amber.policy import (
+    DataPolicy,
+    Decision,
+    Destination,
+    PayloadKind,
+    PolicyMatrix,
+    RunContext,
+)
 from amber.schemas.annotations import AnnotationEvent
 from amber.schemas.cases import Case, CaseResult
 from amber.schemas.evidence import Inclusion
@@ -20,6 +31,34 @@ from amber.schemas.sources import Source
 from amber.schemas.variables import VariableSet
 
 StoreCapability: TypeAlias = Literal["events", "examples", "query", "transactions"]
+
+
+@runtime_checkable
+class PolicyGate(Protocol):
+    """Decides every transfer (contract v0.1 section 1). Reference: ``amber.policy.StaticGate``."""
+
+    matrix: PolicyMatrix
+
+    def check(
+        self,
+        data: DataPolicy,
+        destination: Destination,
+        payload: PayloadKind,
+        *,
+        now: datetime,
+        context: RunContext | None = None,
+        case_id: str | None = None,
+    ) -> Decision: ...
+    def require(
+        self,
+        data: DataPolicy,
+        destination: Destination,
+        payload: PayloadKind,
+        *,
+        now: datetime,
+        context: RunContext | None = None,
+        case_id: str | None = None,
+    ) -> Decision: ...
 
 
 @runtime_checkable
@@ -65,3 +104,49 @@ class Store(Protocol):
     def current_example(self, case_id: str, *, resolver: SourceResolver) -> Example | None: ...
     def put_label_record(self, record: LabelRecord) -> None: ...
     def label_records(self, case_id: str) -> Sequence[LabelRecord]: ...
+
+
+class ExportedFile(BaseModel):
+    """One written file: its payload kind, the decision that let it go, and its content hash."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    file: str
+    payload_kind: PayloadKind
+    decision: Decision
+    content_sha256: str
+
+
+class ExportReceipt(BaseModel):
+    """What an export wrote and why it was allowed; ``labels_only``."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    format: str
+    destination: str
+    location: str
+    files: tuple[ExportedFile, ...]
+
+
+ExportItem: TypeAlias = CaseResult | Example | LabelRecord
+
+
+@runtime_checkable
+class Exporter(Protocol):
+    """Writes records in one format, gating every output file by its schema-derived payload kind.
+
+    ``export`` calls the gate once per file before writing anything. If any file is refused,
+    nothing is written and it raises ``PolicyViolation`` carrying every decision.
+    """
+
+    format: str
+
+    def export(
+        self,
+        items: Sequence[ExportItem],
+        target: Destination,
+        *,
+        gate: PolicyGate,
+        data: DataPolicy,
+        now: datetime,
+    ) -> ExportReceipt: ...

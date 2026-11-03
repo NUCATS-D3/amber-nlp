@@ -17,12 +17,13 @@ from typing import Any, Literal, NoReturn, TypeAlias
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from amber.annotations import replay, verify_example
-from amber.bundles.schema import REQUIRED, TABLES, BundleKind, payload_kind
+from amber.bundles.schema import LABELS_TABLES, REQUIRED, TABLES, BundleKind, payload_kind
 from amber.cases import load_case_result
-from amber.examples import load_example
+from amber.examples import ExampleValidationError, load_example, load_label_record
 from amber.grounding import exact_mention, exact_quote
 from amber.ids import canonical_json, canonical_sha256
 from amber.interfaces import SourceResolver
+from amber.labels import labels_only_view
 from amber.policy import Decision, PayloadKind
 from amber.schemas import (
     AnnotationEvent,
@@ -33,6 +34,7 @@ from amber.schemas import (
     Example,
     Inclusion,
     InferenceEvidence,
+    LabelRecord,
     Mention,
     MentionReading,
     Provenance,
@@ -64,6 +66,7 @@ BundleErrorCode: TypeAlias = Literal[
     "source_unavailable",
     "source_hash_mismatch",
     "orphan_evidence",
+    "derived_text_in_labels",
 ]
 
 
@@ -575,9 +578,187 @@ class _Tables:
             self.add("evidence_edges", edge.model_dump(mode="json"))
 
 
+def _add_cases(
+    tables: _Tables,
+    cases: Iterable[Case],
+    *,
+    variables: VariableSet,
+    dataset: ManifestDataset,
+    created_at: datetime,
+    sources: Mapping[str, Source] | None,
+) -> set[str]:
+    case_ids: set[str] = set()
+    case_sources: set[str] = set()
+    for case in cases:
+        source_id = case.source_ids[0]
+        if (
+            case.task != variables.name
+            or case.dataset != dataset.name
+            or case.sensitivity is not dataset.sensitivity
+            or source_id in case_sources
+            or (
+                sources is not None
+                and (source_id not in sources or case.patient_id != sources[source_id].patient_id)
+            )
+        ):
+            _raise("case_mismatch", "cases")
+        tables.add(
+            "cases",
+            {
+                "case_id": case.case_id,
+                "dataset": dataset.name,
+                "dataset_manifest_hash": dataset.manifest_hash,
+                "source_id": source_id,
+                "patient_id": case.patient_id,
+                "variable_set": variables.name,
+                "variable_set_version": variables.version,
+                "variable_set_ref": variables.schema_ref,
+                "sensitivity": case.sensitivity.value,
+                "split": case.split,
+                "created_at": created_at,
+            },
+        )
+        case_ids.add(case.case_id)
+        case_sources.add(source_id)
+    return case_ids
+
+
+def _add_result(tables: _Tables, result: CaseResult, variables: VariableSet) -> None:
+    tables.graph(
+        result.case_id,
+        variables,
+        result.claims,
+        result.mentions,
+        result.mention_readings,
+        result.evidence,
+        result.edges,
+    )
+    for outcome in result.variable_outcomes.values():
+        tables.add("variable_outcomes", _outcome_row(result.case_id, outcome))
+    tables.add(
+        "results",
+        {
+            "case_id": result.case_id,
+            "run_id": result.run_id,
+            "grounding_failures": result.grounding_failures,
+            "tool_calls": result.tool_calls,
+            "escalated": result.escalated,
+            "trace_id": result.trace_id,
+            "budget": None if result.budget is None else result.budget.model_dump(mode="json"),
+            "usage": None if result.usage is None else result.usage.model_dump(mode="json"),
+        },
+    )
+
+
+def _add_example(tables: _Tables, example: Example, variables: VariableSet) -> None:
+    tables.graph(
+        example.case_id,
+        variables,
+        example.claims,
+        example.mentions,
+        example.mention_readings,
+        example.evidence,
+        example.edges,
+    )
+    for name, reference in example.references.items():
+        tables.add(
+            "variable_outcomes",
+            _outcome_row(
+                example.case_id,
+                VariableOutcome(
+                    variable=name,
+                    outcome=reference.outcome,
+                    final_claim_ids=list(reference.final_claim_ids),
+                ),
+            ),
+        )
+        tables.add(
+            "examples",
+            {
+                "example_id": example.example_id,
+                "variable": name,
+                "case_id": example.case_id,
+                "variable_set": example.variable_set,
+                "variable_set_version": example.variable_set_version,
+                "variable_set_ref": example.variable_set_ref,
+                "as_of_event": example.as_of_event,
+                "split": example.split,
+                "tier": reference.tier.value,
+                "outcome_status": reference.outcome.status,
+                "final_claim_ids": list(reference.final_claim_ids),
+                "annotators": list(reference.annotators),
+                "adjudicator": reference.adjudicator,
+                "derived_from_events": list(reference.derived_from_events),
+                "created_at": example.created_at,
+            },
+        )
+
+
+def _label_row(record: LabelRecord) -> Row:
+    dumped = record.model_dump(mode="json")
+    return {column.name: dumped[column.name] for column in TABLES["label_records"].columns}
+
+
+def _assemble(
+    kind: BundleKind,
+    tables: Mapping[str, Mapping[tuple[Any, ...], Row]],
+    *,
+    required: Iterable[str],
+    variables: VariableSet,
+    dataset: ManifestDataset,
+    producer: ManifestProducer,
+    policy_version: str,
+    created_at: datetime,
+) -> Bundle:
+    present = set(required) | set(tables)
+    rows = {
+        name: sorted_rows(name, tables.get(name, {}).values()) for name in TABLES if name in present
+    }
+    for name, table_rows in rows.items():
+        check_rows(name, table_rows)
+    manifest = Manifest(
+        bundle_kind=kind,
+        producer=producer,
+        variable_set=ManifestVariableSet(
+            name=variables.name, version=variables.version, schema_ref=variables.schema_ref
+        ),
+        dataset=dataset,
+        policy_version=policy_version,
+        sources=ManifestSources(count=len(rows.get("sources", ()))),
+        tables={
+            name: ManifestTable(
+                rows=len(table_rows), content_sha256=content_sha256(name, table_rows)
+            )
+            for name, table_rows in rows.items()
+        },
+        payload_kinds={TABLES[name].file: payload_kind(name, variables) for name in rows},
+        created_at=created_at,
+    )
+    return Bundle(manifest=manifest, tables=MappingProxyType(rows))
+
+
+def _check_items(
+    results: Sequence[CaseResult],
+    examples: Sequence[Example],
+    case_ids: set[str],
+    variables: VariableSet,
+    producer: ManifestProducer,
+) -> None:
+    for result in results:
+        if result.case_id not in case_ids or result.variable_set_ref != variables.schema_ref:
+            _raise("case_mismatch", "results")
+        if producer.run_id is None or result.run_id != producer.run_id:
+            _raise("run_mismatch", "results", "run_id")
+    if len({example.case_id for example in examples}) != len(examples):
+        _raise("invalid_bundle", "examples", "case_id")
+    for example in examples:
+        if example.case_id not in case_ids or example.variable_set_ref != variables.schema_ref:
+            _raise("case_mismatch", "examples")
+
+
 def build_bundle(
     *,
-    kind: BundleKind,
+    kind: Literal["run", "review", "gold"],
     variables: VariableSet,
     dataset: ManifestDataset,
     producer: ManifestProducer,
@@ -591,127 +772,36 @@ def build_bundle(
     spans: Iterable[Inclusion | Mention] = (),
     decisions: Iterable[Decision] = (),
 ) -> Bundle:
-    """Assemble a bundle of one dataset and one variable set from validated records.
+    """Assemble an ``amber-bundle/0.1`` of one dataset and one variable set.
 
     A ``run`` bundle holds results of one run (``producer.run_id``); a ``gold`` bundle one
     Example per case, with optional events; a ``review`` bundle events and the spans they name.
     """
+    if kind not in ("run", "review", "gold"):
+        _raise("invalid_bundle")
     tables = _Tables()
-    source_list = list(sources)
-    by_source = {source.source_id: source for source in source_list}
-    for source in source_list:
+    by_source = {}
+    for source in sources:
+        by_source[source.source_id] = source
         tables.add("sources", _source_row(source))
-    case_list = list(cases)
-    case_ids: set[str] = set()
-    for case in case_list:
-        if (
-            case.task != variables.name
-            or case.dataset != dataset.name
-            or case.sensitivity is not dataset.sensitivity
-            or case.source_ids[0] not in by_source
-            or case.patient_id != by_source[case.source_ids[0]].patient_id
-        ):
-            _raise("case_mismatch", "cases")
-        tables.add(
-            "cases",
-            {
-                "case_id": case.case_id,
-                "dataset": dataset.name,
-                "dataset_manifest_hash": dataset.manifest_hash,
-                "source_id": case.source_ids[0],
-                "patient_id": case.patient_id,
-                "variable_set": variables.name,
-                "variable_set_version": variables.version,
-                "variable_set_ref": variables.schema_ref,
-                "sensitivity": case.sensitivity.value,
-                "split": case.split,
-                "created_at": created_at,
-            },
-        )
-        case_ids.add(case.case_id)
-    if len({case.source_ids[0] for case in case_list}) != len(case_list):
-        _raise("case_mismatch", "cases", "source_id")
-
+    case_ids = _add_cases(
+        tables,
+        cases,
+        variables=variables,
+        dataset=dataset,
+        created_at=created_at,
+        sources=by_source,
+    )
     result_list, example_list, event_list = list(results), list(examples), list(events)
     if (kind == "run") != bool(result_list) or (kind == "gold") != bool(example_list):
         _raise("invalid_bundle")
     if kind == "review" and not event_list:
         _raise("invalid_bundle")
+    _check_items(result_list, example_list, case_ids, variables, producer)
     for result in result_list:
-        if result.case_id not in case_ids or result.variable_set_ref != variables.schema_ref:
-            _raise("case_mismatch", "results")
-        if producer.run_id is None or result.run_id != producer.run_id:
-            _raise("run_mismatch", "results", "run_id")
-        tables.graph(
-            result.case_id,
-            variables,
-            result.claims,
-            result.mentions,
-            result.mention_readings,
-            result.evidence,
-            result.edges,
-        )
-        for outcome in result.variable_outcomes.values():
-            tables.add("variable_outcomes", _outcome_row(result.case_id, outcome))
-        tables.add(
-            "results",
-            {
-                "case_id": result.case_id,
-                "run_id": result.run_id,
-                "grounding_failures": result.grounding_failures,
-                "tool_calls": result.tool_calls,
-                "escalated": result.escalated,
-                "trace_id": result.trace_id,
-                "budget": None if result.budget is None else result.budget.model_dump(mode="json"),
-                "usage": None if result.usage is None else result.usage.model_dump(mode="json"),
-            },
-        )
-    if len({example.case_id for example in example_list}) != len(example_list):
-        _raise("invalid_bundle", "examples", "case_id")
+        _add_result(tables, result, variables)
     for example in example_list:
-        if example.case_id not in case_ids or example.variable_set_ref != variables.schema_ref:
-            _raise("case_mismatch", "examples")
-        tables.graph(
-            example.case_id,
-            variables,
-            example.claims,
-            example.mentions,
-            example.mention_readings,
-            example.evidence,
-            example.edges,
-        )
-        for name, reference in example.references.items():
-            tables.add(
-                "variable_outcomes",
-                _outcome_row(
-                    example.case_id,
-                    VariableOutcome(
-                        variable=name,
-                        outcome=reference.outcome,
-                        final_claim_ids=list(reference.final_claim_ids),
-                    ),
-                ),
-            )
-            tables.add(
-                "examples",
-                {
-                    "example_id": example.example_id,
-                    "variable": name,
-                    "case_id": example.case_id,
-                    "variable_set": example.variable_set,
-                    "variable_set_version": example.variable_set_version,
-                    "variable_set_ref": example.variable_set_ref,
-                    "as_of_event": example.as_of_event,
-                    "split": example.split,
-                    "tier": reference.tier.value,
-                    "outcome_status": reference.outcome.status,
-                    "final_claim_ids": list(reference.final_claim_ids),
-                    "annotators": list(reference.annotators),
-                    "adjudicator": reference.adjudicator,
-                    "derived_from_events": list(reference.derived_from_events),
-                    "created_at": example.created_at,
-                },
-            )
+        _add_example(tables, example, variables)
     for event in event_list:
         if event.case_id not in case_ids:
             _raise("case_mismatch", "annotation_events")
@@ -723,34 +813,82 @@ def build_bundle(
             tables.add("evidence", _evidence_row(span))
     for decision in decisions:
         tables.add("decisions", _decision_row(decision))
-
-    present = set(REQUIRED[kind]) | set(tables.rows)
-    rows = {
-        name: sorted_rows(name, tables.rows.get(name, {}).values())
-        for name in TABLES
-        if name in present
-    }
-    for name, table_rows in rows.items():
-        check_rows(name, table_rows)
-    manifest = Manifest(
-        bundle_kind=kind,
-        producer=producer,
-        variable_set=ManifestVariableSet(
-            name=variables.name, version=variables.version, schema_ref=variables.schema_ref
-        ),
+    return _assemble(
+        kind,
+        tables.rows,
+        required=REQUIRED[kind],
+        variables=variables,
         dataset=dataset,
+        producer=producer,
         policy_version=policy_version,
-        sources=ManifestSources(count=len(rows["sources"])),
-        tables={
-            name: ManifestTable(
-                rows=len(table_rows), content_sha256=content_sha256(name, table_rows)
-            )
-            for name, table_rows in rows.items()
-        },
-        payload_kinds={TABLES[name].file: payload_kind(name, variables) for name in rows},
         created_at=created_at,
     )
-    return Bundle(manifest=manifest, tables=MappingProxyType(rows))
+
+
+def build_labels_bundle(
+    *,
+    variables: VariableSet,
+    dataset: ManifestDataset,
+    producer: ManifestProducer,
+    policy_version: str,
+    created_at: datetime,
+    cases: Iterable[Case],
+    results: Iterable[CaseResult] = (),
+    examples: Iterable[Example] = (),
+    label_records: Iterable[LabelRecord] = (),
+    decisions: Iterable[Decision] = (),
+) -> Bundle:
+    """Assemble an ``amber-labels/0.1`` bundle: only files that are ``labels_only`` by
+    construction, for tracking servers (contract v0.1 section 6.2).
+
+    It holds cases, results, examples, evidence edges, decisions, claims when every answer
+    model is closed, and ``labels_only_view`` of each result as label records. It cannot be
+    validated against sources and never substitutes for a bundle.
+    """
+    tables = _Tables()
+    case_list = list(cases)
+    case_ids = _add_cases(
+        tables,
+        case_list,
+        variables=variables,
+        dataset=dataset,
+        created_at=created_at,
+        sources=None,
+    )
+    result_list, example_list = list(results), list(examples)
+    _check_items(result_list, example_list, case_ids, variables, producer)
+    by_case = {case.case_id: case for case in case_list}
+    for result in result_list:
+        _add_result(tables, result, variables)
+        for record in labels_only_view(result, case=by_case[result.case_id], variables=variables):
+            tables.add("label_records", _label_row(record))
+    for example in example_list:
+        _add_example(tables, example, variables)
+    for record in label_records:
+        case = by_case.get(record.case_id)
+        if case is None or record.variable_set_ref != variables.schema_ref:
+            _raise("case_mismatch", "label_records")
+        if record.split != case.split:
+            _raise("case_mismatch", "label_records", "split")
+        tables.add("label_records", _label_row(record))
+    for decision in decisions:
+        tables.add("decisions", _decision_row(decision))
+    keep = set(LABELS_TABLES)
+    if payload_kind("claims", variables) != "labels_only":
+        keep.discard("claims")
+    if payload_kind("label_records", variables) != "labels_only":
+        _raise("derived_text_in_labels", "label_records")
+    selected = {name: rows for name, rows in tables.rows.items() if name in keep}
+    return _assemble(
+        "labels",
+        selected,
+        required=REQUIRED["labels"],
+        variables=variables,
+        dataset=dataset,
+        producer=producer,
+        policy_version=policy_version,
+        created_at=created_at,
+    )
 
 
 # Checking and loading ----------------------------------------------------------------------
@@ -766,8 +904,11 @@ def check_bundle(bundle: Bundle, *, variables: VariableSet) -> None:
     for name in REQUIRED[manifest.bundle_kind]:
         if name not in present:
             _raise("missing_table", name)
+    labels = manifest.bundle_kind == "labels"
     for name in present:
-        if name not in TABLES:
+        if name not in TABLES or (labels and name not in LABELS_TABLES):
+            _raise("unexpected_table", name)
+        if not labels and name == "label_records":
             _raise("unexpected_table", name)
     if set(manifest.tables) != present:
         _raise("invalid_manifest")
@@ -779,15 +920,18 @@ def check_bundle(bundle: Bundle, *, variables: VariableSet) -> None:
     expected_kinds = {TABLES[name].file: payload_kind(name, variables) for name in present}
     if manifest.payload_kinds != expected_kinds:
         _raise("payload_kind_mismatch")
+    if labels and any(kind != "labels_only" for kind in expected_kinds.values()):
+        _raise("derived_text_in_labels")
     if (
         manifest.variable_set.name != variables.name
         or manifest.variable_set.version != variables.version
         or manifest.variable_set.schema_ref != variables.schema_ref
     ):
         _raise("variable_set_mismatch")
-    if manifest.sources.count != len(bundle.tables["sources"]):
+    source_rows = bundle.tables.get("sources", ())
+    if manifest.sources.count != len(source_rows):
         _raise("invalid_manifest")
-    sources = {row["source_id"] for row in bundle.tables["sources"]}
+    sources = None if labels else {row["source_id"] for row in source_rows}
     case_sources: set[str] = set()
     for row in bundle.tables["cases"]:
         if (
@@ -797,7 +941,7 @@ def check_bundle(bundle: Bundle, *, variables: VariableSet) -> None:
             or row["variable_set"] != variables.name
             or row["variable_set_version"] != variables.version
             or row["variable_set_ref"] != variables.schema_ref
-            or row["source_id"] not in sources
+            or (sources is not None and row["source_id"] not in sources)
             or row["source_id"] in case_sources
         ):
             _raise("case_mismatch", "cases")
@@ -964,6 +1108,8 @@ def load_bundle(
     case, and example boundaries refuse.
     """
     check_bundle(bundle, variables=variables)
+    if bundle.manifest.bundle_kind == "labels":
+        _raise("invalid_bundle")
     if resolver is None:
         return UnvalidatedBundle(
             manifest=bundle.manifest,
@@ -1133,3 +1279,63 @@ def _spans(bundle: Bundle, sources: Mapping[str, Source]) -> tuple[Inclusion | M
             _raise("source_hash_mismatch", "evidence", "evidence_id")
         spans.append(quoted)
     return tuple(spans)
+
+
+@dataclass(frozen=True)
+class LabelsContents:
+    """An ``amber-labels/0.1`` bundle: label records and decisions validated against the cases
+    and variable set; everything else stays unvalidated, since there are no sources."""
+
+    manifest: Manifest
+    cases: tuple[Case, ...]
+    label_records: tuple[LabelRecord, ...]
+    decisions: tuple[Decision, ...]
+    tables: Mapping[str, tuple[UnvalidatedRow, ...]]
+
+
+def load_labels(bundle: Bundle, *, variables: VariableSet) -> LabelsContents:
+    """Check an ``amber-labels/0.1`` bundle and validate what can be validated without sources."""
+    if bundle.manifest.bundle_kind != "labels":
+        _raise("invalid_bundle")
+    check_bundle(bundle, variables=variables)
+    cases = {row["case_id"]: _case(row) for row in bundle.tables["cases"]}
+    records: list[LabelRecord] = []
+    for row in bundle.tables["label_records"]:
+        case = cases.get(row["case_id"])
+        if case is None:
+            _raise("case_mismatch", "label_records")
+        try:
+            records.append(
+                load_label_record(
+                    {
+                        **_plain(row, "label_records"),
+                        "schema_version": bundle.manifest.schema_version,
+                    },
+                    case=case,
+                    variables=variables,
+                )
+            )
+        except ExampleValidationError:
+            _raise("case_mismatch", "label_records")
+    try:
+        decisions = tuple(
+            Decision.model_validate(
+                {**_plain(row, "decisions"), "schema_version": bundle.manifest.schema_version}
+            )
+            for row in bundle.tables.get("decisions", ())
+        )
+    except ValidationError:
+        _raise("invalid_bundle", "decisions")
+    return LabelsContents(
+        manifest=bundle.manifest,
+        cases=tuple(cases.values()),
+        label_records=tuple(records),
+        decisions=decisions,
+        tables=MappingProxyType(
+            {
+                name: tuple(UnvalidatedRow(row) for row in rows)
+                for name, rows in bundle.tables.items()
+                if name not in ("label_records", "decisions", "cases")
+            }
+        ),
+    )

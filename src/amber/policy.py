@@ -295,10 +295,15 @@ class Decision(BaseModel):
 
 
 class PolicyViolation(Exception):
-    """Raised by enforcement points, never by ``check``; carries the refusal."""
+    """Raised by enforcement points, never by ``check``; carries the refusal.
 
-    def __init__(self, decision: Decision) -> None:
+    ``decision`` is the first refusal; ``decisions`` holds every decision made for the
+    transfer, permitted or refused, when one transfer needed several (an export's files).
+    """
+
+    def __init__(self, decision: Decision, decisions: Sequence[Decision] = ()) -> None:
         self.decision = decision
+        self.decisions = tuple(decisions) or (decision,)
         super().__init__(
             f"policy refused {decision.payload} to {decision.destination}: {decision.reason}"
         )
@@ -387,6 +392,43 @@ def require(
     if not decision.permitted:
         raise PolicyViolation(decision)
     return decision
+
+
+class StaticGate:
+    """The reference ``PolicyGate``: ``check`` and ``require`` against one fixed matrix."""
+
+    def __init__(self, matrix: PolicyMatrix) -> None:
+        if not isinstance(matrix, PolicyMatrix):
+            raise TypeError("StaticGate needs a PolicyMatrix")
+        self.matrix = matrix
+
+    def check(
+        self,
+        data: DataPolicy,
+        destination: Destination,
+        payload: PayloadKind,
+        *,
+        now: datetime,
+        context: RunContext | None = None,
+        case_id: str | None = None,
+    ) -> Decision:
+        return check(
+            self.matrix, data, destination, payload, now=now, context=context, case_id=case_id
+        )
+
+    def require(
+        self,
+        data: DataPolicy,
+        destination: Destination,
+        payload: PayloadKind,
+        *,
+        now: datetime,
+        context: RunContext | None = None,
+        case_id: str | None = None,
+    ) -> Decision:
+        return require(
+            self.matrix, data, destination, payload, now=now, context=context, case_id=case_id
+        )
 
 
 def combine(policies: Sequence[DataPolicy]) -> DataPolicy:

@@ -18,6 +18,7 @@ The suite is flat and grouped by the boundary under test. All inputs are invente
 | `test_labels.py` | `labels_only_view` for results and events, schema closedness, no source text in output |
 | `test_wire.py` | JSON records: golden bytes and keys, schema versions, timestamps, budgets, VariableSet JSON |
 | `test_bundles.py` | Bundles: Parquet round trips, structure, hashes, payload kinds, resolver loading, `x_` columns (needs pyarrow) |
+| `test_export.py` | `StaticGate`, `LocalExporter` per-file gating and atomic writes, `amber-labels/0.1` bundles (needs pyarrow) |
 | `test_answer_schemas.py` | Frozen, closed, strict `AnswerModel` subclasses |
 | `test_claim_schemas.py` | Task, claim, inference, and edge records; canonical IDs; immutability; wire shapes |
 | `test_graph_validation.py` | Full graph, context, and source validation; field citations; cycles; deep chains |
