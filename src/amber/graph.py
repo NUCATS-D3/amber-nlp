@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from datetime import datetime
 from types import MappingProxyType
@@ -19,7 +19,7 @@ from amber._graph_validation import (
     validate_state,
 )
 from amber.graph_errors import GraphValidationCode, GraphValidationError
-from amber.ids import new_ulid
+from amber.ids import new_ulid, validate_ulid
 from amber.schemas.claims import Claim
 from amber.schemas.evidence import Derivation, EvidenceEdge, Inclusion, InferenceEvidence
 from amber.schemas.mentions import Mention, MentionReading
@@ -122,9 +122,11 @@ class EvidenceGraph:
     """An atomically published, validated evidence graph for one source and variable set.
 
     Pass ``task=`` for the one-variable case or ``variables=`` for a ``VariableSet``.
+    ``ids`` mints claim and inference IDs (default: random ULIDs); a seeded source such as
+    ``amber.ids.seeded_ulids`` makes the same commits give the same graph.
     """
 
-    __slots__ = ("_context", "_state")
+    __slots__ = ("_context", "_ids", "_state")
 
     def __init__(
         self,
@@ -134,7 +136,11 @@ class EvidenceGraph:
         variables: VariableSet | None = None,
         sensitivity: Sensitivity,
         excluded_spans: Sequence[tuple[int, int]] = (),
+        ids: Callable[[], str] | None = None,
     ) -> None:
+        if ids is not None and not callable(ids):
+            _raise("invalid_context")
+        self._ids = ids
         context = build_context(
             source=source,
             task=task,
@@ -411,8 +417,14 @@ class EvidenceGraph:
                     _raise("invalid_context")
                 normalized_roles[role] = normalized_ids
 
-        claim_id = new_ulid()
-        inference_id = new_ulid()
+        try:
+            mint = self._ids or new_ulid
+            claim_id = validate_ulid(mint())
+            inference_id = validate_ulid(mint())
+        except (TypeError, ValueError, AttributeError):
+            _raise("invalid_schema")
+        if claim_id == inference_id:
+            _raise("duplicate_reference")
         provenance_payload = validated_provenance.model_dump(warnings=False)
         claim_payload = {
             "claim_id": claim_id,

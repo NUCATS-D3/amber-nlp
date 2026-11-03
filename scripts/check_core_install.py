@@ -297,10 +297,48 @@ def main() -> None:
     assert replay_derivations(
         stage_result, registry=Registry([AjccStub()]), variables=fixtures.STAGE_VARIABLES
     )
+    from amber.loupe import AmberClaimsAdapter
+
+    adapter = AmberClaimsAdapter(
+        {
+            "project_configuration": {
+                "variable_set": "amber.conformance.fixtures:NOTE_VARIABLES",
+                "variable_set_ref": fixtures.NOTE_VARIABLES.schema_ref,
+                "dataset": fixtures.DATASET,
+                "dataset_manifest_hash": "core-smoke",
+                "sensitivity": "synthetic",
+                "policy_version": "core-smoke-policy@1",
+                "destination": "core-review",
+                "zone": "institution",
+            }
+        }
+    )
+    reviewed = adapter.build_result(
+        {
+            "reviewer": "core-smoke",
+            "whole_note_complete": True,
+            "variables": {
+                fixtures.NOTE_VARIABLES.name: {"status": "not_mentioned", "reason": "Smoke."}
+            },
+        },
+        {
+            "example_id": fixtures.SOURCE.source_id,
+            "source_text": fixtures.TEXT,
+            "source_record": {
+                "metadata": {
+                    "patient_id": fixtures.SOURCE.patient_id,
+                    "external_id": "conformance-note-1",
+                }
+            },
+        },
+        adapter.inventory,
+        "0" * 64,
+    )
+    assert reviewed["processing_state"] == "ok"
     print(
         "Core-only installed grounding, claim commit, case results, restore, policy, "
-        "conformance-kit, in-memory bundle, evaluation, review round-trip, and rule replay "
-        "checks passed."
+        "conformance-kit, in-memory bundle, evaluation, review round-trip, rule replay, and loupe "
+        "adapter checks passed."
     )
 
 

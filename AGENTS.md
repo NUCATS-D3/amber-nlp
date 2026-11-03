@@ -42,6 +42,7 @@ src/amber/review.py       review receipts and the reviewed-import rules (spans, 
 src/amber/extraction.py   shared extractor pieces: failed results, local provenance
 src/amber/providers.py    provider requests and responses; the gated, budgeted call_provider
 src/amber/reference/      synthetic reference implementations (not loaded by import amber)
+src/amber/loupe/          the amber side of the loupe bridge: claim-mode AnnotationAdapter
 src/amber/conformance/    conformance catalog, fixtures, checks, report, pytest plugin
 src/amber/bundles/        bundle tables, manifest, hashing, loading; Parquet I/O (bundles extra)
 src/amber/wire.py         JSON forms that are not plain model dumps (VariableSet)

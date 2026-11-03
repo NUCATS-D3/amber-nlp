@@ -25,12 +25,14 @@ The suite is flat and grouped by the boundary under test. All inputs are invente
 | `test_scoring.py` | Score reports, self-reference refusal, move-on inclusion, reference scorers |
 | `test_labeling.py` | Labelers: silver-only admission, import events that replay to the Example, ImportLabeler outcomes |
 | `test_evaluation.py` | Binary metric harness: protocol arithmetic, P=0, Q=0, no answers, provisional and label-only gates, Wilson and bootstrap |
+| `test_loupe_adapter.py` | loupe claim-mode adapter: CaseResults from requests, Unicode and CRLF offsets, repeated quotes, forged offsets, field evidence, outcomes, reproducible rebuilds, tampered results |
 | `test_mlflow_tracking.py` | Gated run, decision, and trace logging; local tracking; redacted prompts; refused destinations (needs tracking) |
 | `test_mlflow_datasets.py` | Examples as MLflow evaluation datasets: lossless records, gating, reload and event verification (needs tracking) |
 | `test_mlflow_evaluation.py` | MLflow validity scorer and gated report logging (needs tracking) |
 | `test_derivations.py` | Derivation records: inputs within the inference, defaults only on rule derivations and empty roles, unset derivations omitted from JSON |
 | `test_review.py` | Review backends: file round trips (single review, adjudication, unresolved, excluded, unreviewed), export gating, import refusals |
 | `test_rules.py` | Rules: specs and registry, reduction (equal, conflicting, many, rejected), on_missing, conflict propagation, replay and tampering, events and bundles |
+| `test_seeded_ids.py` | Seeded ULID sources: reproducible graphs, invalid or repeating IDs rejected |
 | `test_sources.py` | Source identity: structured rows hash their record, note IDs unchanged |
 | `test_answer_schemas.py` | Frozen, closed, strict `AnswerModel` subclasses |
 | `test_claim_schemas.py` | Task, claim, inference, and edge records; canonical IDs; immutability; wire shapes |

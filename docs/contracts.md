@@ -248,6 +248,42 @@ Pure data and functions; no I/O, credentials, or clock (contract v0.1 §1).
 - `EvidenceGraph.commit_claim(..., derivation=...)` (and the `commit_claim` tool) records a
   derivation on the claim's inference; with one, `evidence_ids` may name claims too.
 
+- `EvidenceGraph(..., ids=...)` mints claim and inference IDs from the given source (each must
+  be a canonical ULID, `invalid_schema` otherwise); `amber.ids.seeded_ulids(seed)` is a
+  reproducible source, so the same commits give the same graph.
+
+## loupe adapter (`amber.loupe`, experimental)
+
+`AmberClaimsAdapter` is loupe's `AnnotationAdapter` for claim and outcome review of
+note-level variables, loaded by loupe from `"adapter": "amber.loupe:AmberClaimsAdapter"`;
+amber never imports loupe. Its `project_configuration` names the variable set by import path
+and pins its `schema_ref`, and gives the dataset, manifest hash, sensitivity, policy version,
+and the review destination and zone stamped on provenance. Each loupe record must be the
+amber note source (`record_id` equal to the `source_id` of its text with
+`metadata.patient_id` and `metadata.external_id`); `metadata.case_id` and `metadata.split`
+complete the case.
+
+- `build_result(request, example, inventory, configuration_sha256)` takes the reviewer, a
+  whole-note confirmation, and one entry per final variable: `answered` with claims (value,
+  rationale, evidence spans as code-point offsets plus quote, answer fields mapped to evidence
+  indexes), or `not_mentioned`, `insufficient_evidence`, or `conflicting_evidence` (with
+  evidence) and a reason; `failed` is never a review outcome. Every quote must equal the note
+  text at its offsets, and the result is built only through `exact_quote`, `commit_claim`,
+  `no_claim`, and `create_case_result`, with `human:` provenance and the review destination.
+- IDs come from a seed over the record, configuration, reviewer, and normalized request, and
+  provenance carries a fixed time, so the same request always builds the same bytes (loupe
+  rebuilds at publication).
+- The result (`amber-loupe-claims-v1`) keeps loupe's envelope: `processing_state` (`partial`
+  when any variable is `insufficient_evidence`), `issues`, `mentions` (the normalized
+  per-variable editor items, which `editable` returns unchanged), `case_result` (the
+  `CaseResult` JSON), `record_id`, `source_sha256`, and `producer`.
+- `validate_result` accepts a stored result only if rebuilding it from its own items gives
+  identical bytes and its `CaseResult` loads at amber's boundary. `binding()` hashes the amber
+  version, adapter version, variable set, and manifest hash.
+- Errors are `AdapterError` with a source-free code (`quote_mismatch`, `invalid_span`,
+  `missing_field_evidence`, `invalid_outcome`, `source_identity_mismatch`, ...).
+  Mention-level variables are refused (`unsupported_variable_level`).
+
 ## Rules (`amber.rules`, experimental)
 
 - `RoleSpec` (`source`: a variable or `evidence:inclusion`; `cardinality` `one` or `many`;

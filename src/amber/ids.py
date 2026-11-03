@@ -11,7 +11,7 @@ import hashlib
 import json
 import math
 import re
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -262,6 +262,22 @@ def example_id(*, case_id: str, variable_set_ref: str, as_of_event: str) -> str:
 def new_ulid() -> str:
     """Return a lexicographically sortable identifier for non-deterministic nodes."""
     return str(ULID())
+
+
+def seeded_ulids(seed: str) -> Callable[[], str]:
+    """A reproducible source of canonical ULIDs: the n-th call returns zero time bits and the
+    first 80 bits of SHA-256(seed, n), so equal seeds mint equal IDs in the same order."""
+    if not isinstance(seed, str) or not seed:
+        raise ValueError("a seed is required")
+    counter = 0
+
+    def mint() -> str:
+        nonlocal counter
+        counter += 1
+        digest = hashlib.sha256(f"{seed}\x00{counter}".encode()).digest()
+        return str(ULID.from_bytes(bytes(6) + digest[:10]))
+
+    return mint
 
 
 def schema_ref(answer_model: type[BaseModel]) -> str:
