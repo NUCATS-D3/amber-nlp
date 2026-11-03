@@ -38,8 +38,7 @@ distilled model. Each copal rule fires on exact spans and feeds into higher-leve
 the record of how a rule reached its answer (its *derivation*) *is* an amber evidence graph.
 Grounding comes by construction, not by after-the-fact attribution.
 
-The pipeline shape (LLM → programmatic labels → distilled model) is established. EvoPool (2026)
-already evolves labeling functions against a validation set and distills them. LLMs already
+The pipeline shape (LLM → programmatic labels → distilled model) is established. EvoPool (2026) already evolves labeling functions against a validation set and distills them. LLMs already
 write flat clinical regexes in one shot (PromptNLP, 2026), and CACHE-ED2 (2026) compiles LLM
 extraction logic into a DSL for business documents. This proposal claims novelty in four
 narrower places:
