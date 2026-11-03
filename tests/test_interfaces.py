@@ -19,7 +19,8 @@ def test_importing_core_does_not_import_optional_stacks() -> None:
             "from amber.tools.commit import commit_claim; "
             "assert not {'fastapi', 'click', 'mlflow', 'pandas', 'pyarrow', 'duckdb', "
             "'numpy', 'scipy', 'sklearn', 'pydantic_ai', 'transformers', 'mlx'} "
-            "& sys.modules.keys()",
+            "& sys.modules.keys(); "
+            "assert 'amber.reference' not in sys.modules",
         ],
         check=False,
         capture_output=True,

@@ -13,6 +13,7 @@ The suite is flat and grouped by the boundary under test. All inputs are invente
 | `test_variable_outcomes.py` | Per-variable outcomes, `case_status`, case-level mirroring, variable-set binding |
 | `test_examples.py` | Examples and label records: tiers and claim status, references, identity, split, mentions |
 | `test_annotations.py` | Events, replay determinism and prefixes, blind streams, transitions, tiers, move-on, Examples from events |
+| `test_store.py` | Store protocol and `InMemoryStore`: splits, runs, append-only events, projections, Examples, resolver |
 | `test_answer_schemas.py` | Frozen, closed, strict `AnswerModel` subclasses |
 | `test_claim_schemas.py` | Task, claim, inference, and edge records; canonical IDs; immutability; wire shapes |
 | `test_graph_validation.py` | Full graph, context, and source validation; field citations; cycles; deep chains |

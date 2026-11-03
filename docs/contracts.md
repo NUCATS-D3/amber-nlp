@@ -130,8 +130,9 @@ refuse scoring a configuration against its own silver references; rule hashes ar
   name mentions and inclusions by ID, resolved against caller-supplied spans and re-minted
   against the `Source`. A projection validates under the graph rules with any status.
   - **Blind review** (`visible_events`): before an untargeted `adjudication.resolve` for its
-    round, a reviewer sees their own streams and stream-less events only; adjudicators,
-    importers, and system actors see everything; afterwards everyone does.
+    round, a reviewer sees their own streams and stream-less events other than the
+    adjudicator's; adjudicators, importers, and system actors see everything; afterwards
+    everyone does.
   - **Transitions**: claims and readings are created `proposed` (by the human actor when the
     role is human); reviewers move `proposed` to `verified` or `rejected`; the adjudicator
     resolves to `gold` or `rejected` (`gold` to `rejected` needs a reason). A correction
@@ -217,6 +218,31 @@ Pure data and functions; no I/O, credentials, or clock (contract v0.1 §1).
 Structural validity and source traceability do not establish semantic support or clinical
 correctness. Those are measured separately.
 
+## Interfaces (`amber.interfaces`) and references (`amber.reference`)
+
+Protocols are structural and experimental until a real consumer uses them. Reference
+implementations are synthetic and are not loaded by `import amber`.
+
+- **`SourceResolver`**: `resolve(source_id) -> Source | None`. Reference: `InMemoryResolver`.
+- **`Store`**: cases bound to their variable set, results keyed by `(case_id, run_id)`,
+  append-only events with the spans they name, Examples, and label records. Every read
+  revalidates through amber's load boundaries with the caller's resolver (`source_unavailable`
+  when it returns nothing, `source_hash_mismatch` when it returns another source). Reference:
+  `InMemoryStore`, which:
+  - refuses a changed case, a second split for a `(dataset, source)` pair, and a second
+    `schema_ref` for one variable-set `name@version`;
+  - refuses a duplicate `(case_id, run_id)`, a duplicate or out-of-order event, and partial
+    batches;
+  - projects exactly as `replay` does, for every actor and `as_of_event`;
+  - accepts an Example only after its events, with its case's split and a matching
+    `example_id`, and only if it equals the replay of its events (`unsupported_tier`
+    otherwise); `put_example` takes a resolver for that replay;
+  - returns as `current_example` the snapshot at the case's latest event, or `None` while that
+    snapshot is not a valid Example.
+
+  `put_case`/`get_case` and `put_label_record`/`label_records` extend the design's listing,
+  because split checks need the case and label records share its split.
+
 ## MLflow plugin (`tracking` extra)
 
 - `amber.mlflow_ext.context.AmberRunContextProvider` adds the `amber.version` tag.
@@ -230,7 +256,8 @@ These items are tracked in Beads (`bd list --status=open`):
   later minor; contract v0.1 §2.6);
 - `labels_only_view` for case results and annotation events;
 - derivations and rule replay;
-- interfaces (`Extractor`, `Store`, `Exporter`, `Scorer`, `ReviewBackend`, `Labeler`);
+- the remaining interfaces (`Extractor`, `Provider`, `Exporter`, `Scorer`, `ReviewBackend`,
+  `Labeler`, `PolicyGate`);
 - the conformance kit;
 - MLflow plugins for evaluation, datasets, the loupe bridge, and deployment.
 

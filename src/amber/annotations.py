@@ -143,8 +143,9 @@ def visible_events(
     """Apply blind-review visibility (contract v0.1 section 4.4) to an ordered event prefix.
 
     Before ``adjudication.resolve`` for a round, a reviewer sees their own streams and
-    stream-less events and never another stream; an adjudicator sees every stream; system
-    and importer actors see everything; after resolve every actor sees every stream.
+    stream-less events and never another stream, nor the adjudicator's work in progress,
+    which may concern other streams; an adjudicator sees every stream; system and importer
+    actors see everything; after resolve every actor sees every round's events.
     ``actor=None`` is the complete view.
     """
     if actor is None:
@@ -158,7 +159,9 @@ def visible_events(
     return tuple(
         event
         for event in events
-        if event.stream is None or event.stream in streams or event.round in resolved
+        if event.round in resolved
+        or event.stream in streams
+        or (event.stream is None and event.role != "adjudicator")
     )
 
 
