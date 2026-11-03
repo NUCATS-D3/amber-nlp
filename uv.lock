@@ -89,6 +89,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+conformance = [
+    { name = "pytest" },
+]
 dev = [
     { name = "hypothesis" },
     { name = "mypy" },
@@ -113,12 +116,13 @@ requires-dist = [
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
     { name = "pre-commit", marker = "extra == 'dev'" },
     { name = "pydantic", specifier = ">=2.9" },
+    { name = "pytest", marker = "extra == 'conformance'", specifier = ">=8" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "pytest-cov", marker = "extra == 'dev'" },
     { name = "python-ulid", specifier = ">=2.7" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
 ]
-provides-extras = ["tracking", "dev"]
+provides-extras = ["tracking", "conformance", "dev"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=9.1.1" }]

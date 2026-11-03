@@ -243,6 +243,28 @@ implementations are synthetic and are not loaded by `import amber`.
   `put_case`/`get_case` and `put_label_record`/`label_records` extend the design's listing,
   because split checks need the case and label records share its split.
 
+## Conformance kit (`amber.conformance`)
+
+- **Catalog**: the 101 cases of contract v0.1 §7 as data (`catalog.json`, generated from the
+  design and checked against it), with `catalog_revision()` hashing every case's ID, level,
+  targets, and text.
+- **Fixtures**: deterministic synthetic sources, variable set, cases, results, spans, and
+  event scenarios (silver import, single-review rise, blind streams, adjudication), with
+  `fixtures_ref()` hashing them.
+- **Checks**: implementation cases run against a consumer's declared targets and fail with
+  source-free codes. Implemented today for `Store`: ANN-05, ANN-16, ANN-17, IFC-07, IFC-11,
+  IFC-12. A store rejects by raising; the kit does not depend on its exception types.
+- **`ConformanceReport`**: subject, amber version, declared targets, catalog version and
+  revision, `fixtures_ref`, and per case `passed`, `failed` (with a code), `not_applicable`
+  (core cases, which amber's own suite covers, and cases for undeclared targets), or
+  `not_implemented` (applicable cases the kit cannot check yet, including every bundle
+  case). `run_checks(subject)` builds one without pytest.
+- **pytest plugin** (`conformance` extra; `pytest11` entry point, inert without
+  `--amber-conformance`): a consumer returns a `Subject` (name, version, a factory per
+  target) from `pytest_amber_conformance_subject(config)` in its root `conftest.py`, runs
+  `pytest --amber-conformance --amber-conformance-report=report.json`, and gets one test per
+  check plus the report.
+
 ## MLflow plugin (`tracking` extra)
 
 - `amber.mlflow_ext.context.AmberRunContextProvider` adds the `amber.version` tag.
@@ -258,7 +280,7 @@ These items are tracked in Beads (`bd list --status=open`):
 - derivations and rule replay;
 - the remaining interfaces (`Extractor`, `Provider`, `Exporter`, `Scorer`, `ReviewBackend`,
   `Labeler`, `PolicyGate`);
-- the conformance kit;
+- conformance checks for the remaining targets and for bundles;
 - MLflow plugins for evaluation, datasets, the loupe bridge, and deployment.
 
 Each item becomes stable only under the rules in the [charter](charter.md#rules-for-growth).

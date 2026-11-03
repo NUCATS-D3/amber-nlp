@@ -29,7 +29,12 @@ src/amber/ids.py          canonical hashing and ULIDs
 src/amber/grounding.py    exact grounding (the only Inclusion minting path today)
 src/amber/graph.py        EvidenceGraph lifecycle; _graph_validation.py holds the checks
 src/amber/cases.py        CaseResult creation/loading and outcome validation
-src/amber/tools/          quote, commit_claim, no_claim: operations implementations call
+src/amber/tools/          quote, mention, cite, commit_claim, no_claim: operations implementations call
+src/amber/examples.py     Example and LabelRecord load boundary
+src/amber/annotations.py  annotation-event replay, projections, Examples from events
+src/amber/interfaces.py   protocols (Store, SourceResolver)
+src/amber/reference/      synthetic reference implementations (not loaded by import amber)
+src/amber/conformance/    conformance catalog, fixtures, checks, report, pytest plugin
 src/amber/mlflow_ext/     optional MLflow plugins (tracking extra)
 tests/                    synthetic, offline tests
 scripts/                  core-install check and local MLflow launcher

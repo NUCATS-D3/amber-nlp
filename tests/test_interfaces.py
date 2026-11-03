@@ -20,7 +20,7 @@ def test_importing_core_does_not_import_optional_stacks() -> None:
             "assert not {'fastapi', 'click', 'mlflow', 'pandas', 'pyarrow', 'duckdb', "
             "'numpy', 'scipy', 'sklearn', 'pydantic_ai', 'transformers', 'mlx'} "
             "& sys.modules.keys(); "
-            "assert 'amber.reference' not in sys.modules",
+            "assert not {'amber.reference', 'amber.conformance', 'pytest'} & sys.modules.keys()",
         ],
         check=False,
         capture_output=True,

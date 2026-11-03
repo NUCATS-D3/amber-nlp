@@ -166,9 +166,31 @@ def main() -> None:
         now=datetime(2026, 1, 2, tzinfo=UTC),
     )
     assert (refused.permitted, refused.reason) == (False, "zone_not_allowed")
+
+    # The conformance kit runs without pytest; only its pytest plugin needs the extra.
+    from amber.conformance import Subject
+    from amber.conformance.report import run_checks
+    from amber.reference import InMemoryResolver, InMemoryStore
+
+    report = run_checks(
+        Subject(
+            name="core-smoke",
+            version="0",
+            targets={"Store": InMemoryStore, "SourceResolver": InMemoryResolver},
+        )
+    )
+    assert len(report.cases) == 101 and report.counts()["failed"] == 0
+    assert report.counts()["passed"] > 0
+    try:
+        importlib.import_module("amber.conformance.plugin")
+    except ImportError as error:
+        assert "amber[conformance]" in str(error)
+    else:
+        raise AssertionError("the conformance plugin must require the conformance extra")
+    assert "pytest" not in sys.modules
     print(
-        "Core-only installed grounding, claim commit, case results, restore, and policy checks "
-        "passed."
+        "Core-only installed grounding, claim commit, case results, restore, policy, and "
+        "conformance-kit checks passed."
     )
 
 

@@ -1,0 +1,670 @@
+{
+ "catalog_version": "0.1",
+ "source": "docs/design/contract-v0.1.md section 7",
+ "cases": [
+  {
+   "id": "POL-01",
+   "level": "core",
+   "targets": [],
+   "text": "Every cell of the default matrix: permitted and refused combinations."
+  },
+  {
+   "id": "POL-02",
+   "level": "core",
+   "targets": [],
+   "text": "A widened matrix without `widened_from_default: true`, or with the flag but no `note`, fails validation."
+  },
+  {
+   "id": "POL-03",
+   "level": "core",
+   "targets": [],
+   "text": "Payload not accepted by destination is refused even when the zone is allowed."
+  },
+  {
+   "id": "POL-04",
+   "level": "core",
+   "targets": [],
+   "text": "Each restriction rule refuses independently, with the matching `restriction_id`."
+  },
+  {
+   "id": "POL-05",
+   "level": "core",
+   "targets": [],
+   "text": "Restrictions apply in order; the first failure is reported."
+  },
+  {
+   "id": "POL-06",
+   "level": "core",
+   "targets": [],
+   "text": "`labels_only_view` output shares no substring of length ≥ 8 with the source text, across Unicode and CRLF sources."
+  },
+  {
+   "id": "POL-07",
+   "level": "core",
+   "targets": [],
+   "text": "A `Provenance` without `destination`/`policy_version` is rejected."
+  },
+  {
+   "id": "POL-08",
+   "level": "implementation",
+   "targets": [
+    "Extractor"
+   ],
+   "text": "A `failed` outcome from a refusal has `failure_kind=\"policy\"` and no claims."
+  },
+  {
+   "id": "POL-09",
+   "level": "core",
+   "targets": [],
+   "text": "`check` never raises and never includes source text in a `Decision`."
+  },
+  {
+   "id": "POL-10",
+   "level": "core",
+   "targets": [],
+   "text": "A deidentified derivative cannot be created with a sensitivity lower than its declared `DataPolicy` without a new dataset identity."
+  },
+  {
+   "id": "POL-11",
+   "level": "core",
+   "targets": [],
+   "text": "An expired restriction refuses with `restriction_expired`; the same call with an earlier `now` is permitted."
+  },
+  {
+   "id": "POL-12",
+   "level": "core",
+   "targets": [],
+   "text": "`model_weights` to an `external` destination is refused for `phi` data, and weights trained on two datasets carry `combine` of their policies."
+  },
+  {
+   "id": "POL-13",
+   "level": "core",
+   "targets": [],
+   "text": "A serialized `Decision` contains no source text and is accepted as a `labels_only` payload."
+  },
+  {
+   "id": "POL-14",
+   "level": "core",
+   "targets": [],
+   "text": "Producer references: each of the four forms parses; an unprefixed name, an unknown prefix, `rule:` without `@<version>`, or an empty segment is rejected in every field that takes one; `rule:a@1+h1` and `rule:a@1+h2` are equal for `self_reference` and unequal otherwise."
+  },
+  {
+   "id": "POL-15",
+   "level": "implementation",
+   "targets": [
+    "Extractor",
+    "Exporter"
+   ],
+   "text": "Each transfer is checked separately: a recording gate sees one decision per destination and payload kind, and a decision permitting a model call is never reused for a tracking or export transfer."
+  },
+  {
+   "id": "POL-16",
+   "level": "core",
+   "targets": [],
+   "text": "Training: a `training` destination is refused when a restriction lists `training` in `forbids_kinds` and permitted otherwise; `forbids_training_on_inputs` refuses a destination with `trains_on_inputs=True` and never refuses a `training` destination by itself."
+  },
+  {
+   "id": "POL-17",
+   "level": "core",
+   "targets": [],
+   "text": "`combine`: the result has the highest sensitivity and every restriction in input order with duplicate IDs removed; two restrictions with one `id` and different content are an error; combining a policy with itself returns it unchanged."
+  },
+  {
+   "id": "POL-18",
+   "level": "core",
+   "targets": [],
+   "text": "Decision context: with a `RunContext` whose `policy_version` differs from `matrix.version`, `check` refuses with `policy_version_mismatch`; a `Decision` carries `dataset`, `run_id`, `case_id`, and `destination_kind` when supplied; `decision_id` is the same for equal inputs and `now`; a `decisions.parquet` row has exactly the `Decision` fields."
+  },
+  {
+   "id": "MEN-01",
+   "level": "core",
+   "targets": [],
+   "text": "A mention with `quote != Source.text[start:end]` is rejected; likewise any fragment."
+  },
+  {
+   "id": "MEN-02",
+   "level": "core",
+   "targets": [],
+   "text": "Direct construction without the grounding context is rejected (same guard as Inclusion)."
+  },
+  {
+   "id": "MEN-03",
+   "level": "core",
+   "targets": [],
+   "text": "Two producers, same span and type: one `Mention`, two `MentionReading`s with distinct `reading_id`s and provenance; differing values or attributes are both retained."
+  },
+  {
+   "id": "MEN-04",
+   "level": "core",
+   "targets": [],
+   "text": "Overlapping and nested mentions of different types coexist; no automatic merging."
+  },
+  {
+   "id": "MEN-05",
+   "level": "core",
+   "targets": [],
+   "text": "A discontinuous mention validates each fragment; hull outside the source is rejected."
+  },
+  {
+   "id": "MEN-06",
+   "level": "core",
+   "targets": [],
+   "text": "`section_category` not present in `Source.sections` is rejected."
+  },
+  {
+   "id": "MEN-07",
+   "level": "core",
+   "targets": [],
+   "text": "An attribute with `evidence_id` not registered in the graph is rejected at registration."
+  },
+  {
+   "id": "MEN-08",
+   "level": "core",
+   "targets": [],
+   "text": "A claim that depends on a required attribute without attribute evidence fails with `missing_attribute_evidence`; with the cue cited under role `attribute:<category>` it passes; the cue cited only under a field role, or a different inclusion under the attribute role, still fails; `attribute:` edges do not satisfy field coverage."
+  },
+  {
+   "id": "MEN-09",
+   "level": "implementation",
+   "targets": [
+    "copal adapter"
+   ],
+   "text": "copal adapter: emoji, combining marks, and CRLF sources round-trip offsets exactly; a source with normalized whitespace fails mapping with a source-free diagnostic."
+  },
+  {
+   "id": "MEN-10",
+   "level": "implementation",
+   "targets": [
+    "copal adapter"
+   ],
+   "text": "copal adapter: modifier `trigger_id`/`scope_id` become cue/scope inclusions whose quotes match copal's `get_span(...).quote`."
+  },
+  {
+   "id": "MEN-11",
+   "level": "implementation",
+   "targets": [
+    "Extractor"
+   ],
+   "text": "Model-proposed offsets with a quote mismatch are counted as grounding failures, not dropped silently and not repaired."
+  },
+  {
+   "id": "MEN-12",
+   "level": "core",
+   "targets": [],
+   "text": "Structured evidence is deferred: an evidence payload with `kind=\"structured\"` is rejected with `unsupported_evidence`; a structured `Source` (with `record`) whose `source_id` does not include its canonical record is rejected, and two rows differing only in `record` get different `source_id`s; note-source IDs are unchanged."
+  },
+  {
+   "id": "MEN-13",
+   "level": "core",
+   "targets": [],
+   "text": "A claim supported only by a mention with no inclusion fails `source_free_support`."
+  },
+  {
+   "id": "MEN-14",
+   "level": "core",
+   "targets": [],
+   "text": "A CaseResult whose cited mention is missing from `mentions` fails to load; uncited mentions survive a round trip."
+  },
+  {
+   "id": "MEN-15",
+   "level": "core",
+   "targets": [],
+   "text": "A reading whose `mention_id` is not registered is rejected; a `Mention` with no reading in a graph or result is rejected."
+  },
+  {
+   "id": "MEN-16",
+   "level": "core",
+   "targets": [],
+   "text": "`mention_id`: a contiguous mention hashes exactly as `(source_id, start, end, mention_type)`; a discontinuous mention with the same hull and type has a different ID; two discontinuous mentions differing only in fragments have different IDs."
+  },
+  {
+   "id": "MEN-17",
+   "level": "core",
+   "targets": [],
+   "text": "An attribute whose `scope_evidence_id` does not contain the mention's hull is rejected with `attribute_outside_scope`; a scope that contains the mention but not the cue (post-negation) is accepted; an attribute without a scope is not checked."
+  },
+  {
+   "id": "MEN-18",
+   "level": "core",
+   "targets": [],
+   "text": "Two mentions of different types at one position, a cue, and a plain `quote()` of that position all resolve to one inclusion with one `evidence_id`; an inclusion payload carrying `mention_id` is rejected."
+  },
+  {
+   "id": "MEN-19",
+   "level": "core",
+   "targets": [],
+   "text": "An attribute value of `null`, a float, a list, or an object is rejected; `True` does not satisfy a requirement with `values={1}`, and `1` does not satisfy `values={True}`; an absent required category fails the requirement."
+  },
+  {
+   "id": "MEN-20",
+   "level": "core",
+   "targets": [],
+   "text": "An attribute whose `assigned_by` equals the reading's producer is rejected; a human correction keeps `assigned_by` on carried-over attributes and `None` on the attributes the reviewer changed."
+  },
+  {
+   "id": "MEN-21",
+   "level": "core",
+   "targets": [],
+   "text": "A mention-level claim without `reading_id`, with an unregistered or `rejected` reading, or with a reading whose span is in another source or is not cited, is rejected; a note-level claim with `reading_id` is rejected; two claims relying on two different readings of one span each validate against their own reading's attributes."
+  },
+  {
+   "id": "VAR-01",
+   "level": "core",
+   "targets": [],
+   "text": "A one-variable set via `Task` produces identical validation results to the current graph on the full existing test suite."
+  },
+  {
+   "id": "VAR-02",
+   "level": "core",
+   "targets": [],
+   "text": "A `VariableSet` with a dependency cycle, an unknown input name, a mention-level variable without mention types, or no final variable is rejected."
+  },
+  {
+   "id": "VAR-03",
+   "level": "core",
+   "targets": [],
+   "text": "A claim whose `variable` is not in the set, or whose value fails that variable's schema, is rejected with `invalid_schema`."
+  },
+  {
+   "id": "VAR-04",
+   "level": "core",
+   "targets": [],
+   "text": "A mention-level claim citing a mention of the wrong type is rejected."
+  },
+  {
+   "id": "VAR-05",
+   "level": "core",
+   "targets": [],
+   "text": "Required attribute: missing value → rejected; value outside `values` → rejected; value present without cue evidence → `missing_attribute_evidence` unless lenient."
+  },
+  {
+   "id": "VAR-06",
+   "level": "core",
+   "targets": [],
+   "text": "`requires_section`: a citation outside the declared sections is rejected; inside passes."
+  },
+  {
+   "id": "VAR-07",
+   "level": "core",
+   "targets": [],
+   "text": "An inference citing a claim from an undeclared input variable fails `undeclared_dependency`."
+  },
+  {
+   "id": "VAR-08",
+   "level": "core",
+   "targets": [],
+   "text": "A derivation whose `inputs` are not a subset of the inference's inputs is rejected."
+  },
+  {
+   "id": "VAR-09",
+   "level": "implementation",
+   "targets": [
+    "Rule"
+   ],
+   "text": "Replay: a registered rule recomputes the derived value; a tampered derived value fails `derivation_mismatch`; an unregistered rule validates structurally and is not replayed."
+  },
+  {
+   "id": "VAR-10",
+   "level": "core",
+   "targets": [],
+   "text": "`on_missing`: `refuse` yields `insufficient_evidence` naming the role; `default` records the assumed value in `defaults_used`; `pass_none` invokes the rule with `None` (empty tuple for `many`)."
+  },
+  {
+   "id": "VAR-11",
+   "level": "core",
+   "targets": [],
+   "text": "Reduction of a `one` role: candidates with different values make the derived variable `conflicting_evidence`, citing the evidence of every conflicting claim, and no derived claim is created; the conflict propagates through an intermediate variable to the final one. Equal values reduce to the lowest-ID candidate and the derivation lists all of them. A `many` role receives every candidate in ID order. Rejected claims are never candidates."
+  },
+  {
+   "id": "VAR-12",
+   "level": "core",
+   "targets": [],
+   "text": "One-variable set: a payload whose `outcome` or `final_claim_ids` differs from the variable's `VariableOutcome`, or is `null`, fails to load. Several final variables: a payload with a non-null `outcome` or `final_claim_ids` fails to load. `case_status` follows the fixed severity order."
+  },
+  {
+   "id": "VAR-13",
+   "level": "core",
+   "targets": [],
+   "text": "Two final variables, one answered and one `not_mentioned`: `variable_outcomes` carries both, with final IDs only on the answered one; case-level fields are `null`; `case_status` is `not_mentioned`."
+  },
+  {
+   "id": "VAR-14",
+   "level": "core",
+   "targets": [],
+   "text": "A mention-level `conflicting_evidence` outcome is rejected."
+  },
+  {
+   "id": "VAR-15",
+   "level": "core",
+   "targets": [],
+   "text": "Zero mention claims without declared full review cannot load as `not_mentioned`."
+  },
+  {
+   "id": "VAR-16",
+   "level": "core",
+   "targets": [],
+   "text": "`defaults_used`: a defaulted role with non-empty `inputs`, defaults on a model or human derivation, or (for a registered rule) a role whose `on_missing` is not `default` or whose value differs from `RuleSpec.defaults` is rejected; replay supplies the recorded default and the rule never receives `defaults_used`; an unregistered rule's defaults round-trip unchanged."
+  },
+  {
+   "id": "VAR-17",
+   "level": "core",
+   "targets": [],
+   "text": "Set identity: `schema_ref` changes when any variable field or answer model changes and not when `version` alone changes; loading a result against a set with the same name and version but a different `schema_ref` fails with `variable_set_mismatch`; a store seeing one `name@version` with two `schema_ref`s fails with `variable_set_version_conflict`. A `patient`-level variable or `Task(scope=\"patient\")` is constructible, and building a graph with it fails with `invalid_context`."
+  },
+  {
+   "id": "ANN-01",
+   "level": "core",
+   "targets": [],
+   "text": "An Example with a `failed` outcome, a `rejected` retained claim or reading, a `proposed` final claim under a human tier, or a `verified`/`gold` claim under a silver reference fails to load; a silver reference with `proposed` claims loads; a supporting claim serving an adjudicated and a silver reference must be `gold` or `verified`."
+  },
+  {
+   "id": "ANN-02",
+   "level": "core",
+   "targets": [],
+   "text": "`answered` with empty final IDs, or a non-answer with final IDs, fails to load."
+  },
+  {
+   "id": "ANN-03",
+   "level": "core",
+   "targets": [],
+   "text": "An Example whose cited mention is missing from `mentions` fails; uncited mentions round-trip."
+  },
+  {
+   "id": "ANN-04",
+   "level": "core",
+   "targets": [],
+   "text": "Tier can rise (`silver` → `single_review` → `adjudicated`) only with new events; a payload asserting a higher tier without events fails; a lower tier than the events support fails."
+  },
+  {
+   "id": "ANN-05",
+   "level": "implementation",
+   "targets": [
+    "Store"
+   ],
+   "text": "Split: a store rejects a second case for the same `(dataset, source_id)` with a different split, a split change for an existing case, and an Example or LabelRecord whose split differs from its case's."
+  },
+  {
+   "id": "ANN-06",
+   "level": "core",
+   "targets": [],
+   "text": "Replay determinism: amber's replay of a random event sequence gives identical projections on every run, and replaying a prefix gives the prefix's projection."
+  },
+  {
+   "id": "ANN-07",
+   "level": "core",
+   "targets": [],
+   "text": "Blind streams: before resolve, a reviewer's projection includes their own stream and stream-less events and excludes other streams; an adjudicator's includes every stream in the round; after resolve every actor sees every stream."
+  },
+  {
+   "id": "ANN-08",
+   "level": "core",
+   "targets": [],
+   "text": "`labels_only_view(events)` contains no `before`, `after`, or `reason`, and no substring of length ≥ 8 from the source text; a reading's captured value appearing in an event's `after` keeps `annotation_events` classified as `derived_text`."
+  },
+  {
+   "id": "ANN-09",
+   "level": "core",
+   "targets": [],
+   "text": "A `gold` claim cannot be edited in place; a correction produces a new claim and a linked event."
+  },
+  {
+   "id": "ANN-10",
+   "level": "core",
+   "targets": [],
+   "text": "A claim can be `gold` only if the readings it relies on are `gold` or `verified`; a span is never updated or deleted, and a reading correction produces a new linked reading."
+  },
+  {
+   "id": "ANN-11",
+   "level": "implementation",
+   "targets": [
+    "Scorer"
+   ],
+   "text": "A `LabelRecord` cannot be loaded as an Example; a scorer scoring evidence metrics against LabelRecords reports `inconclusive`."
+  },
+  {
+   "id": "ANN-12",
+   "level": "implementation",
+   "targets": [
+    "Scorer"
+   ],
+   "text": "Scoring a configuration against silver Examples produced by the same configuration is refused."
+  },
+  {
+   "id": "ANN-13",
+   "level": "implementation",
+   "targets": [
+    "ReviewBackend"
+   ],
+   "text": "loupe mapping fixtures: accepted → adjudicated Example; unresolved → no Example, events retained; excluded → no Example; no-mentions confirmation → `not_mentioned`; unsubmitted → `insufficient_evidence`."
+  },
+  {
+   "id": "ANN-14",
+   "level": "implementation",
+   "targets": [
+    "ReviewBackend"
+   ],
+   "text": "Per-change events derived from a revision diff and a single full-state `review.submit` event replay to the same projection."
+  },
+  {
+   "id": "ANN-15",
+   "level": "core",
+   "targets": [],
+   "text": "Snapshot identity: replaying the same events gives the same `example_id`; appending an event (a tier rise, a correction) gives a new `example_id`, and replaying the prefix reproduces the old snapshot exactly."
+  },
+  {
+   "id": "ANN-16",
+   "level": "implementation",
+   "targets": [
+    "Store"
+   ],
+   "text": "A store's `project` returns the same projection as amber's replay of the events it holds, for every actor and every `as_of_event`."
+  },
+  {
+   "id": "ANN-17",
+   "level": "implementation",
+   "targets": [
+    "Store",
+    "Scorer"
+   ],
+   "text": "A store rejects an Example whose `example_id` does not match its `(case_id, variable_set_ref, as_of_event)`; `current_example` returns the snapshot at the latest event; a `ScoreReport` lists the `example_id`s it scored against."
+  },
+  {
+   "id": "ANN-18",
+   "level": "core",
+   "targets": [],
+   "text": "A move-on `tier.set` must have `role=system` and a decision reference, or it is rejected; a `single_review` snapshot scored under move-on must include that event (`as_of_event` at or after it)."
+  },
+  {
+   "id": "WIR-01",
+   "level": "bundle",
+   "targets": [],
+   "text": "Fixture bundles for each stand-in round-trip (write → read → write) with identical `content_sha256` for every table and byte-identical JSON records; Parquet file bytes may differ between writers. Rows are written sorted by key."
+  },
+  {
+   "id": "WIR-02",
+   "level": "bundle",
+   "targets": [],
+   "text": "A bundle with a different major `schema_version` is rejected; a lower minor loads."
+  },
+  {
+   "id": "WIR-03",
+   "level": "bundle",
+   "targets": [],
+   "text": "Missing required table, missing key column, wrong column type, or duplicate key → rejected with a diagnostic naming the table and column only."
+  },
+  {
+   "id": "WIR-04",
+   "level": "bundle",
+   "targets": [
+    "SourceResolver"
+   ],
+   "text": "`text_hash` mismatch via the resolver → `source_hash_mismatch`; resolver `None` → `source_unavailable`; no resolver → unvalidated wrapper refused by graph/case/example boundaries."
+  },
+  {
+   "id": "WIR-05",
+   "level": "bundle",
+   "targets": [],
+   "text": "Payload kind is derived from schemas: a file declared `labels_only` that has a `quote` column, an open string inside a JSON column, or (for `claims`) an answer model with an unconstrained string field → rejected; a claims table whose answer models are boolean or enum-only is `labels_only`; `sources` with section labels and `variable_outcomes` with a `reason` are `derived_text`."
+  },
+  {
+   "id": "WIR-06",
+   "level": "bundle",
+   "targets": [],
+   "text": "A table whose recomputed `content_sha256` differs from the manifest → rejected before validation; so is a `file_sha256`, when present, that differs from the file. A `cases` row whose dataset or variable set differs from the manifest → rejected."
+  },
+  {
+   "id": "WIR-07",
+   "level": "bundle",
+   "targets": [],
+   "text": "Canonical JSON follows RFC 8785: a JSON column with unsorted keys, whitespace, a non-ECMAScript number form (`1e-07`), or a timestamp not in UTC `Z` with six fractional digits is rejected; strings are compared without Unicode normalization; fixture IDs computed by a second, independent JCS implementation match amber's."
+  },
+  {
+   "id": "WIR-08",
+   "level": "bundle",
+   "targets": [],
+   "text": "Unknown evidence `kind` or unknown event `action` → rejected."
+  },
+  {
+   "id": "WIR-09",
+   "level": "bundle",
+   "targets": [],
+   "text": "`x_` columns survive a read/write cycle; non-prefixed unknown columns are rejected."
+  },
+  {
+   "id": "WIR-10",
+   "level": "bundle",
+   "targets": [],
+   "text": "A claim row with null `value` is rejected."
+  },
+  {
+   "id": "WIR-11",
+   "level": "bundle",
+   "targets": [],
+   "text": "The manifest's recomputed `payload_kinds` must equal the declared ones."
+  },
+  {
+   "id": "WIR-12",
+   "level": "bundle",
+   "targets": [],
+   "text": "Migration: the `amber/0.1` fixture migrated to a synthetic `amber/0.2` fixture by the test migrator equals the hand-written target."
+  },
+  {
+   "id": "WIR-13",
+   "level": "bundle",
+   "targets": [],
+   "text": "A `CaseResult` written to a bundle and read back equals the original, including `run_id`, `grounding_failures`, `tool_calls`, `escalated`, `trace_id`, `budget`, and `usage`; a run bundle without `results.parquet` is rejected; a result whose `usage` exceeds its `budget` loads only if it records `failed` with `failure_kind=\"budget\"`, and otherwise fails with `budget_exceeded`; loading never changes an outcome."
+  },
+  {
+   "id": "WIR-14",
+   "level": "core",
+   "targets": [],
+   "text": "Each §5.3 record's JSON form has exactly its required top-level keys and matches its fixture byte-for-byte; parsing and re-serializing gives the same bytes."
+  },
+  {
+   "id": "IFC-01",
+   "level": "core",
+   "targets": [],
+   "text": "Each reference implementation satisfies its protocol under `typing` checks and passes the kit; a stub that constructs an `Inclusion` or `Claim` directly fails."
+  },
+  {
+   "id": "IFC-02",
+   "level": "implementation",
+   "targets": [
+    "Extractor",
+    "Provider"
+   ],
+   "text": "`Extractor` returns a `failed` result (never raises) on provider failure, parse failure, policy refusal, and budget exhaustion, each with the right `failure_kind`; an over-budget result records `failed(budget)` itself; contacting a destination not in `destinations` fails; every node's provenance carries the `RunContext`'s `run_id` and `policy_version`."
+  },
+  {
+   "id": "IFC-03",
+   "level": "implementation",
+   "targets": [
+    "Extractor"
+   ],
+   "text": "`Extractor` declaring `mentions` must emit at least one mention on a fixture containing a known span; declaring `derivations` must emit a `Derivation` on the stage fixture."
+  },
+  {
+   "id": "IFC-04",
+   "level": "implementation",
+   "targets": [
+    "Provider"
+   ],
+   "text": "`Provider` without `schema_constrained` rejects a schema request with `ProviderFailure` rather than returning unparsed text."
+  },
+  {
+   "id": "IFC-05",
+   "level": "implementation",
+   "targets": [
+    "Rule"
+   ],
+   "text": "`Rule.apply` is pure: two calls with equal inputs give equal results; a rule touching the clock or randomness fails the purity fixture."
+  },
+  {
+   "id": "IFC-06",
+   "level": "implementation",
+   "targets": [
+    "Labeler"
+   ],
+   "text": "`Labeler` declaring a human tier is rejected at registration; a silver Example from a `Labeler` carries the labeler's provenance and comes with events that replay to it, beginning with `import.result`; `put_example` before those events are appended is rejected."
+  },
+  {
+   "id": "IFC-07",
+   "level": "implementation",
+   "targets": [
+    "Store"
+   ],
+   "text": "`Store.append_events` rejects updates/deletes; `project` for a stream actor excludes other streams; `put_example` rejects split change and unsupported tier; `project` returns a `Projection` that may fail the Example invariants (an unsubmitted review) while `Example.from_projection` names the failing invariant, and for a finished case `from_projection(project(...))` equals the stored Example."
+  },
+  {
+   "id": "IFC-08",
+   "level": "implementation",
+   "targets": [
+    "Exporter",
+    "PolicyGate"
+   ],
+   "text": "`Exporter` must gate every output file (checked with a recording gate); if one file is refused, nothing is written and every decision is reported; `ExportReceipt` lists each file's payload kind, decision, and `content_sha256`, matching what was written; an `amber-labels/0.1` export containing any `derived_text` file is rejected."
+  },
+  {
+   "id": "IFC-09",
+   "level": "implementation",
+   "targets": [
+    "Scorer"
+   ],
+   "text": "`Scorer` sets `provisional` iff any reference tier is below adjudicated; evidence metrics over `LabelRecord`s are `inconclusive`; `self_reference` fires when the predicted and silver configurations share a `model:` or `rule:` reference (rule hash ignored), including one that appears only in an attribute's `assigned_by`, and does not fire on shared `human:` or `tool:` references."
+  },
+  {
+   "id": "IFC-10",
+   "level": "implementation",
+   "targets": [
+    "ReviewBackend"
+   ],
+   "text": "`ReviewBackend` round trip on the file reference: exported cases → simulated reviews → imported Examples whose events replay to the same projection."
+  },
+  {
+   "id": "IFC-11",
+   "level": "implementation",
+   "targets": [
+    "Store"
+   ],
+   "text": "Runs: two results for one case with different `run_id`s are both stored and retrievable, and `runs(case_id)` lists both; a second result with the same `(case_id, run_id)` is rejected; a result whose nodes' `provenance.run_id` differs from its `run_id`, or a bundle row whose `run_id` differs from the manifest's, is rejected."
+  },
+  {
+   "id": "IFC-12",
+   "level": "implementation",
+   "targets": [
+    "Provider",
+    "Extractor",
+    "Store"
+   ],
+   "text": "Every declared capability works on a synthetic fixture; a request that needs an undeclared capability is refused, never partly served."
+  },
+  {
+   "id": "IFC-13",
+   "level": "implementation",
+   "targets": [
+    "Extractor"
+   ],
+   "text": "With `batch` declared, `run_many` returns exactly one result per case, in input order, each equal to what `run` gives for that case."
+  }
+ ]
+}
