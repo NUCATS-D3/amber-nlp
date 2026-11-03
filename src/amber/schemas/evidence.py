@@ -12,14 +12,16 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SerializerFunctionWrapHandler,
     ValidationInfo,
     field_validator,
+    model_serializer,
     model_validator,
 )
 
 from amber.ids import inclusion_id as make_inclusion_id
 from amber.ids import validate_ulid
-from amber.schemas._immutable import freeze_json
+from amber.schemas._immutable import FrozenMapping, freeze_json
 from amber.schemas.provenance import Provenance
 
 _INCLUSION_MINT_CONTEXT = object()
@@ -82,6 +84,60 @@ class GroundingFailure(BaseModel):
     match_starts: tuple[int, ...] = ()
 
 
+class Derivation(BaseModel):
+    """A typed record of how an inference was derived (contract v0.1 section 3.4).
+
+    ``inputs`` maps each role to every input ID it consumed (empty when the role was missing);
+    ``parameters`` holds only rule configuration; ``defaults_used`` maps each defaulted role
+    to the value assumed. Only ``rule`` derivations use defaults, and only for empty roles.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["rule", "model", "human"]
+    name: _StrictString
+    version: _StrictString
+    inputs: dict[str, tuple[_StrictString, ...]]
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    defaults_used: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("name", "version")
+    @classmethod
+    def require_nonblank_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("value must not be blank")
+        return value
+
+    @field_validator("inputs")
+    @classmethod
+    def freeze_inputs(cls, value: dict[str, tuple[str, ...]]) -> dict[str, tuple[str, ...]]:
+        if not value:
+            raise ValueError("a derivation needs at least one role")
+        for role, ids in value.items():
+            if not role.strip():
+                raise ValueError("role names must not be blank")
+            if any(not item.strip() for item in ids) or len(set(ids)) != len(ids):
+                raise ValueError("role input identifiers must be distinct and non-blank")
+        return FrozenMapping({role: tuple(ids) for role, ids in value.items()})
+
+    @field_validator("parameters", "defaults_used")
+    @classmethod
+    def freeze_values(cls, value: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return freeze_json(value)  # type: ignore[no-any-return]
+        except TypeError:
+            raise ValueError("values must be JSON") from None
+
+    @model_validator(mode="after")
+    def require_consistent_defaults(self) -> Derivation:
+        if self.defaults_used and self.kind != "rule":
+            raise ValueError("only rule derivations use defaults")
+        for role in self.defaults_used:
+            if role not in self.inputs or self.inputs[role]:
+                raise ValueError("a defaulted role must be listed with no inputs")
+        return self
+
+
 class InferenceEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -92,6 +148,8 @@ class InferenceEvidence(BaseModel):
     trace_id: _StrictString | None
     span_id: _StrictString | None
     provenance: Provenance
+    # Omitted from dumps when None, so records without one serialize as before.
+    derivation: Derivation | None = None
 
     @field_validator("evidence_id")
     @classmethod
@@ -122,6 +180,21 @@ class InferenceEvidence(BaseModel):
         if isinstance(value, Provenance):
             value = value.model_dump(warnings=False)
         return Provenance.model_validate(value)
+
+    @model_validator(mode="after")
+    def require_derivation_inputs(self) -> InferenceEvidence:
+        if self.derivation is not None:
+            listed = {item for ids in self.derivation.inputs.values() for item in ids}
+            if not listed <= set(self.inputs):
+                raise ValueError("derivation inputs must be among the inference's inputs")
+        return self
+
+    @model_serializer(mode="wrap")
+    def omit_absent_derivation(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if data.get("derivation", ...) is None:
+            del data["derivation"]
+        return data
 
 
 class EvidenceEdge(BaseModel):

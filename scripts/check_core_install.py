@@ -272,9 +272,26 @@ def main() -> None:
             receipt, resolver=InMemoryResolver([fixtures.SOURCE])
         )
         assert len(reviewed) == 1
+    from amber.reference import AjccStub
+    from amber.rules import Registry, derive, replay_derivations
+
+    stage_stamp = fixtures.provenance("rule:ajcc_stub@0.1", fixtures.RUN_IDS[0])
+    stage_graph = fixtures.stage_graph([("size_class", "S1"), ("node_class", "N0")])
+    staged = derive(stage_graph, AjccStub(), provenance=stage_stamp)
+    stage_result = create_case_result(
+        fixtures.stage_case(),
+        graph=stage_graph,
+        run_id=fixtures.RUN_IDS[0],
+        outcome=CaseOutcome(status="answered", provenance=stage_stamp),
+        final_claim_ids=[staged.claim_id],  # type: ignore[union-attr]
+    )
+    assert replay_derivations(
+        stage_result, registry=Registry([AjccStub()]), variables=fixtures.STAGE_VARIABLES
+    )
     print(
         "Core-only installed grounding, claim commit, case results, restore, policy, "
-        "conformance-kit, in-memory bundle, evaluation, and review round-trip checks passed."
+        "conformance-kit, in-memory bundle, evaluation, review round-trip, and rule replay "
+        "checks passed."
     )
 
 

@@ -7,10 +7,12 @@ from amber.reference.extractor import DeterministicExtractor
 from amber.reference.labeler import ImportLabeler
 from amber.reference.provider import ScriptedProvider
 from amber.reference.review import FileReviewBackend
+from amber.reference.rules import AjccStub
 from amber.reference.scorers import LabelCorrectScorer, StructuralValidityScorer
 from amber.reference.store import InMemoryResolver, InMemoryStore, StoreError
 
 __all__ = [
+    "AjccStub",
     "DeterministicExtractor",
     "FileReviewBackend",
     "ImportLabeler",

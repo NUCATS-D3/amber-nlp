@@ -17,6 +17,7 @@ from amber.cases import load_case_result
 from amber.conformance import fixtures as fx
 from amber.conformance.catalog import CASES, Target
 from amber.examples import load_example, load_label_record
+from amber.graph_errors import GraphValidationError
 from amber.interfaces import (
     Extractor,
     Labeler,
@@ -38,6 +39,7 @@ from amber.policy import (
 )
 from amber.providers import ProviderFailure, ProviderRequest, ProviderResponse
 from amber.review import ReviewBatchReceipt
+from amber.rules import Registry, Rule, RuleSpec, replay_derivations
 from amber.schemas import (
     Budget,
     Case,
@@ -48,6 +50,7 @@ from amber.schemas import (
     ReferenceTier,
     Sensitivity,
     Source,
+    VariableSet,
     Zone,
 )
 
@@ -152,6 +155,17 @@ class Subject:
         if not isinstance(destination, Destination) or destination.kind != "review":
             _fail("not_a_review_destination")
         return backend, review
+
+    def rule(self) -> tuple[Rule, CaseResult, VariableSet]:
+        made = self.targets["Rule"]()
+        if not isinstance(made, tuple) or len(made) != 3:
+            _fail("not_a_rule")
+        rule, result, variables = made
+        if not isinstance(rule, Rule) or not isinstance(getattr(rule, "spec", None), RuleSpec):
+            _fail("not_a_rule")
+        if not isinstance(result, CaseResult) or not isinstance(variables, VariableSet):
+            _fail("not_a_rule")
+        return rule, result, variables
 
 
 def _store_with_case(subject: Subject, case: Case | None = None) -> Store:
@@ -820,6 +834,46 @@ def check_ifc_10(subject: Subject) -> None:
         )
 
 
+# Rule --------------------------------------------------------------------------------------
+
+
+def check_var_09(subject: Subject) -> None:
+    """Replay recomputes the rule's derivations; a tampered derived value fails
+    ``derivation_mismatch``; an unregistered rule is not replayed."""
+    rule, result, variables = subject.rule()
+    try:
+        rule.spec.check(variables)
+    except GraphValidationError:
+        _fail("spec_does_not_fit_variables")
+    registry = Registry([rule])
+    replayed = _must_accept(
+        lambda: replay_derivations(result, registry=registry, variables=variables),
+        "replay_failed",
+    )
+    if not replayed:
+        _fail("no_derivation_replayed")
+    if replay_derivations(result, registry=Registry(), variables=variables):
+        _fail("unregistered_rule_replayed")
+    derived = {edge.claim_id for edge in result.edges if edge.evidence_id in set(replayed)}
+    tampered = result.model_copy(
+        update={
+            "claims": tuple(
+                claim.model_copy(update={"value": {"amber_conformance_tampered": True}})
+                if claim.claim_id in derived
+                else claim
+                for claim in result.claims
+            )
+        }
+    )
+    try:
+        replay_derivations(tampered, registry=registry, variables=variables)
+    except GraphValidationError as error:
+        if error.code != "derivation_mismatch":
+            _fail("tamper_wrong_code")
+    else:
+        _fail("tamper_not_detected")
+
+
 @dataclass(frozen=True)
 class Check:
     """One check of one case for one target. ``also_covers`` names other targets whose part of
@@ -848,6 +902,7 @@ CHECKS: tuple[Check, ...] = (
     Check("ANN-17", "Scorer", check_ann_17_scorer),
     Check("IFC-06", "Labeler", check_ifc_06),
     Check("IFC-10", "ReviewBackend", check_ifc_10),
+    Check("VAR-09", "Rule", check_var_09),
 )
 assert all(
     check.case_id in CASES and check.target in CASES[check.case_id].targets for check in CHECKS

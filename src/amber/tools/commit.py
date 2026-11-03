@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any
 
 from amber.graph import EvidenceGraph
-from amber.schemas import Claim, Provenance, Task
+from amber.schemas import Claim, Derivation, Provenance, Task
 
 
 def commit_claim(
@@ -25,6 +25,7 @@ def commit_claim(
     effective_datetime: datetime | None = None,
     confidence: float | None = None,
     reading_id: str | None = None,
+    derivation: Derivation | None = None,
 ) -> Claim:
     """Forward a proposed claim commit to its graph-owned validation boundary."""
     return graph.commit_claim(
@@ -37,4 +38,5 @@ def commit_claim(
         effective_datetime=effective_datetime,
         confidence=confidence,
         reading_id=reading_id,
+        derivation=derivation,
     )

@@ -6,6 +6,7 @@ exercises non-BMP characters, combining marks, and CRLF line endings.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from functools import cache
@@ -393,6 +394,7 @@ def fixtures_ref() -> str:
             "source": SOURCE.model_dump(mode="json"),
             "variable_set_ref": VARIABLES.schema_ref,
             "note_variable_set_ref": NOTE_VARIABLES.schema_ref,
+            "stage_variable_set_ref": STAGE_VARIABLES.schema_ref,
             "case": case().model_dump(mode="json"),
             "results": [result(run_id).model_dump(mode="json") for run_id in RUN_IDS],
             "spans": [span.model_dump(mode="json") for span in SPANS],
@@ -493,3 +495,71 @@ def note_example(
         log.events, case=bound, source=SOURCE, variables=NOTE_VARIABLES, spans=SPANS
     )
     return example_from_projection(projection, case=bound, source=SOURCE, variables=NOTE_VARIABLES)
+
+
+# Layered variables and rules, for derivation checks ----------------------------------------
+
+
+class StageValue(AnswerModel):
+    """Invented class label for the synthetic staging fixtures (not clinical)."""
+
+    value: str = Field(strict=True, min_length=1)
+
+
+class StageGroupAnswer(AnswerModel):
+    """Invented stage label derived by the synthetic stub rule (not clinical)."""
+
+    stage: str = Field(strict=True, min_length=1)
+
+
+STAGE_VARIABLES = VariableSet.create(
+    name="conformance_stage",
+    version="1.0.0",
+    variables=(
+        *(
+            Variable(
+                name=name,
+                level="note",
+                answer_model=StageValue,
+                instructions=f"Invented: the note's {name.replace('_', ' ')}.",
+            )
+            for name in ("size_class", "node_class", "spread_class")
+        ),
+        Variable(
+            name="stage_group",
+            level="note",
+            answer_model=StageGroupAnswer,
+            instructions="Invented: the stub stage derived from the classes.",
+            inputs=frozenset({"size_class", "node_class", "spread_class"}),
+            final=True,
+        ),
+    ),
+)
+_STAGE_QUOTES = ("Exam", "mass", "liver", "other mass")
+
+
+def stage_case(case_id: str = "conformance-stage-case-1") -> Case:
+    return case(case_id, task=STAGE_VARIABLES.name)
+
+
+def stage_graph(claims: Sequence[tuple[str, str]], *, run_id: str = RUN_IDS[0]) -> EvidenceGraph:
+    """A graph of ``STAGE_VARIABLES`` with one claim per ``(variable, value)``, each citing an
+    invented inclusion (cycling through a few spans)."""
+    graph = EvidenceGraph(
+        source=SOURCE, variables=STAGE_VARIABLES, sensitivity=Sensitivity.synthetic
+    )
+    spans = []
+    for text in _STAGE_QUOTES:
+        quoted = exact_quote(SOURCE, text, TEXT.rindex(text))
+        assert isinstance(quoted, Inclusion)
+        spans.append(graph.register_evidence(quoted))
+    for index, (variable, value) in enumerate(claims):
+        span = spans[index % len(spans)]
+        graph.commit_claim(
+            variable,
+            {"value": value},
+            [span.evidence_id],
+            "Invented rationale.",
+            provenance=provenance(TEACHER, run_id),
+        )
+    return graph

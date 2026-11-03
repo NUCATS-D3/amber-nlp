@@ -21,7 +21,7 @@ from amber._graph_validation import (
 from amber.graph_errors import GraphValidationCode, GraphValidationError
 from amber.ids import new_ulid
 from amber.schemas.claims import Claim
-from amber.schemas.evidence import EvidenceEdge, Inclusion, InferenceEvidence
+from amber.schemas.evidence import Derivation, EvidenceEdge, Inclusion, InferenceEvidence
 from amber.schemas.mentions import Mention, MentionReading
 from amber.schemas.provenance import Provenance, Sensitivity
 from amber.schemas.sources import Source
@@ -343,6 +343,7 @@ class EvidenceGraph:
         effective_datetime: datetime | None = None,
         confidence: float | None = None,
         reading_id: str | None = None,
+        derivation: Derivation | None = None,
     ) -> Claim:
         """Atomically validate and publish one evidence-backed proposed claim.
 
@@ -350,6 +351,8 @@ class EvidenceGraph:
         graph's set. A mention-level claim names the reading it relies on in ``reading_id``
         and cites the inclusions at that reading's span. ``field_roles`` keys are answer
         fields or ``attribute:<category>`` for the cue of a reading attribute.
+        ``derivation`` records how the claim was derived on its inference; with one,
+        ``evidence_ids`` may name claims as well as evidence (§3.4).
         """
         if reading_id is not None and type(reading_id) is not str:
             _raise("invalid_schema")
@@ -367,7 +370,14 @@ class EvidenceGraph:
             _raise("invalid_schema")
 
         primary_ids = _validated_identifiers(evidence_ids)
-        if any(evidence_id not in self._state.evidence for evidence_id in primary_ids):
+        if derivation is not None and not isinstance(derivation, Derivation):
+            _raise("invalid_schema")
+        citable = (
+            self._state.evidence
+            if derivation is None
+            else {**self._state.evidence, **self._state.claims}
+        )
+        if any(evidence_id not in citable for evidence_id in primary_ids):
             _raise("unknown_reference")
 
         if type(rationale) is not str or not rationale.strip():
@@ -429,6 +439,8 @@ class EvidenceGraph:
             "span_id": None,
             "provenance": provenance_payload,
         }
+        if derivation is not None:
+            inference_payload["derivation"] = derivation.model_dump(warnings=False)
         new_edges = [
             {
                 "claim_id": claim_id,

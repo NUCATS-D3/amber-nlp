@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from amber.cases import create_case_result
 from amber.conformance import Subject
 from amber.conformance import fixtures as fx
 from amber.conformance.catalog import CASES, CATALOG, CATALOG_VERSION, catalog_revision
@@ -22,6 +23,7 @@ from amber.labeling import LabelerFailure
 from amber.policy import DEFAULT_MATRIX, Destination, ProviderDestination, StaticGate
 from amber.providers import ProviderFailure, ProviderRequest, ProviderResponse
 from amber.reference import (
+    AjccStub,
     DeterministicExtractor,
     FileReviewBackend,
     ImportLabeler,
@@ -31,7 +33,8 @@ from amber.reference import (
     ScriptedProvider,
 )
 from amber.reference.review import simulate_reviews
-from amber.schemas import Example, ReferenceTier, Source, Zone
+from amber.rules import RuleResult, derive
+from amber.schemas import CaseOutcome, CaseResult, Example, ReferenceTier, Source, Zone
 from amber.scoring import Metric
 
 DESIGN = Path(__file__).parents[1] / "docs" / "design" / "contract-v0.1.md"
@@ -90,12 +93,30 @@ def _file_review(backend_class: type[FileReviewBackend] = FileReviewBackend) -> 
     return make
 
 
+def _stub_rule(rule: Any = None) -> Any:
+    def make() -> tuple[Any, CaseResult, Any]:
+        stamp = fx.provenance("rule:ajcc_stub@0.1", fx.RUN_IDS[0])
+        graph = fx.stage_graph([("size_class", "S2"), ("node_class", "N1")])
+        claim = derive(graph, AjccStub(), provenance=stamp, parameters={"suffix": "-x"})
+        result = create_case_result(
+            fx.stage_case(),
+            graph=graph,
+            run_id=fx.RUN_IDS[0],
+            outcome=CaseOutcome(status="answered", provenance=stamp),
+            final_claim_ids=[claim.claim_id],  # type: ignore[union-attr]
+        )
+        return (rule or AjccStub()), result, fx.STAGE_VARIABLES
+
+    return make
+
+
 def _subject(
     store: type[InMemoryStore] = InMemoryStore,
     provider: Any = None,
     extractor: Any = None,
     labeler: Any = None,
     review: Any = None,
+    rule: Any = None,
 ) -> Subject:
     return Subject(
         name="amber-reference",
@@ -108,6 +129,7 @@ def _subject(
             "Scorer": LabelCorrectScorer,
             "Labeler": labeler or _import_labeler,
             "ReviewBackend": review or _file_review(),
+            "Rule": rule or _stub_rule(),
         },
     )
 
@@ -165,6 +187,7 @@ def test_every_check_names_a_catalog_case_for_its_target() -> None:
         ("ANN-17", "Scorer"),
         ("IFC-06", "Labeler"),
         ("IFC-10", "ReviewBackend"),
+        ("VAR-09", "Rule"),
     }
 
 
@@ -186,22 +209,24 @@ def test_the_references_pass_every_implemented_case() -> None:
         "SourceResolver",
         "Labeler",
         "ReviewBackend",
+        "Rule",
     ):
         assert report.conforms(target)
     assert statuses["ANN-06"] == ("not_applicable", None)
     assert statuses["WIR-01"] == ("not_implemented", None)
     assert statuses["WIR-04"] == ("not_implemented", None)
     assert report.counts() == {
-        "passed": 13,
+        "passed": 14,
         "failed": 0,
-        "not_applicable": 101 - 13 - 20,
-        "not_implemented": 20,
+        "not_applicable": 101 - 14 - 21,
+        "not_implemented": 21,
     }
     assert report.targets == (
         "Extractor",
         "Labeler",
         "Provider",
         "ReviewBackend",
+        "Rule",
         "Scorer",
         "SourceResolver",
         "Store",
@@ -209,7 +234,8 @@ def test_the_references_pass_every_implemented_case() -> None:
     # IFC-12's Extractor part has no check yet, so the shared case is never reported passed.
     assert statuses["IFC-12"] == ("not_implemented", None)
     assert statuses["IFC-03"] == ("not_implemented", None)
-    # ANN-13 and ANN-14 are loupe-bridge cases with no check yet.
+    # ANN-13 and ANN-14 are loupe-bridge cases, and IFC-05 (rule purity) has no check yet.
+    assert statuses["IFC-05"] == ("not_implemented", None)
     assert statuses["ANN-13"] == statuses["ANN-14"] == ("not_implemented", None)
     assert report.catalog_revision == catalog_revision()
     assert report.fixtures_ref == fx.fixtures_ref()
@@ -603,3 +629,34 @@ def test_a_review_backend_needs_a_review_destination() -> None:
 
     report = run_checks(_subject(review=tracking))
     assert _statuses(report)["IFC-10"] == ("failed", "not_a_review_destination")
+
+
+class _IgnoresInputs(AjccStub):
+    def apply(self, inputs: Any, parameters: Any) -> RuleResult:
+        return RuleResult(value={"stage": "always"})
+
+
+class _Refuses(AjccStub):
+    def apply(self, inputs: Any, parameters: Any) -> RuleResult:
+        return RuleResult(status="insufficient_evidence", reason="Synthetic refusal.")
+
+
+class _Misfit(AjccStub):
+    spec = AjccStub.spec.model_copy(update={"outputs": "absent_variable"})
+
+
+@pytest.mark.parametrize(
+    ("rule", "code"),
+    [
+        (_stub_rule(_IgnoresInputs()), "replay_failed"),
+        (_stub_rule(_Refuses()), "replay_failed"),
+        (_stub_rule(_Misfit()), "spec_does_not_fit_variables"),
+        (lambda: AjccStub(), "not_a_rule"),
+        (lambda: (object(), None, None), "not_a_rule"),
+    ],
+)
+def test_broken_rules_fail_with_source_free_codes(rule: Any, code: str) -> None:
+    report = run_checks(_subject(rule=rule))
+    assert _statuses(report)["VAR-09"] == ("failed", code)
+    assert not report.conforms("Rule")
+    assert report.conforms("Store")

@@ -27,6 +27,7 @@ from amber.policy import (
 )
 from amber.providers import ProviderFailure, ProviderRequest, ProviderResponse
 from amber.review import ReviewBatchReceipt
+from amber.rules import Rule as Rule  # re-exported: the Rule protocol lives with RuleSpec
 from amber.schemas.annotations import AnnotationEvent
 from amber.schemas.cases import Budget, Case, CaseResult
 from amber.schemas.evidence import Inclusion

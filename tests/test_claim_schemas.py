@@ -360,8 +360,10 @@ def test_inference_evidence_has_exact_v1_fields_and_immutable_inputs() -> None:
         "trace_id",
         "span_id",
         "provenance",
+        "derivation",
     }
     assert inference.kind == "inference"
+    assert inference.derivation is None
     assert inference.trace_id is None
     assert inference.span_id is None
     with pytest.raises(TypeError, match="frozen JSON values cannot be mutated"):

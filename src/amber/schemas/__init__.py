@@ -8,7 +8,13 @@ from amber.schemas.annotations import AnnotationEvent
 from amber.schemas.answers import AnswerModel
 from amber.schemas.cases import Budget, Case, CaseOutcome, CaseResult, Usage, VariableOutcome
 from amber.schemas.claims import Claim
-from amber.schemas.evidence import EvidenceEdge, GroundingFailure, Inclusion, InferenceEvidence
+from amber.schemas.evidence import (
+    Derivation,
+    EvidenceEdge,
+    GroundingFailure,
+    Inclusion,
+    InferenceEvidence,
+)
 from amber.schemas.examples import Example, LabelRecord, ReferenceTier, VariableReference
 from amber.schemas.mentions import Attribute, Concept, Mention, MentionReading
 from amber.schemas.provenance import Provenance, Sensitivity, Zone
@@ -30,6 +36,7 @@ __all__ = [
     "Attribute",
     "Claim",
     "Concept",
+    "Derivation",
     "EvidenceEdge",
     "Example",
     "LabelRecord",

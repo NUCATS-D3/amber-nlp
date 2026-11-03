@@ -23,6 +23,7 @@ GraphValidationCode: TypeAlias = Literal[
     "missing_attribute_evidence",
     "attribute_value_not_permitted",
     "citation_outside_section",
+    "derivation_mismatch",
 ]
 
 

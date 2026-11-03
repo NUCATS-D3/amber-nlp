@@ -14,7 +14,7 @@ The suite is flat and grouped by the boundary under test. All inputs are invente
 | `test_examples.py` | Examples and label records: tiers and claim status, references, identity, split, mentions |
 | `test_annotations.py` | Events, replay determinism and prefixes, blind streams, transitions, tiers, move-on, Examples from events |
 | `test_store.py` | Store protocol and `InMemoryStore`: splits, runs, append-only events, projections, Examples, resolver |
-| `test_conformance.py` | Conformance catalog, fixtures, checks against the references and broken stores, providers, extractors, scorers, labelers, and review backends, report, pytest plugin |
+| `test_conformance.py` | Conformance catalog, fixtures, checks against the references and broken stores, providers, extractors, scorers, labelers, review backends, and rules, report, pytest plugin |
 | `test_labels.py` | `labels_only_view` for results and events, schema closedness, no source text in output |
 | `test_wire.py` | JSON records: golden bytes and keys, schema versions, timestamps, budgets, VariableSet JSON |
 | `test_bundles.py` | Bundles: Parquet round trips, structure, hashes, payload kinds, resolver loading, `x_` columns (needs pyarrow) |
@@ -25,7 +25,9 @@ The suite is flat and grouped by the boundary under test. All inputs are invente
 | `test_labeling.py` | Labelers: silver-only admission, import events that replay to the Example, ImportLabeler outcomes |
 | `test_evaluation.py` | Binary metric harness: protocol arithmetic, P=0, Q=0, no answers, provisional and label-only gates, Wilson and bootstrap |
 | `test_mlflow_evaluation.py` | MLflow validity scorer and gated report logging (needs tracking) |
+| `test_derivations.py` | Derivation records: inputs within the inference, defaults only on rule derivations and empty roles, unset derivations omitted from JSON |
 | `test_review.py` | Review backends: file round trips (single review, adjudication, unresolved, excluded, unreviewed), export gating, import refusals |
+| `test_rules.py` | Rules: specs and registry, reduction (equal, conflicting, many, rejected), on_missing, conflict propagation, replay and tampering, events and bundles |
 | `test_sources.py` | Source identity: structured rows hash their record, note IDs unchanged |
 | `test_answer_schemas.py` | Frozen, closed, strict `AnswerModel` subclasses |
 | `test_claim_schemas.py` | Task, claim, inference, and edge records; canonical IDs; immutability; wire shapes |

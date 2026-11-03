@@ -358,6 +358,9 @@ def _evidence_row(record: Inclusion | InferenceEvidence) -> Row:
             inputs=list(record.inputs),
             trace_id=record.trace_id,
             span_id=record.span_id,
+            derivation=(
+                None if record.derivation is None else record.derivation.model_dump(mode="json")
+            ),
             **_provenance_columns(record.provenance),
         )
     return row

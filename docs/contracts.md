@@ -69,7 +69,13 @@ refuse scoring a configuration against its own silver references; rule hashes ar
   - `Inclusion`: a verified source span. Only the grounding path can mint one. Inclusions are
     positions only, so one position has one `evidence_id` whatever cites it.
   - `InferenceEvidence`: a rationale with non-empty inputs, which are evidence IDs or
-    non-rejected claim IDs.
+    non-rejected claim IDs, and an optional `derivation` (experimental), omitted from JSON
+    when unset so records without one serialize exactly as before.
+  - `Derivation` (experimental): `kind` (`rule`, `model`, `human`), `name`, `version`,
+    `inputs` (role → every input ID it consumed, possibly none), `parameters` (rule
+    configuration only), and `defaults_used` (role → value assumed). Every listed ID must be
+    among the inference's inputs; only `rule` derivations use defaults, and a defaulted role
+    lists no inputs.
   - `EvidenceEdge`: a claim → evidence link with an optional role and weight. A role is an
     answer-field name or `attribute:<category>`, which cites the cue of that attribute on the
     claim's reading and never counts toward field coverage.
@@ -237,6 +243,34 @@ Pure data and functions; no I/O, credentials, or clock (contract v0.1 §1).
   `conflicting_evidence`; loading against a set whose name, version, or `schema_ref` differs
   from the result's is `variable_set_mismatch`.
 - `amber.graph_errors`: stable, source-free diagnostic codes.
+- `EvidenceGraph.commit_claim(..., derivation=...)` (and the `commit_claim` tool) records a
+  derivation on the claim's inference; with one, `evidence_ids` may name claims too.
+
+## Rules (`amber.rules`, experimental)
+
+- `RoleSpec` (`source`: a variable or `evidence:inclusion`; `cardinality` `one` or `many`;
+  `on_missing` `refuse`, `default`, or `pass_none`) and `RuleSpec` (`name`, `version`, roles,
+  `outputs`, and `defaults` exactly for the `default` roles). `RuleSpec.check(variables)`
+  requires the output variable to exist and to declare each role's variable among its
+  `inputs` (`undeclared_dependency` otherwise). `RuleResult` is a value or an unanswered status with a
+  reason. `Registry` keys rules by `name@version` and refuses a second spec under one key.
+- `derive(graph, rule, *, provenance, parameters, upstream, evidence)` gathers each role's
+  candidates (non-rejected claims of its variable, or the named inclusions) and reduces them:
+  `many` gets every candidate in ID order; `one` gets the lowest-ID candidate when values are
+  equal (all of them listed) and is a conflict when they differ. A conflict gives
+  `conflicting_evidence` citing every conflicting claim's source leaves and the rule is not
+  applied; a missing `refuse` role gives `insufficient_evidence` naming it; `default` passes
+  and records the declared default; `pass_none` passes `None` or `()`. Otherwise the rule's
+  value is committed with a `rule` derivation, or its status returned as a `DerivedOutcome`.
+  `derive_all` runs rules in dependency order and propagates conflicts through intermediate
+  variables.
+- `replay_derivations(result_or_example, *, registry, variables)` recomputes every
+  registered rule derivation (roles must equal the spec's, defaults must be declared and
+  equal, inputs must belong to the role's variable, a `one` role's listed values must agree)
+  and compares the value with the derived claims; any difference is `derivation_mismatch`.
+  Unregistered rules and model or human derivations are not replayed. Replay does not check
+  that the listed candidates are complete. Bundles carry derivations in the `evidence` table's
+  `derivation` column.
 
 Structural validity and source traceability do not establish semantic support or clinical
 correctness. Those are measured separately.
@@ -343,6 +377,9 @@ implementations are synthetic and are not loaded by `import amber`.
   service: a proposal is imported and accepted unchanged, a case without one is confirmed
   `not_mentioned`; one stream gives `single_review`, several give blind submissions and an
   adjudication (`accepted`, `unresolved`, or `excluded`).
+- **`Rule`** (`amber.rules`, re-exported here): `spec: RuleSpec` and a pure `apply(inputs,
+  parameters) -> RuleResult`. Reference: `AjccStub`, an invented, non-clinical stub table
+  over the conformance fixtures' `STAGE_VARIABLES`.
 - **`SourceResolver`**: `resolve(source_id) -> Source | None`. Reference: `InMemoryResolver`.
 - **`Exporter`**: `export(items, target, *, gate, data, now) -> ExportReceipt`. It derives each
   output file's payload kind from its schema, gates every file (the manifest included) before
@@ -382,8 +419,9 @@ implementations are synthetic and are not loaded by `import amber`.
   source-free codes. Implemented today for `Store` (ANN-05, ANN-16, ANN-17, IFC-07, IFC-11,
   IFC-12), `Provider` (IFC-04, IFC-12), `Extractor` (IFC-02, IFC-13; the kit supplies
   scripted providers to the consumer's extractor factory), `Scorer` (IFC-09, ANN-11,
-  ANN-12, ANN-17), `Labeler` (IFC-06), and `ReviewBackend` (IFC-10; the factory returns
-  the backend and a callable that completes the reviews for a receipt). A case shared by several targets
+  ANN-12, ANN-17), `Labeler` (IFC-06), `ReviewBackend` (IFC-10; the factory returns
+  the backend and a callable that completes the reviews for a receipt), and `Rule` (VAR-09;
+  the factory returns the rule, a result with its derivations, and the variable set). A case shared by several targets
   records which declared targets failed it, so `conforms(target)` is per target, and is
   reported `passed` only when every declared target it applies to was checked. A store rejects by raising; the kit does not depend on its exception types.
 - **`ConformanceReport`**: subject, amber version, declared targets, catalog version and
@@ -428,8 +466,6 @@ replicates. `gold_from` and `prediction_from` adapt Examples, label records, and
 These items are tracked in Beads (`bd list --status=open`):
 
 - structured evidence (deferred to a later minor; contract v0.1 §2.6);
-- derivations and rule replay;
-- the remaining interface (`Rule`);
 - conformance checks for the remaining targets and for bundles;
 - MLflow plugins for evaluation, datasets, the loupe bridge, and deployment.
 

@@ -17,6 +17,8 @@ A consumer declares what it implements by implementing the hook in its root ``co
 ``SourceResolver`` takes the fixture sources; ``Extractor`` takes the scripted ``Provider`` the
 kit supplies; ``ReviewBackend`` takes no arguments and returns ``(backend, review)``, where
 ``review(receipt)`` completes the reviews of an exported batch (accepting every proposal).
+``Rule`` takes no arguments and returns ``(rule, result, variables)``: a result holding at
+least one derivation by the rule, and its variable set.
 
 then runs ``pytest --amber-conformance --amber-conformance-report=report.json``.
 """
