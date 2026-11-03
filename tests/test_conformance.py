@@ -22,9 +22,11 @@ from amber.reference import (
     DeterministicExtractor,
     InMemoryResolver,
     InMemoryStore,
+    LabelCorrectScorer,
     ScriptedProvider,
 )
 from amber.schemas import Example, Source, Zone
+from amber.scoring import Metric
 
 DESIGN = Path(__file__).parents[1] / "docs" / "design" / "contract-v0.1.md"
 
@@ -69,6 +71,7 @@ def _subject(
             "SourceResolver": _resolver,
             "Provider": provider or _provider("schema_constrained", "logprobs"),
             "Extractor": extractor or _extractor,
+            "Scorer": LabelCorrectScorer,
         },
     )
 
@@ -120,6 +123,10 @@ def test_every_check_names_a_catalog_case_for_its_target() -> None:
         ("IFC-12", "Provider"),
         ("IFC-02", "Extractor"),
         ("IFC-13", "Extractor"),
+        ("IFC-09", "Scorer"),
+        ("ANN-11", "Scorer"),
+        ("ANN-12", "Scorer"),
+        ("ANN-17", "Scorer"),
     }
 
 
@@ -133,18 +140,18 @@ def test_the_references_pass_every_implemented_case() -> None:
     for check in CHECKS:
         if check.case_id != "IFC-12":
             assert statuses[check.case_id] == ("passed", None)
-    for target in ("Store", "Provider", "Extractor", "SourceResolver"):
+    for target in ("Store", "Provider", "Extractor", "Scorer", "SourceResolver"):
         assert report.conforms(target)
     assert statuses["ANN-06"] == ("not_applicable", None)
     assert statuses["WIR-01"] == ("not_implemented", None)
     assert statuses["WIR-04"] == ("not_implemented", None)
     assert report.counts() == {
-        "passed": 8,
+        "passed": 11,
         "failed": 0,
-        "not_applicable": 101 - 8 - 18,
+        "not_applicable": 101 - 11 - 18,
         "not_implemented": 18,
     }
-    assert report.targets == ("Extractor", "Provider", "SourceResolver", "Store")
+    assert report.targets == ("Extractor", "Provider", "Scorer", "SourceResolver", "Store")
     # IFC-12's Extractor part has no check yet, so the shared case is never reported passed.
     assert statuses["IFC-12"] == ("not_implemented", None)
     assert statuses["IFC-03"] == ("not_implemented", None)
@@ -379,4 +386,60 @@ def test_broken_extractors_fail_with_source_free_codes(
     report = run_checks(_subject(extractor=extractor))
     assert _statuses(report)[case_id] == ("failed", code)
     assert not report.conforms("Extractor")
+    assert report.conforms("Store")
+
+
+class _TrustsItself(LabelCorrectScorer):
+    def score(self, predicted: Any, reference: Any, *, variables: Any) -> Any:
+        import amber.reference.scorers as module
+
+        original = module.refuse_self_reference
+        module.refuse_self_reference = lambda *args: None  # type: ignore[assignment]
+        try:
+            return super().score(predicted, reference, variables=variables)
+        finally:
+            module.refuse_self_reference = original
+
+
+class _ScoresEvidenceOnLabels(LabelCorrectScorer):
+    def score(self, predicted: Any, reference: Any, *, variables: Any) -> Any:
+        report = super().score(predicted, reference, variables=variables)
+        extra = Metric(name="evidence_overlap_guess", kind="evidence", numerator=1, denominator=1)
+        return report.model_copy(update={"metrics": (*report.metrics, extra)})
+
+
+class _ForgetsExamples(LabelCorrectScorer):
+    def score(self, predicted: Any, reference: Any, *, variables: Any) -> Any:
+        return (
+            super()
+            .score(predicted, reference, variables=variables)
+            .model_copy(update={"example_ids": ()})
+        )
+
+
+class _IgnoresTiers(LabelCorrectScorer):
+    def score(self, predicted: Any, reference: Any, *, variables: Any) -> Any:
+        return (
+            super()
+            .score(predicted, reference, variables=variables)
+            .model_copy(update={"tier_mix": {}, "provisional": False})
+        )
+
+
+@pytest.mark.parametrize(
+    ("scorer", "case_id", "code"),
+    [
+        (_TrustsItself, "ANN-12", "self_reference_not_refused"),
+        (_ScoresEvidenceOnLabels, "ANN-11", "evidence_metric_on_labels"),
+        (_ForgetsExamples, "ANN-17", "example_ids_missing"),
+        (_IgnoresTiers, "IFC-09", "provisional_wrong"),
+        (lambda: object(), "IFC-09", "not_a_scorer"),
+    ],
+)
+def test_broken_scorers_fail_with_source_free_codes(scorer: Any, case_id: str, code: str) -> None:
+    report = run_checks(
+        Subject(name="broken", version="1", targets={"Scorer": scorer, "Store": InMemoryStore})
+    )
+    assert _statuses(report)[case_id] == ("failed", code)
+    assert not report.conforms("Scorer")
     assert report.conforms("Store")

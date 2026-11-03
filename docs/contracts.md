@@ -303,6 +303,16 @@ implementations are synthetic and are not loaded by `import amber`.
   `DeterministicExtractor`, which asks its provider for a schema-constrained answer per
   note-level variable, grounds the quote with `quote()`, and records it with `commit_claim` or
   `no_claim`; a context whose sensitivity differs from the case's is a runner error and raises.
+- **`Scorer`**: `name`, `needs`, and `score(predicted, reference, *, variables) ->
+  ScoreReport`. `amber.scoring` defines `ScoreReport` (metrics as numerator and denominator
+  with a kind and optional variable, the `example_id`s scored against, the tier mix,
+  `provisional` exactly when a reference is below `adjudicated`, and `inconclusive` metrics)
+  and the rules every scorer applies: `refuse_self_reference` (a silver reference sharing the
+  predictions' `model:`/`rule:` configuration, rule hash ignored, including attribute
+  `assigned_by`) and `require_move_on` (under a move-on decision every `single_review`
+  snapshot includes it). References: `StructuralValidityScorer` (outcome mix, failure kinds,
+  grounding failures) and `LabelCorrectScorer` (label accuracy, coverage, omissions, tokens
+  per case, and evidence overlap against Examples, `inconclusive` against label records).
 - **`SourceResolver`**: `resolve(source_id) -> Source | None`. Reference: `InMemoryResolver`.
 - **`Exporter`**: `export(items, target, *, gate, data, now) -> ExportReceipt`. It derives each
   output file's payload kind from its schema, gates every file (the manifest included) before
@@ -340,8 +350,9 @@ implementations are synthetic and are not loaded by `import amber`.
   `fixtures_ref()` hashing them.
 - **Checks**: implementation cases run against a consumer's declared targets and fail with
   source-free codes. Implemented today for `Store` (ANN-05, ANN-16, ANN-17, IFC-07, IFC-11,
-  IFC-12), `Provider` (IFC-04, IFC-12), and `Extractor` (IFC-02, IFC-13; the kit supplies
-  scripted providers to the consumer's extractor factory). A case shared by several targets
+  IFC-12), `Provider` (IFC-04, IFC-12), `Extractor` (IFC-02, IFC-13; the kit supplies
+  scripted providers to the consumer's extractor factory), and `Scorer` (IFC-09, ANN-11,
+  ANN-12, ANN-17). A case shared by several targets
   records which declared targets failed it, so `conforms(target)` is per target, and is
   reported `passed` only when every declared target it applies to was checked. A store rejects by raising; the kit does not depend on its exception types.
 - **`ConformanceReport`**: subject, amber version, declared targets, catalog version and
@@ -365,7 +376,7 @@ These items are tracked in Beads (`bd list --status=open`):
 
 - structured evidence (deferred to a later minor; contract v0.1 §2.6);
 - derivations and rule replay;
-- the remaining interfaces (`Rule`, `Scorer`, `ReviewBackend`, `Labeler`);
+- the remaining interfaces (`Rule`, `ReviewBackend`, `Labeler`);
 - conformance checks for the remaining targets and for bundles;
 - MLflow plugins for evaluation, datasets, the loupe bridge, and deployment.
 

@@ -32,6 +32,7 @@ from amber.schemas.examples import Example, LabelRecord
 from amber.schemas.mentions import Mention
 from amber.schemas.sources import Source
 from amber.schemas.variables import VariableSet
+from amber.scoring import ScoreReport
 
 StoreCapability: TypeAlias = Literal["events", "examples", "query", "transactions"]
 
@@ -108,6 +109,33 @@ class Extractor(Protocol):
         budget: Budget | None,
         context: RunContext,
     ) -> CaseResult: ...
+
+
+ScorerNeed: TypeAlias = Literal["examples", "label_records", "mentions", "traces"]
+
+
+@runtime_checkable
+class Scorer(Protocol):
+    """Scores predicted results against references (contract v0.1 section 6.2).
+
+    The report is ``provisional`` when any reference is below ``adjudicated``, lists the
+    ``example_id``s it used, and marks evidence metrics ``inconclusive`` against label records.
+    A scorer refuses (``self_reference``) when predictions and a silver reference share a
+    configuration (``amber.scoring.refuse_self_reference``). It sees offsets but never source
+    text unless ``needs`` includes ``mentions``. References: ``StructuralValidityScorer``,
+    ``LabelCorrectScorer``.
+    """
+
+    name: str
+    needs: frozenset[ScorerNeed]
+
+    def score(
+        self,
+        predicted: Sequence[CaseResult],
+        reference: Sequence[Example | LabelRecord],
+        *,
+        variables: VariableSet,
+    ) -> ScoreReport: ...
 
 
 @runtime_checkable

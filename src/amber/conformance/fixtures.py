@@ -32,6 +32,7 @@ from amber.schemas import (
     Source,
     SourceKind,
     Task,
+    Usage,
     Variable,
     VariableOutcome,
     VariableSet,
@@ -401,3 +402,94 @@ def fixtures_ref() -> str:
             },
         }
     )
+
+
+# Note-level results and Examples, for scorer checks ----------------------------------------
+
+
+def note_result(
+    run_id: str, *, present: bool, producer: str, case_id: str = "conformance-note-case-1"
+) -> CaseResult:
+    """A predicted answer for ``NOTE_VARIABLES`` citing the invented sentence."""
+    stamped = provenance(producer, run_id)
+    graph = EvidenceGraph(
+        source=SOURCE, variables=NOTE_VARIABLES, sensitivity=Sensitivity.synthetic
+    )
+    graph.register_evidence(SENTENCE)
+    claim = graph.commit_claim(
+        NOTE_VARIABLES.name,
+        {"present": present},
+        [SENTENCE.evidence_id],
+        "Invented rationale.",
+        {"present": [SENTENCE.evidence_id]},
+        provenance=stamped,
+    )
+    return create_case_result(
+        note_case(case_id),
+        graph=graph,
+        run_id=run_id,
+        outcome=CaseOutcome(status="answered", provenance=stamped),
+        final_claim_ids=[claim.claim_id],
+        usage=Usage(calls=1, tokens=12),
+    )
+
+
+def note_example(
+    tier: str, *, present: bool, producer: str, case_id: str = "conformance-note-case-1"
+) -> Any:
+    """A silver import of ``producer``'s answer, raised to ``adjudicated`` when asked."""
+    from amber.annotations import example_from_projection, replay
+
+    log = EventLog(case_id=case_id)
+    log.add("import.result", IMPORTER, "importer")
+    claim = log._claim(NOTE_VARIABLES.name, producer, None)
+    claim.update(task=NOTE_VARIABLES.name, value={"present": present})
+    log.add(
+        "claim.create",
+        IMPORTER,
+        "importer",
+        target_id=claim["claim_id"],
+        after={
+            "claim": claim,
+            "inclusions": [SENTENCE.evidence_id],
+            "edges": [
+                {
+                    "claim_id": claim["claim_id"],
+                    "evidence_id": SENTENCE.evidence_id,
+                    "role": "present",
+                }
+            ],
+        },
+    )
+    log.add(
+        "outcome.set",
+        IMPORTER,
+        "importer",
+        variable=NOTE_VARIABLES.name,
+        after={
+            "outcome": {
+                "status": "answered",
+                "provenance": provenance(producer).model_dump(mode="json"),
+            },
+            "final_claim_ids": [claim["claim_id"]],
+        },
+    )
+    log.add(
+        "tier.set", IMPORTER, "importer", variable=NOTE_VARIABLES.name, after={"tier": "silver"}
+    )
+    if tier == "adjudicated":
+        log.add("review.submit", REVIEWER_A, "reviewer", stream="a")
+        log.add("review.submit", REVIEWER_B, "reviewer", stream="b")
+        log.add("adjudication.resolve", ADJUDICATOR, "adjudicator")
+        log.add(
+            "tier.set",
+            ADJUDICATOR,
+            "adjudicator",
+            variable=NOTE_VARIABLES.name,
+            after={"tier": "adjudicated"},
+        )
+    bound = note_case(case_id)
+    projection = replay(
+        log.events, case=bound, source=SOURCE, variables=NOTE_VARIABLES, spans=SPANS
+    )
+    return example_from_projection(projection, case=bound, source=SOURCE, variables=NOTE_VARIABLES)

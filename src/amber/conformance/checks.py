@@ -17,7 +17,7 @@ from amber.cases import load_case_result
 from amber.conformance import fixtures as fx
 from amber.conformance.catalog import CASES, Target
 from amber.examples import load_example, load_label_record
-from amber.interfaces import Extractor, Provider, SourceResolver, Store
+from amber.interfaces import Extractor, Provider, Scorer, SourceResolver, Store
 from amber.policy import (
     DEFAULT_MATRIX,
     Destination,
@@ -26,7 +26,16 @@ from amber.policy import (
     StaticGate,
 )
 from amber.providers import ProviderFailure, ProviderRequest, ProviderResponse
-from amber.schemas import Budget, Case, CaseResult, Example, Sensitivity, Source, Zone
+from amber.schemas import (
+    Budget,
+    Case,
+    CaseResult,
+    Example,
+    LabelRecord,
+    Sensitivity,
+    Source,
+    Zone,
+)
 
 StoreFactory = Callable[[], Store]
 ResolverFactory = Callable[[Iterable[Source]], SourceResolver]
@@ -105,6 +114,12 @@ class Subject:
         if not isinstance(extractor, Extractor):
             _fail("not_an_extractor")
         return extractor
+
+    def scorer(self) -> Scorer:
+        scorer = self.targets["Scorer"]()
+        if not isinstance(scorer, Scorer):
+            _fail("not_a_scorer")
+        return scorer
 
 
 def _store_with_case(subject: Subject, case: Case | None = None) -> Store:
@@ -540,6 +555,91 @@ def check_ifc_13(subject: Subject) -> None:
             _fail("batch_differs_from_run")
 
 
+# Scorer ------------------------------------------------------------------------------------
+
+_CANDIDATE = "model:conformance-candidate@1"
+
+
+def _label_record(producer: str) -> LabelRecord:
+    return LabelRecord(
+        schema_version="amber/0.1",
+        case_id="conformance-note-case-1",
+        variable=fx.NOTE_VARIABLES.name,
+        variable_set=fx.NOTE_VARIABLES.name,
+        variable_set_version=fx.NOTE_VARIABLES.version,
+        variable_set_ref=fx.NOTE_VARIABLES.schema_ref,
+        tier="silver",
+        outcome_status="answered",
+        value={"present": True},
+        producer=producer,
+        split="dev",
+    )
+
+
+def _score(subject: Subject, predicted: list[CaseResult], reference: list[Any]) -> Any:
+    scorer = subject.scorer()
+    return scorer.score(predicted, reference, variables=fx.NOTE_VARIABLES)
+
+
+def _predicted(producer: str = _CANDIDATE) -> list[CaseResult]:
+    return [fx.note_result(fx.RUN_IDS[0], present=True, producer=producer)]
+
+
+def check_ifc_09(subject: Subject) -> None:
+    """Provisional exactly below adjudicated; evidence inconclusive on labels; self_reference."""
+    adjudicated = fx.note_example("adjudicated", present=True, producer=fx.TEACHER)
+    silver = fx.note_example("silver", present=True, producer=fx.TEACHER)
+    report = _must_accept(lambda: _score(subject, _predicted(), [adjudicated]), "scorer_raised")
+    if report.provisional:
+        _fail("provisional_wrong")
+    report = _must_accept(lambda: _score(subject, _predicted(), [silver]), "scorer_raised")
+    if not report.provisional:
+        _fail("provisional_wrong")
+    check_ann_11_scorer(subject)
+    check_ann_12_scorer(subject)
+    hashed = _predicted("rule:conformance-rules@1+aaaa")
+    if not _rejects(
+        lambda: _score(subject, hashed, [_label_record("rule:conformance-rules@1+bbbb")])
+    ):
+        _fail("self_reference_not_refused")
+    shared_tool = _predicted("tool:conformance-tool@1")
+    _must_accept(
+        lambda: _score(subject, shared_tool, [_label_record("tool:conformance-tool@1")]),
+        "self_reference_false_positive",
+    )
+
+
+def check_ann_11_scorer(subject: Subject) -> None:
+    """Evidence metrics against label records are inconclusive, never reported."""
+    report = _must_accept(
+        lambda: _score(subject, _predicted(), [_label_record(fx.TEACHER)]), "scorer_raised"
+    )
+    if any(metric.kind == "evidence" for metric in report.metrics):
+        _fail("evidence_metric_on_labels")
+
+
+def check_ann_12_scorer(subject: Subject) -> None:
+    """Scoring against silver references from the same configuration is refused."""
+    silver = fx.note_example("silver", present=True, producer=_CANDIDATE)
+    if not _rejects(lambda: _score(subject, _predicted(), [silver])):
+        _fail("self_reference_not_refused")
+    if not _rejects(lambda: _score(subject, _predicted(), [_label_record(_CANDIDATE)])):
+        _fail("self_reference_not_refused")
+
+
+def check_ann_17_scorer(subject: Subject) -> None:
+    """A report names the example_ids it scored against."""
+    examples = [
+        fx.note_example("adjudicated", present=True, producer=fx.TEACHER),
+        fx.note_example(
+            "adjudicated", present=False, producer=fx.TEACHER, case_id="conformance-note-case-2"
+        ),
+    ]
+    report = _must_accept(lambda: _score(subject, _predicted(), examples), "scorer_raised")
+    if set(report.example_ids) != {example.example_id for example in examples}:
+        _fail("example_ids_missing")
+
+
 @dataclass(frozen=True)
 class Check:
     """One check of one case for one target. ``also_covers`` names other targets whose part of
@@ -562,6 +662,10 @@ CHECKS: tuple[Check, ...] = (
     Check("IFC-12", "Provider", check_ifc_12_provider),
     Check("IFC-02", "Extractor", check_ifc_02, also_covers=("Provider",)),
     Check("IFC-13", "Extractor", check_ifc_13),
+    Check("IFC-09", "Scorer", check_ifc_09),
+    Check("ANN-11", "Scorer", check_ann_11_scorer),
+    Check("ANN-12", "Scorer", check_ann_12_scorer),
+    Check("ANN-17", "Scorer", check_ann_17_scorer),
 )
 assert all(
     check.case_id in CASES and check.target in CASES[check.case_id].targets for check in CHECKS
