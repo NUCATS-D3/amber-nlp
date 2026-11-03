@@ -479,6 +479,17 @@ replicates. `gold_from` and `prediction_from` adapt Examples, label records, and
   (values, numerators, denominators, intervals as metrics; gate statuses, provisional flag,
   and tier mix as tags) to the active run, after the gate permits both `metrics` and
   `labels_only` to the destination.
+- `amber.mlflow_ext.datasets`: Examples as MLflow GenAI evaluation datasets. Each record has
+  `inputs` (`case_id`, `example_id`, and the note `text` only when a resolver is passed as
+  `texts`) and `expectations` (`amber_example`, the full Example JSON, plus per final variable
+  `{tier, status, values}`). `create_examples_dataset` requires one variable set and gates
+  `derived_text` (and `source_text` with text) before creating anything; tags record the
+  variable set and tier counts. `load_examples_dataset` / `records_to_examples` reload every
+  record through `load_example` against the authoritative case, source, and variable set
+  (`DatasetError`: `invalid_record`, `unknown_case`, `source_unavailable`,
+  `variable_set_mismatch`); loading checks structure, grounding, and tiers, and with the stored
+  `events` per case each Example must also equal the replay of its events, which is what pins
+  reviewed values.
 
 ## Planned contract work
 

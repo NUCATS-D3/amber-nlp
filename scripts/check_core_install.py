@@ -229,12 +229,13 @@ def main() -> None:
         else:
             raise AssertionError(f"{module} must require the bundles extra")
     assert "pyarrow" not in sys.modules
-    try:
-        importlib.import_module("amber.mlflow_ext.evaluation")
-    except ImportError as error:
-        assert "--extra tracking" in str(error)
-    else:
-        raise AssertionError("the MLflow evaluation plugin must require the tracking extra")
+    for module in ("amber.mlflow_ext.evaluation", "amber.mlflow_ext.datasets"):
+        try:
+            importlib.import_module(module)
+        except ImportError as error:
+            assert "--extra tracking" in str(error)
+        else:
+            raise AssertionError(f"{module} must require the tracking extra")
 
     from amber.evaluation import GateSpec, Gold, Prediction, evaluate_binary
     from amber.schemas import ReferenceTier
