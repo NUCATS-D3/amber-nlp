@@ -84,8 +84,11 @@ def build_report(
     if unknown:
         raise ValueError("unknown conformance targets declared")
     implemented: dict[str, list[str]] = {}
+    covered: dict[str, set[str]] = {}
     for check in CHECKS:
         implemented.setdefault(check.case_id, []).append(check.target)
+        if (check.case_id, check.target) in outcomes:
+            covered.setdefault(check.case_id, set()).update((check.target, *check.also_covers))
     cases: list[CaseReport] = []
     for case in CATALOG:
         status: CaseStatus
@@ -108,9 +111,10 @@ def build_report(
             if failures:
                 status, code = "failed", failures[0][1]
                 failed_targets = tuple(target for target, _ in failures)
-            elif runs:
+            elif runs and set(applicable) <= covered.get(case.id, set()):
                 status = "passed"
             else:
+                # An applicable target the kit cannot check yet is never reported as passed.
                 status = "not_implemented"
         cases.append(
             CaseReport(

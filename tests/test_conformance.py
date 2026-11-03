@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,12 @@ from amber.conformance.checks import CHECKS
 from amber.conformance.report import build_report, run_checks
 from amber.policy import ProviderDestination
 from amber.providers import ProviderFailure, ProviderRequest, ProviderResponse
-from amber.reference import InMemoryResolver, InMemoryStore, ScriptedProvider
+from amber.reference import (
+    DeterministicExtractor,
+    InMemoryResolver,
+    InMemoryStore,
+    ScriptedProvider,
+)
 from amber.schemas import Example, Source, Zone
 
 DESIGN = Path(__file__).parents[1] / "docs" / "design" / "contract-v0.1.md"
@@ -48,7 +54,13 @@ def _provider(*capabilities: str) -> Any:
     return lambda: ScriptedProvider(_destination(*capabilities), [_answer] * 10)
 
 
-def _subject(store: type[InMemoryStore] = InMemoryStore, provider: Any = None) -> Subject:
+def _extractor(provider: Any) -> DeterministicExtractor:
+    return DeterministicExtractor(provider, clock=lambda: datetime(2026, 1, 1, tzinfo=UTC))
+
+
+def _subject(
+    store: type[InMemoryStore] = InMemoryStore, provider: Any = None, extractor: Any = None
+) -> Subject:
     return Subject(
         name="amber-reference",
         version="0.0.0",
@@ -56,6 +68,7 @@ def _subject(store: type[InMemoryStore] = InMemoryStore, provider: Any = None) -
             "Store": store,
             "SourceResolver": _resolver,
             "Provider": provider or _provider("schema_constrained", "logprobs"),
+            "Extractor": extractor or _extractor,
         },
     )
 
@@ -105,30 +118,36 @@ def test_every_check_names_a_catalog_case_for_its_target() -> None:
         ("IFC-12", "Store"),
         ("IFC-04", "Provider"),
         ("IFC-12", "Provider"),
+        ("IFC-02", "Extractor"),
+        ("IFC-13", "Extractor"),
     }
 
 
 # The reference passes ----------------------------------------------------------------------
 
 
-def test_the_reference_store_passes_every_store_case() -> None:
+def test_the_references_pass_every_implemented_case() -> None:
     report = run_checks(_subject())
     statuses = _statuses(report)
 
     for check in CHECKS:
-        assert statuses[check.case_id] == ("passed", None)
-    assert report.conforms("Store") and report.conforms("Provider")
+        if check.case_id != "IFC-12":
+            assert statuses[check.case_id] == ("passed", None)
+    for target in ("Store", "Provider", "Extractor", "SourceResolver"):
+        assert report.conforms(target)
     assert statuses["ANN-06"] == ("not_applicable", None)
     assert statuses["WIR-01"] == ("not_implemented", None)
     assert statuses["WIR-04"] == ("not_implemented", None)
     assert report.counts() == {
-        "passed": 7,
+        "passed": 8,
         "failed": 0,
-        "not_applicable": 101 - 7 - 14,
-        "not_implemented": 14,
+        "not_applicable": 101 - 8 - 18,
+        "not_implemented": 18,
     }
-    assert report.targets == ("Provider", "SourceResolver", "Store")
-    assert statuses["IFC-02"] == ("not_implemented", None)
+    assert report.targets == ("Extractor", "Provider", "SourceResolver", "Store")
+    # IFC-12's Extractor part has no check yet, so the shared case is never reported passed.
+    assert statuses["IFC-12"] == ("not_implemented", None)
+    assert statuses["IFC-03"] == ("not_implemented", None)
     assert report.catalog_revision == catalog_revision()
     assert report.fixtures_ref == fx.fixtures_ref()
 
@@ -317,4 +336,47 @@ def test_broken_providers_fail_with_source_free_codes(
     report = run_checks(_subject(provider=provider))
     assert _statuses(report)[case_id] == ("failed", code)
     assert not report.conforms("Provider")
+    assert report.conforms("Store")
+
+
+class _RaisesOnFailure(DeterministicExtractor):
+    def run(self, case: Any, source: Any, variables: Any, **kwargs: Any) -> Any:
+        result = super().run(case, source, variables, **kwargs)
+        if any(item.outcome.status == "failed" for item in result.variable_outcomes.values()):
+            raise RuntimeError("failure")
+        return result
+
+
+class _HidesFailures(DeterministicExtractor):
+    def _failed(self, name: str, kind: Any, reason: str, context: Any) -> Any:
+        return super()._failed(name, "internal", reason, context)
+
+
+class _UndeclaredDestinations(DeterministicExtractor):
+    def __init__(self, provider: Any, **kwargs: Any) -> None:
+        super().__init__(provider, **kwargs)
+        self.destinations = frozenset()
+
+
+class _ReversedBatch(DeterministicExtractor):
+    def run_many(self, items: Any, variables: Any, **kwargs: Any) -> Any:
+        return reversed(list(super().run_many(items, variables, **kwargs)))
+
+
+@pytest.mark.parametrize(
+    ("extractor", "case_id", "code"),
+    [
+        (_RaisesOnFailure, "IFC-02", "extractor_raised"),
+        (_HidesFailures, "IFC-02", "provider_failure_not_reported"),
+        (_UndeclaredDestinations, "IFC-02", "undeclared_destination"),
+        (_ReversedBatch, "IFC-13", "batch_order"),
+        (lambda provider: object(), "IFC-02", "not_an_extractor"),
+    ],
+)
+def test_broken_extractors_fail_with_source_free_codes(
+    extractor: Any, case_id: str, code: str
+) -> None:
+    report = run_checks(_subject(extractor=extractor))
+    assert _statuses(report)[case_id] == ("failed", code)
+    assert not report.conforms("Extractor")
     assert report.conforms("Store")

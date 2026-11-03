@@ -13,13 +13,20 @@ from functools import partial
 from typing import Any, NoReturn
 
 from amber.annotations import example_from_projection, replay
+from amber.cases import load_case_result
 from amber.conformance import fixtures as fx
 from amber.conformance.catalog import CASES, Target
 from amber.examples import load_example, load_label_record
-from amber.interfaces import Provider, SourceResolver, Store
-from amber.policy import ProviderDestination
+from amber.interfaces import Extractor, Provider, SourceResolver, Store
+from amber.policy import (
+    DEFAULT_MATRIX,
+    Destination,
+    PolicyMatrix,
+    ProviderDestination,
+    StaticGate,
+)
 from amber.providers import ProviderFailure, ProviderRequest, ProviderResponse
-from amber.schemas import Case, Example, Source
+from amber.schemas import Budget, Case, CaseResult, Example, Sensitivity, Source, Zone
 
 StoreFactory = Callable[[], Store]
 ResolverFactory = Callable[[Iterable[Source]], SourceResolver]
@@ -92,6 +99,12 @@ class Subject:
         ):
             _fail("not_a_provider")
         return provider
+
+    def extractor(self, provider: Provider) -> Extractor:
+        extractor = self.targets["Extractor"](provider)
+        if not isinstance(extractor, Extractor):
+            _fail("not_an_extractor")
+        return extractor
 
 
 def _store_with_case(subject: Subject, case: Case | None = None) -> Store:
@@ -380,11 +393,162 @@ def check_ifc_12_provider(subject: Subject) -> None:
             _fail("declared_capability_failed")
 
 
+# Extractor ---------------------------------------------------------------------------------
+
+_ALL_CAPABILITIES = frozenset({"schema_constrained", "tools", "logprobs", "batch", "adapters"})
+_MODEL = ProviderDestination(
+    name="local:conformance-model",
+    kind="model",
+    zone=Zone.local,
+    accepts=frozenset({"source_text"}),
+    model="conformance-model",
+    capabilities=_ALL_CAPABILITIES,  # type: ignore[arg-type]
+)
+_REFUSING = StaticGate(
+    PolicyMatrix(
+        version=DEFAULT_MATRIX.version, allowed={level: frozenset() for level in Sensitivity}
+    )
+)
+
+
+class _RecordingGate:
+    def __init__(self, gate: StaticGate) -> None:
+        self._gate = gate
+        self.matrix = gate.matrix
+        self.destinations: list[Destination] = []
+
+    def check(self, data: Any, destination: Destination, payload: Any, **kwargs: Any) -> Any:
+        self.destinations.append(destination)
+        return self._gate.check(data, destination, payload, **kwargs)
+
+    def require(self, data: Any, destination: Destination, payload: Any, **kwargs: Any) -> Any:
+        self.destinations.append(destination)
+        return self._gate.require(data, destination, payload, **kwargs)
+
+
+def _scripted(outcome: Any) -> Any:
+    from amber.reference import ScriptedProvider
+
+    return ScriptedProvider(_MODEL, [outcome] * 50)
+
+
+_FAILURES: dict[str, tuple[Any, StaticGate, Budget | None]] = {
+    "provider": (
+        ProviderFailure(kind="provider", reason="unavailable"),
+        StaticGate(DEFAULT_MATRIX),
+        None,
+    ),
+    "parse": (ProviderResponse(text="\u0001 not an answer"), StaticGate(DEFAULT_MATRIX), None),
+    "policy": (ProviderResponse(text="unused"), _REFUSING, None),
+    "budget": (ProviderResponse(text="unused"), StaticGate(DEFAULT_MATRIX), Budget(max_calls=0)),
+}
+
+
+def _run_extractor(
+    subject: Subject, outcome: Any, gate: StaticGate, budget: Budget | None
+) -> tuple[Extractor, CaseResult, _RecordingGate]:
+    extractor = subject.extractor(_scripted(outcome))
+    recording = _RecordingGate(gate)
+    result = _must_accept(
+        lambda: extractor.run(
+            fx.note_case(),
+            fx.SOURCE,
+            fx.NOTE_VARIABLES,
+            gate=recording,
+            budget=budget,
+            context=fx.run_context(),
+        ),
+        "extractor_raised",
+    )
+    if not isinstance(result, CaseResult):
+        _fail("not_a_case_result")
+    return extractor, result, recording
+
+
+def check_ifc_02(subject: Subject) -> None:
+    """Expected failures are failed results of the right kind, built from the run context."""
+    context = fx.run_context()
+    for kind, (outcome, gate, budget) in _FAILURES.items():
+        extractor, result, recording = _run_extractor(subject, outcome, gate, budget)
+        statuses = {
+            (item.outcome.status, item.outcome.failure_kind)
+            for item in result.variable_outcomes.values()
+        }
+        if statuses != {("failed", kind)}:
+            _fail(f"{kind}_failure_not_reported")
+        if result.run_id != context.run_id or any(
+            item.outcome.provenance.run_id != context.run_id
+            or item.outcome.provenance.policy_version != context.policy_version
+            for item in result.variable_outcomes.values()
+        ):
+            _fail("provenance_not_from_context")
+        if result.budget != budget:
+            _fail("budget_not_recorded")
+        if any(destination not in extractor.destinations for destination in recording.destinations):
+            _fail("undeclared_destination")
+        _must_accept(
+            partial(
+                load_case_result,
+                result.model_dump(mode="json"),
+                case=fx.note_case(),
+                source=fx.SOURCE,
+                variables=fx.NOTE_VARIABLES,
+            ),
+            "result_invalid",
+        )
+
+
+def check_ifc_13(subject: Subject) -> None:
+    """With batch, run_many returns one result per case in input order, as run does."""
+    probe = subject.extractor(_scripted(_FAILURES["provider"][0]))
+    if "batch" not in probe.capabilities:
+        return
+    cases = [fx.note_case(f"conformance-note-case-{index}") for index in range(1, 4)]
+    gate = StaticGate(DEFAULT_MATRIX)
+
+    def summary(result: CaseResult) -> tuple[Any, ...]:
+        return (
+            result.case_id,
+            tuple(
+                (name, item.outcome.status, item.outcome.failure_kind)
+                for name, item in sorted(result.variable_outcomes.items())
+            ),
+        )
+
+    run_many = getattr(probe, "run_many", None)
+    if run_many is None:
+        _fail("batch_without_run_many")
+    batch = _must_accept(
+        lambda: list(
+            run_many(
+                [(case, fx.SOURCE) for case in cases],
+                fx.NOTE_VARIABLES,
+                gate=gate,
+                budget=None,
+                context=fx.run_context(),
+            )
+        ),
+        "extractor_raised",
+    )
+    if [result.case_id for result in batch] != [case.case_id for case in cases]:
+        _fail("batch_order")
+    for case, result in zip(cases, batch, strict=True):
+        single = subject.extractor(_scripted(_FAILURES["provider"][0])).run(
+            case, fx.SOURCE, fx.NOTE_VARIABLES, gate=gate, budget=None, context=fx.run_context()
+        )
+        if summary(single) != summary(result):
+            _fail("batch_differs_from_run")
+
+
 @dataclass(frozen=True)
 class Check:
+    """One check of one case for one target. ``also_covers`` names other targets whose part of
+    the case this check exercises too (IFC-02 is about extractors, through their providers)."""
+
     case_id: str
     target: Target
     run: Callable[[Subject], None]
+    also_covers: tuple[Target, ...] = ()
 
 
 CHECKS: tuple[Check, ...] = (
@@ -396,6 +560,8 @@ CHECKS: tuple[Check, ...] = (
     Check("IFC-12", "Store", check_ifc_12_store),
     Check("IFC-04", "Provider", check_ifc_04),
     Check("IFC-12", "Provider", check_ifc_12_provider),
+    Check("IFC-02", "Extractor", check_ifc_02, also_covers=("Provider",)),
+    Check("IFC-13", "Extractor", check_ifc_13),
 )
 assert all(
     check.case_id in CASES and check.target in CASES[check.case_id].targets for check in CHECKS

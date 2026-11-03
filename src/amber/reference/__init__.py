@@ -3,7 +3,14 @@
 Not loaded by ``import amber``. Real implementations live in the consuming projects.
 """
 
+from amber.reference.extractor import DeterministicExtractor
 from amber.reference.provider import ScriptedProvider
 from amber.reference.store import InMemoryResolver, InMemoryStore, StoreError
 
-__all__ = ["InMemoryResolver", "InMemoryStore", "ScriptedProvider", "StoreError"]
+__all__ = [
+    "DeterministicExtractor",
+    "InMemoryResolver",
+    "InMemoryStore",
+    "ScriptedProvider",
+    "StoreError",
+]

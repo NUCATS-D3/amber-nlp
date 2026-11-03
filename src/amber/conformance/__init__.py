@@ -7,7 +7,14 @@ inert unless ``--amber-conformance`` is given; install the ``conformance`` extra
 A consumer declares what it implements by implementing the hook in its root ``conftest.py``::
 
     def pytest_amber_conformance_subject(config):
-        return Subject(name="lapidary", version="0.3.0", targets={"Store": MyStore})
+        return Subject(
+            name="lapidary",
+            version="0.3.0",
+            targets={"Store": MyStore, "Extractor": lambda provider: MyExtractor(provider)},
+        )
+
+``Store`` and ``Provider`` factories take no arguments; ``SourceResolver`` takes the fixture
+sources; ``Extractor`` takes the scripted ``Provider`` the kit supplies.
 
 then runs ``pytest --amber-conformance --amber-conformance-report=report.json``.
 """

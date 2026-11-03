@@ -293,6 +293,16 @@ implementations are synthetic and are not loaded by `import amber`.
   `Provenance` for nodes built from the response. `ProviderFailure.kind` (`parse`,
   `provider`, `budget`) is the result's `failure_kind`; `UsageMeter` accumulates the run's
   `Usage`.
+- **`Extractor`**: `name`, `version`, declared `destinations` and `capabilities` (`mentions`,
+  `note_claims`, `derivations`, `batch`), and `run(case, source, variables, *, gate, budget,
+  context) -> CaseResult`. It returns exactly one result per case and never raises for an
+  expected failure: a policy refusal, provider or parse failure, or exhausted budget is a
+  result whose final variables are `failed` with that `failure_kind`, stamped from the
+  `RunContext`. With `batch`, `run_many` returns one result per case in input order.
+  `amber.extraction` provides `failed_result` and `local_provenance`. Reference:
+  `DeterministicExtractor`, which asks its provider for a schema-constrained answer per
+  note-level variable, grounds the quote with `quote()`, and records it with `commit_claim` or
+  `no_claim`; a context whose sensitivity differs from the case's is a runner error and raises.
 - **`SourceResolver`**: `resolve(source_id) -> Source | None`. Reference: `InMemoryResolver`.
 - **`Exporter`**: `export(items, target, *, gate, data, now) -> ExportReceipt`. It derives each
   output file's payload kind from its schema, gates every file (the manifest included) before
@@ -330,8 +340,10 @@ implementations are synthetic and are not loaded by `import amber`.
   `fixtures_ref()` hashing them.
 - **Checks**: implementation cases run against a consumer's declared targets and fail with
   source-free codes. Implemented today for `Store` (ANN-05, ANN-16, ANN-17, IFC-07, IFC-11,
-  IFC-12) and `Provider` (IFC-04, IFC-12). A case shared by several targets records which
-  declared targets failed it, so `conforms(target)` is per target. A store rejects by raising; the kit does not depend on its exception types.
+  IFC-12), `Provider` (IFC-04, IFC-12), and `Extractor` (IFC-02, IFC-13; the kit supplies
+  scripted providers to the consumer's extractor factory). A case shared by several targets
+  records which declared targets failed it, so `conforms(target)` is per target, and is
+  reported `passed` only when every declared target it applies to was checked. A store rejects by raising; the kit does not depend on its exception types.
 - **`ConformanceReport`**: subject, amber version, declared targets, catalog version and
   revision, `fixtures_ref`, and per case `passed`, `failed` (with a code), `not_applicable`
   (core cases, which amber's own suite covers, and cases for undeclared targets), or
@@ -353,7 +365,7 @@ These items are tracked in Beads (`bd list --status=open`):
 
 - structured evidence (deferred to a later minor; contract v0.1 §2.6);
 - derivations and rule replay;
-- the remaining interfaces (`Extractor`, `Rule`, `Scorer`, `ReviewBackend`, `Labeler`);
+- the remaining interfaces (`Rule`, `Scorer`, `ReviewBackend`, `Labeler`);
 - conformance checks for the remaining targets and for bundles;
 - MLflow plugins for evaluation, datasets, the loupe bridge, and deployment.
 

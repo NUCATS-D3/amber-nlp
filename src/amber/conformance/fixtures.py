@@ -18,6 +18,7 @@ from amber.cases import create_case_result
 from amber.graph import EvidenceGraph
 from amber.grounding import cite_mention, exact_mention, exact_quote
 from amber.ids import canonical_sha256, schema_ref
+from amber.policy import DataPolicy, RunContext
 from amber.schemas import (
     AnnotationEvent,
     AnswerModel,
@@ -30,6 +31,7 @@ from amber.schemas import (
     Sensitivity,
     Source,
     SourceKind,
+    Task,
     Variable,
     VariableOutcome,
     VariableSet,
@@ -90,6 +92,31 @@ VARIABLES = VariableSet.create(
         ),
     ),
 )
+
+
+NOTE_VARIABLES = VariableSet.from_task(
+    Task(
+        name="conformance_note",
+        answer_model=FindingAnswer,
+        instructions="Invented: is the invented finding present in the note?",
+        evidence_policy="field",
+    )
+)
+
+
+def note_case(case_id: str = "conformance-note-case-1") -> Case:
+    """A case of the one-variable note-level set, for extractor checks."""
+    return case(case_id, task=NOTE_VARIABLES.name)
+
+
+def run_context(run_id: str = RUN_IDS[0]) -> RunContext:
+    return RunContext(
+        run_id=run_id,
+        policy_version="amber-default@0.1",
+        data=DataPolicy(sensitivity=Sensitivity.synthetic),
+        dataset=DATASET,
+        dataset_manifest_hash="amber-conformance-manifest",
+    )
 
 
 def case(case_id: str = "conformance-case-1", **changes: Any) -> Case:
@@ -364,6 +391,7 @@ def fixtures_ref() -> str:
         {
             "source": SOURCE.model_dump(mode="json"),
             "variable_set_ref": VARIABLES.schema_ref,
+            "note_variable_set_ref": NOTE_VARIABLES.schema_ref,
             "case": case().model_dump(mode="json"),
             "results": [result(run_id).model_dump(mode="json") for run_id in RUN_IDS],
             "spans": [span.model_dump(mode="json") for span in SPANS],

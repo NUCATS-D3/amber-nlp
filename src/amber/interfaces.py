@@ -14,6 +14,7 @@ from typing import Literal, Protocol, TypeAlias, runtime_checkable
 from pydantic import BaseModel, ConfigDict
 
 from amber.annotations import Projection
+from amber.extraction import ExtractorCapability
 from amber.policy import (
     DataPolicy,
     Decision,
@@ -25,7 +26,7 @@ from amber.policy import (
 )
 from amber.providers import ProviderFailure, ProviderRequest, ProviderResponse
 from amber.schemas.annotations import AnnotationEvent
-from amber.schemas.cases import Case, CaseResult
+from amber.schemas.cases import Budget, Case, CaseResult
 from amber.schemas.evidence import Inclusion
 from amber.schemas.examples import Example, LabelRecord
 from amber.schemas.mentions import Mention
@@ -77,6 +78,36 @@ class Provider(Protocol):
     destination: ProviderDestination
 
     def complete(self, request: ProviderRequest) -> ProviderResponse | ProviderFailure: ...
+
+
+@runtime_checkable
+class Extractor(Protocol):
+    """Turns one case into exactly one ``CaseResult`` (contract v0.1 section 6.2).
+
+    ``run`` never raises for expected failures: a policy refusal, provider or parse failure,
+    or exhausted budget is a result whose final variables are ``failed`` with that
+    ``failure_kind``. It contacts only ``destinations``, each through the gate; builds every
+    node through amber's tools with provenance from ``context``; and records ``budget`` and
+    ``usage``, saying ``failed(budget)`` itself when usage exceeds the budget. With the
+    ``batch`` capability, ``run_many`` returns one result per case in input order, each equal
+    to what ``run`` gives. Reference: ``amber.reference.DeterministicExtractor``.
+    """
+
+    name: str
+    version: str
+    destinations: frozenset[Destination]
+    capabilities: frozenset[ExtractorCapability]
+
+    def run(
+        self,
+        case: Case,
+        source: Source,
+        variables: VariableSet,
+        *,
+        gate: PolicyGate,
+        budget: Budget | None,
+        context: RunContext,
+    ) -> CaseResult: ...
 
 
 @runtime_checkable
