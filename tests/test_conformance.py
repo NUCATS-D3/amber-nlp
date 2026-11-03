@@ -188,6 +188,11 @@ def test_every_check_names_a_catalog_case_for_its_target() -> None:
         ("IFC-06", "Labeler"),
         ("IFC-10", "ReviewBackend"),
         ("VAR-09", "Rule"),
+        ("IFC-05", "Rule"),
+        ("IFC-03", "Extractor"),
+        ("IFC-12", "Extractor"),
+        ("POL-08", "Extractor"),
+        ("MEN-11", "Extractor"),
     }
 
 
@@ -199,8 +204,7 @@ def test_the_references_pass_every_implemented_case() -> None:
     statuses = _statuses(report)
 
     for check in CHECKS:
-        if check.case_id != "IFC-12":
-            assert statuses[check.case_id] == ("passed", None)
+        assert statuses[check.case_id] == ("passed", None)
     for target in (
         "Store",
         "Provider",
@@ -217,10 +221,10 @@ def test_the_references_pass_every_implemented_case() -> None:
     assert statuses["WIR-01"] == ("not_applicable", None)
     assert statuses["WIR-04"] == ("not_applicable", None)
     assert report.counts() == {
-        "passed": 14,
+        "passed": 19,
         "failed": 0,
-        "not_applicable": 101 - 14 - 8,
-        "not_implemented": 8,
+        "not_applicable": 101 - 19 - 3,
+        "not_implemented": 3,
     }
     assert report.targets == (
         "Extractor",
@@ -232,12 +236,9 @@ def test_the_references_pass_every_implemented_case() -> None:
         "SourceResolver",
         "Store",
     )
-    # IFC-12's Extractor part has no check yet, so the shared case is never reported passed.
-    assert statuses["IFC-12"] == ("not_implemented", None)
-    assert statuses["IFC-03"] == ("not_implemented", None)
-    # ANN-13 and ANN-14 are loupe-bridge cases, and IFC-05 (rule purity) has no check yet.
-    assert statuses["IFC-05"] == ("not_implemented", None)
+    # ANN-13 and ANN-14 are loupe-bridge cases, and POL-15's Extractor part has no check yet.
     assert statuses["ANN-13"] == statuses["ANN-14"] == ("not_implemented", None)
+    assert statuses["POL-15"] == ("not_implemented", None)
     assert report.catalog_revision == catalog_revision()
     assert report.fixtures_ref == fx.fixtures_ref()
 
@@ -458,6 +459,51 @@ class _ReversedBatch(DeterministicExtractor):
         return reversed(list(super().run_many(items, variables, **kwargs)))
 
 
+class _ClaimsMentions(DeterministicExtractor):
+    capabilities = frozenset({"note_claims", "batch", "mentions"})  # type: ignore[assignment]
+
+
+class _ClaimsDerivations(DeterministicExtractor):
+    capabilities = frozenset({"note_claims", "derivations"})  # type: ignore[assignment]
+
+
+class _UnknownCapability(DeterministicExtractor):
+    capabilities = frozenset({"note_claims", "telepathy"})  # type: ignore[assignment]
+
+
+class _ServesMentionsQuietly(DeterministicExtractor):
+    def run(self, case: Any, source: Any, variables: Any, **kwargs: Any) -> Any:
+        result = super().run(case, source, variables, **kwargs)
+        if "finding" not in variables.variables:
+            return result
+        from .test_labels import _result as mention_result
+
+        return mention_result()
+
+
+class _RefusalAsProviderFailure(DeterministicExtractor):
+    def _failed(self, name: str, kind: Any, reason: str, context: Any) -> Any:
+        return super()._failed(name, "provider" if kind == "policy" else kind, reason, context)
+
+    def run(self, case: Any, source: Any, variables: Any, **kwargs: Any) -> Any:
+        result = super().run(case, source, variables, **kwargs)
+        outcomes = {
+            name: item.model_copy(
+                update={"outcome": item.outcome.model_copy(update={"failure_kind": "provider"})}
+            )
+            if item.outcome.failure_kind == "policy"
+            else item
+            for name, item in result.variable_outcomes.items()
+        }
+        return result.model_copy(update={"variable_outcomes": outcomes})
+
+
+class _UncountedGrounding(DeterministicExtractor):
+    def run(self, case: Any, source: Any, variables: Any, **kwargs: Any) -> Any:
+        result = super().run(case, source, variables, **kwargs)
+        return result.model_copy(update={"grounding_failures": 0})
+
+
 @pytest.mark.parametrize(
     ("extractor", "case_id", "code"),
     [
@@ -465,6 +511,12 @@ class _ReversedBatch(DeterministicExtractor):
         (_HidesFailures, "IFC-02", "provider_failure_not_reported"),
         (_UndeclaredDestinations, "IFC-02", "undeclared_destination"),
         (_ReversedBatch, "IFC-13", "batch_order"),
+        (_ClaimsMentions, "IFC-03", "no_mention_emitted"),
+        (_ClaimsDerivations, "IFC-03", "no_derivation_emitted"),
+        (_UnknownCapability, "IFC-12", "unknown_capability"),
+        (_ServesMentionsQuietly, "IFC-12", "undeclared_mentions_served"),
+        (_RefusalAsProviderFailure, "POL-08", "refusal_not_failed_policy"),
+        (_UncountedGrounding, "MEN-11", "grounding_failure_not_counted"),
         (lambda provider: object(), "IFC-02", "not_an_extractor"),
     ],
 )
@@ -666,3 +718,45 @@ def test_broken_rules_fail_with_source_free_codes(rule: Any, code: str) -> None:
     assert _statuses(report)["VAR-09"] == ("failed", code)
     assert not report.conforms("Rule")
     assert report.conforms("Store")
+
+
+class _ReadsTheClock(AjccStub):
+    def apply(self, inputs: Any, parameters: Any) -> RuleResult:
+        import time
+
+        time.time()
+        return super().apply(inputs, parameters)
+
+
+class _UsesRandomness(AjccStub):
+    def apply(self, inputs: Any, parameters: Any) -> RuleResult:
+        import random
+
+        random.random()
+        return super().apply(inputs, parameters)
+
+
+class _Drifts(AjccStub):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def apply(self, inputs: Any, parameters: Any) -> RuleResult:
+        self.calls += 1
+        result = super().apply(inputs, parameters)
+        if self.calls > 1 and result.value is not None:
+            return RuleResult(value={"stage": f"{result.value['stage']}-{self.calls}"})
+        return result
+
+
+@pytest.mark.parametrize(
+    ("rule", "code"),
+    [
+        (_ReadsTheClock(), "rule_touched_clock_or_randomness"),
+        (_UsesRandomness(), "rule_touched_clock_or_randomness"),
+        (_Drifts(), "rule_not_deterministic"),
+    ],
+)
+def test_impure_rules_fail_the_purity_case(rule: Any, code: str) -> None:
+    report = run_checks(_subject(rule=_stub_rule(rule)))
+    assert _statuses(report)["IFC-05"] == ("failed", code)
+    assert not report.conforms("Rule")

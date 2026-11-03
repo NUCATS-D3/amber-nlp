@@ -46,6 +46,7 @@ from amber.schemas import (
     CaseResult,
     Example,
     Inclusion,
+    InferenceEvidence,
     LabelRecord,
     ReferenceTier,
     Sensitivity,
@@ -611,6 +612,218 @@ def check_ifc_13(subject: Subject) -> None:
             _fail("batch_differs_from_run")
 
 
+# Extractor capabilities, policy refusals, and grounding --------------------------------------
+
+_KNOWN_CAPABILITIES = frozenset({"mentions", "note_claims", "derivations", "batch"})
+_ABSENT = "\u2063absent from the note\u2063"
+
+
+def _instance(schema: Any, text: str) -> Any:
+    """A minimal value for a JSON Schema: the first enum value, ``text`` for strings, 0, 1.0,
+    true, one array item, and every declared object property."""
+    if not isinstance(schema, Mapping):
+        return None
+    if "enum" in schema and schema["enum"]:
+        return schema["enum"][0]
+    kinds = schema.get("type")
+    kind = (
+        next((item for item in kinds if item != "null"), "null")
+        if isinstance(kinds, list)
+        else kinds
+    )
+    if kind == "object" or "properties" in schema:
+        return {key: _instance(value, text) for key, value in schema.get("properties", {}).items()}
+    if kind == "array":
+        return [_instance(schema.get("items", {}), text)]
+    return {"string": text, "integer": 0, "number": 1.0, "boolean": True}.get(str(kind))
+
+
+def _schema_provider(text: str) -> Any:
+    """The kit's provider for capability fixtures: every schema request gets ``_instance``;
+    every other request gets ``text``."""
+
+    def answer(request: ProviderRequest) -> ProviderResponse:
+        if request.json_schema is not None:
+            return ProviderResponse(parsed=_instance(request.json_schema, text))
+        return ProviderResponse(text=text)
+
+    return answer
+
+
+def _fixture_run(
+    subject: Subject, case: Case, variables: VariableSet, text: str
+) -> tuple[Extractor, CaseResult, Any]:
+    from amber.reference import ScriptedProvider
+
+    provider = ScriptedProvider(_MODEL, [_schema_provider(text)] * 50)
+    extractor = subject.extractor(provider)
+    result = _must_accept(
+        lambda: extractor.run(
+            case,
+            fx.SOURCE,
+            variables,
+            gate=StaticGate(DEFAULT_MATRIX),
+            budget=None,
+            context=fx.run_context(),
+        ),
+        "extractor_raised",
+    )
+    if not isinstance(result, CaseResult):
+        _fail("not_a_case_result")
+    _must_accept(
+        partial(
+            load_case_result,
+            result.model_dump(mode="json"),
+            case=case,
+            source=fx.SOURCE,
+            variables=variables,
+        ),
+        "result_invalid",
+    )
+    return extractor, result, provider
+
+
+def _derivations(result: CaseResult) -> list[Any]:
+    return [
+        item
+        for item in result.evidence
+        if isinstance(item, InferenceEvidence) and item.derivation is not None
+    ]
+
+
+def check_ifc_12_extractor(subject: Subject) -> None:
+    """Declared capabilities run on their fixtures and give valid results; undeclared ones are
+    refused, never partly served."""
+    probe = subject.extractor(_scripted(_FAILURES["provider"][0]))
+    declared = set(probe.capabilities)
+    if not declared <= _KNOWN_CAPABILITIES:
+        _fail("unknown_capability")
+    _fixture_run(subject, fx.note_case(), fx.NOTE_VARIABLES, "mass")
+    _, layered, _ = _fixture_run(subject, fx.case(), fx.VARIABLES, "mass")
+    _, staged, _ = _fixture_run(subject, fx.stage_case(), fx.STAGE_VARIABLES, "mass")
+    if "mentions" not in declared:
+        mention_level = {
+            name for name, variable in fx.VARIABLES.variables.items() if variable.level == "mention"
+        }
+        if (
+            layered.mentions
+            or layered.mention_readings
+            or any(
+                layered.variable_outcomes[name].outcome.status == "answered"
+                for name in mention_level
+            )
+        ):
+            _fail("undeclared_mentions_served")
+    if "derivations" not in declared and (_derivations(layered) or _derivations(staged)):
+        _fail("undeclared_derivations_served")
+
+
+def check_ifc_03(subject: Subject) -> None:
+    """Declaring mentions emits a mention on a fixture with a known span; declaring derivations
+    emits a Derivation on the stage fixture. The kit answers with the known span's text."""
+    probe = subject.extractor(_scripted(_FAILURES["provider"][0]))
+    if "mentions" in probe.capabilities:
+        _, result, _ = _fixture_run(subject, fx.case(), fx.VARIABLES, fx.MENTION.quote)
+        if not result.mentions:
+            _fail("no_mention_emitted")
+    if "derivations" in probe.capabilities:
+        _, result, _ = _fixture_run(subject, fx.stage_case(), fx.STAGE_VARIABLES, "mass")
+        if not _derivations(result):
+            _fail("no_derivation_emitted")
+
+
+def check_pol_08(subject: Subject) -> None:
+    """A policy refusal is failed(policy) with no claims, mentions, or evidence."""
+    _, result, _ = _run_extractor(subject, *_FAILURES["policy"])
+    if {item.outcome.failure_kind for item in result.variable_outcomes.values()} != {"policy"}:
+        _fail("refusal_not_failed_policy")
+    if result.claims or result.mentions or result.mention_readings or result.evidence:
+        _fail("refusal_produced_records")
+
+
+def _asks_for_quotes(schema: Any) -> bool:
+    if isinstance(schema, Mapping):
+        properties = schema.get("properties", {})
+        if isinstance(properties, Mapping) and any("quote" in str(key) for key in properties):
+            return True
+        return any(_asks_for_quotes(value) for value in schema.values())
+    if isinstance(schema, list):
+        return any(_asks_for_quotes(value) for value in schema)
+    return False
+
+
+def check_men_11(subject: Subject) -> None:
+    """Quotes that do not occur in the note are counted as grounding failures; nothing is
+    re-anchored or answered from them. Applies when the extractor asks its provider for
+    quotes (a schema property whose name contains ``quote``)."""
+    _, result, provider = _fixture_run(subject, fx.note_case(), fx.NOTE_VARIABLES, _ABSENT)
+    if not any(_asks_for_quotes(request.json_schema) for request in provider.requests):
+        return
+    if any(item.outcome.status == "answered" for item in result.variable_outcomes.values()):
+        _fail("ungrounded_quote_answered")
+    if result.grounding_failures < 1:
+        _fail("grounding_failure_not_counted")
+
+
+# Rule purity -------------------------------------------------------------------------------
+
+
+class _Impure(Exception):
+    pass
+
+
+def _forbid(*_args: Any, **_kwargs: Any) -> Any:
+    raise _Impure
+
+
+def check_ifc_05(subject: Subject) -> None:
+    """Equal inputs give equal results, and apply never reads the clock or randomness (the
+    common entry points in time, random, secrets, uuid, and os raise while it runs)."""
+    import os
+    import random
+    import secrets
+    import time
+    import uuid
+    from contextlib import ExitStack
+    from unittest import mock
+
+    from amber.rules import _replay_inputs
+
+    rule, result, _ = subject.rule()
+    claims = {claim.claim_id: claim for claim in result.claims}
+    inclusions = {item.evidence_id: item for item in result.evidence if isinstance(item, Inclusion)}
+    calls = [
+        (
+            _replay_inputs(rule.spec, item.derivation, claims, inclusions),
+            dict(item.derivation.parameters),
+        )
+        for item in _derivations(result)
+        if item.derivation.kind == "rule"
+        and (item.derivation.name, item.derivation.version) == (rule.spec.name, rule.spec.version)
+    ]
+    if not calls:
+        _fail("no_derivation_replayed")
+    targets = [
+        (time, "time"), (time, "time_ns"), (time, "monotonic"), (time, "perf_counter"),
+        (random, "random"), (random, "randint"), (random, "choice"), (random, "shuffle"),
+        (secrets, "token_bytes"), (secrets, "randbits"), (uuid, "uuid1"), (uuid, "uuid4"),
+        (os, "urandom"),
+    ]  # fmt: skip
+    for inputs, parameters in calls:
+        apply = partial(rule.apply, inputs, parameters)
+        if _must_accept(apply, "rule_raised") != _must_accept(apply, "rule_raised"):
+            _fail("rule_not_deterministic")
+        with ExitStack() as stack:
+            for module, name in targets:
+                stack.enter_context(mock.patch.object(module, name, _forbid))
+            try:
+                apply()
+            except _Impure:
+                _fail("rule_touched_clock_or_randomness")
+            except Exception:
+                _fail("rule_raised")
+
+
 # Scorer ------------------------------------------------------------------------------------
 
 _CANDIDATE = "model:conformance-candidate@1"
@@ -913,6 +1126,11 @@ CHECKS: tuple[Check, ...] = (
     Check("IFC-06", "Labeler", check_ifc_06),
     Check("IFC-10", "ReviewBackend", check_ifc_10),
     Check("VAR-09", "Rule", check_var_09),
+    Check("IFC-05", "Rule", check_ifc_05),
+    Check("IFC-03", "Extractor", check_ifc_03),
+    Check("IFC-12", "Extractor", check_ifc_12_extractor),
+    Check("POL-08", "Extractor", check_pol_08),
+    Check("MEN-11", "Extractor", check_men_11),
 )
 assert all(
     check.case_id in CASES and check.target in CASES[check.case_id].targets for check in CHECKS
