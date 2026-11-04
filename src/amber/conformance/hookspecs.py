@@ -14,7 +14,9 @@ def pytest_amber_conformance_subject(config: Any) -> Subject | None:
     """Return the implementation under test and a factory per implemented target.
 
     ``Store``: a zero-argument factory returning an empty store. ``SourceResolver``: a factory
-    taking the fixture sources.
+    taking the fixture sources. ``Exporter``: a factory taking an empty directory and keyword
+    ``cases``, ``sources``, ``variables``, and ``run_id``. ``PolicyGate``: a zero-argument
+    factory.
     """
 
 

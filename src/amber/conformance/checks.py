@@ -7,10 +7,15 @@ A store "rejects" by raising an exception; the kit does not depend on its except
 
 from __future__ import annotations
 
+import hashlib
+import json
+import tempfile
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from functools import partial
-from typing import Any, NoReturn
+from pathlib import Path
+from typing import Any, NoReturn, get_args
 
 from amber.annotations import example_from_projection, replay, verify_example
 from amber.cases import load_case_result
@@ -19,8 +24,11 @@ from amber.conformance.catalog import CASES, Target
 from amber.examples import load_label_record, mint_example
 from amber.graph_errors import GraphValidationError
 from amber.interfaces import (
+    Exporter,
+    ExportReceipt,
     Extractor,
     Labeler,
+    PolicyGate,
     Provider,
     ReviewBackend,
     Scorer,
@@ -31,7 +39,9 @@ from amber.labeling import LabelerFailure, LabelerRejected, admit_labeler, spans
 from amber.policy import (
     DEFAULT_MATRIX,
     DataPolicy,
+    Decision,
     Destination,
+    PayloadKind,
     PolicyMatrix,
     PolicyViolation,
     ProviderDestination,
@@ -165,6 +175,29 @@ class Subject:
         if not isinstance(destination, Destination) or destination.kind != "review":
             _fail("not_a_review_destination")
         return backend, review
+
+    def exporter(self, directory: Path) -> Exporter:
+        exporter = self.targets["Exporter"](
+            directory,
+            cases=[fx.note_case()],
+            sources=[fx.SOURCE],
+            variables=fx.NOTE_VARIABLES,
+            run_id=fx.RUN_IDS[0],
+        )
+        if not isinstance(exporter, Exporter) or not isinstance(exporter.format, str):
+            _fail("not_an_exporter")
+        return exporter
+
+    def gate(self) -> PolicyGate:
+        factory = self.targets.get("PolicyGate")
+        if factory is None:
+            return StaticGate(DEFAULT_MATRIX)
+        gate = factory()
+        if not isinstance(gate, PolicyGate) or not isinstance(
+            getattr(gate, "matrix", None), PolicyMatrix
+        ):
+            _fail("not_a_policy_gate")
+        return gate
 
     def rule(self) -> tuple[Rule, CaseResult, VariableSet]:
         made = self.targets["Rule"]()
@@ -1057,6 +1090,253 @@ def check_ifc_10(subject: Subject) -> None:
         )
 
 
+# Exporter and PolicyGate -------------------------------------------------------------------
+
+_PAYLOADS: tuple[PayloadKind, ...] = get_args(PayloadKind)
+_EXPORT = Destination(
+    name="local:conformance-export",
+    kind="export",
+    zone=Zone.local,
+    accepts=frozenset(_PAYLOADS),
+)
+_NOW = datetime(2026, 1, 2, tzinfo=UTC)
+_TEXT_PAYLOADS = frozenset({"source_text", "derived_text"})
+_AMBER_FORMATS = ("amber-bundle/0.1", "amber-labels/0.1")
+
+
+class _DecisionLog:
+    """Wraps a gate, recording each (destination, payload) asked and the decision returned;
+    refuses ``refuse`` (a payload kind) by asking about a destination that does not accept it.
+    """
+
+    def __init__(self, gate: PolicyGate, *, refuse: str | None = None) -> None:
+        self._gate = gate
+        self.matrix = gate.matrix
+        self.refuse = refuse
+        self.calls: list[tuple[str, str, Decision]] = []
+
+    def _target(self, destination: Destination, payload: Any) -> Destination:
+        if payload != self.refuse:
+            return destination
+        return destination.model_copy(update={"accepts": destination.accepts - {payload}})
+
+    def check(self, data: Any, destination: Destination, payload: Any, **kwargs: Any) -> Any:
+        decision = self._gate.check(data, self._target(destination, payload), payload, **kwargs)
+        self.calls.append((destination.name, payload, decision))
+        return decision
+
+    def require(self, data: Any, destination: Destination, payload: Any, **kwargs: Any) -> Any:
+        try:
+            decision = self._gate.require(
+                data, self._target(destination, payload), payload, **kwargs
+            )
+        except PolicyViolation as violation:
+            self.calls.append((destination.name, payload, violation.decision))
+            raise
+        self.calls.append((destination.name, payload, decision))
+        return decision
+
+
+def _written(location: Path) -> set[str]:
+    if location.is_file():
+        return {location.name}
+    return {str(path.relative_to(location)) for path in location.rglob("*") if path.is_file()}
+
+
+def _export(subject: Subject, directory: Path, gate: _DecisionLog) -> Any:
+    exporter = subject.exporter(directory)
+    items = [fx.note_result(fx.RUN_IDS[0], present=True, producer=fx.TEACHER)]
+    data = DataPolicy(sensitivity=Sensitivity.synthetic)
+    return exporter, lambda: exporter.export(items, _EXPORT, gate=gate, data=data, now=_NOW)
+
+
+def _check_amber_files(location: Path, receipt: ExportReceipt) -> None:
+    """For amber's formats, the receipt's hashes match the manifest and the written bytes."""
+    from amber.bundles.schema import TABLES
+
+    files = {item.file: item for item in receipt.files}
+    manifest_path = location / "manifest.json"
+    if "manifest.json" not in files or not manifest_path.is_file():
+        _fail("receipt_does_not_match_files")
+    raw = manifest_path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != files["manifest.json"].content_sha256:
+        _fail("receipt_hash_mismatch")
+    manifest = json.loads(raw)
+    by_file = {TABLES[name].file: table for name, table in manifest["tables"].items()}
+    if set(by_file) | {"manifest.json"} != set(files):
+        _fail("receipt_does_not_match_files")
+    for file, table in by_file.items():
+        if files[file].content_sha256 != table["content_sha256"]:
+            _fail("receipt_hash_mismatch")
+        if manifest["payload_kinds"].get(file) != files[file].payload_kind:
+            _fail("receipt_kind_mismatch")
+        written = hashlib.sha256((location / file).read_bytes()).hexdigest()
+        if table.get("file_sha256") not in (None, written):
+            _fail("receipt_hash_mismatch")
+
+
+def check_ifc_08_exporter(subject: Subject) -> None:
+    """Every file gated before writing; a refused file writes nothing and reports every
+    decision; the receipt matches the files; amber-labels/0.1 carries no text payloads."""
+    with tempfile.TemporaryDirectory(prefix="amber-conformance-") as root:
+        log = _DecisionLog(subject.gate())
+        exporter, run = _export(subject, Path(root) / "permitted", log)
+        receipt = _must_accept(run, "export_rejected")
+        if not isinstance(receipt, ExportReceipt) or not receipt.files:
+            _fail("not_an_export_receipt")
+        if receipt.format != exporter.format or receipt.destination != _EXPORT.name:
+            _fail("receipt_mismatch")
+        asked = sorted(payload for _, payload, _ in log.calls)
+        if asked != sorted(item.payload_kind for item in receipt.files):
+            _fail("file_not_gated")
+        returned = {decision.decision_id for _, _, decision in log.calls}
+        for item in receipt.files:
+            decision = item.decision
+            if (
+                decision.decision_id not in returned
+                or not decision.permitted
+                or decision.payload != item.payload_kind
+            ):
+                _fail("receipt_decision_mismatch")
+        location = Path(receipt.location)
+        if not location.exists() or _written(location) != {item.file for item in receipt.files}:
+            _fail("receipt_does_not_match_files")
+        if exporter.format in _AMBER_FORMATS:
+            _check_amber_files(location, receipt)
+        if exporter.format == "amber-labels/0.1" and any(
+            item.payload_kind in _TEXT_PAYLOADS for item in receipt.files
+        ):
+            _fail("labels_export_with_text")
+
+        refused_kind = sorted(item.payload_kind for item in receipt.files)[-1]
+        # The reference gate, so a permissive gate under test cannot mask the exporter's part.
+        refusing = _DecisionLog(StaticGate(DEFAULT_MATRIX), refuse=refused_kind)
+        directory = Path(root) / "refused"
+        _, run = _export(subject, directory, refusing)
+        try:
+            run()
+        except PolicyViolation as violation:
+            if len(violation.decisions) != len(refusing.calls) or all(
+                decision.permitted for decision in violation.decisions
+            ):
+                _fail("decisions_not_reported")
+        except Exception:
+            _fail("refusal_not_policy_violation")
+        else:
+            _fail("refused_file_exported")
+        if directory.exists() and _written(directory):
+            _fail("partial_write")
+
+
+def check_pol_15_exporter(subject: Subject) -> None:
+    """Each payload kind is decided for the export destination itself, and every file carries
+    a decision the gate returned for its own payload kind (never one made for another)."""
+    with tempfile.TemporaryDirectory(prefix="amber-conformance-") as root:
+        log = _DecisionLog(subject.gate())
+        _, run = _export(subject, Path(root), log)
+        receipt = _must_accept(run, "export_rejected")
+        if any(destination != _EXPORT.name for destination, _, _ in log.calls):
+            _fail("wrong_destination_decided")
+        decided = {(payload, decision.decision_id) for _, payload, decision in log.calls}
+        for item in receipt.files:
+            if (item.payload_kind, item.decision.decision_id) not in decided:
+                _fail("decision_reused")
+            if item.decision.destination != _EXPORT.name:
+                _fail("wrong_destination_decided")
+
+
+class _CallOrder:
+    """A provider wrapper that records, in order with the gate's decisions, each model call."""
+
+    def __init__(self, provider: Provider, timeline: list[Any]) -> None:
+        self._provider = provider
+        self.destination = provider.destination
+        self._timeline = timeline
+
+    def complete(self, request: Any) -> Any:
+        self._timeline.append(("call", self.destination.name))
+        return self._provider.complete(request)
+
+
+def check_pol_15_extractor(subject: Subject) -> None:
+    """Each model call follows a permitting source_text decision for that model destination;
+    a decision for another destination or payload never stands in for it."""
+    timeline: list[Any] = []
+    provider = _CallOrder(_scripted(ProviderResponse(text="unused")), timeline)
+    extractor = subject.extractor(provider)  # type: ignore[arg-type]
+
+    class Gate(_DecisionLog):
+        def check(self, *args: Any, **kwargs: Any) -> Any:
+            decision = super().check(*args, **kwargs)
+            timeline.append(("decision", decision))
+            return decision
+
+        def require(self, *args: Any, **kwargs: Any) -> Any:
+            decision = super().require(*args, **kwargs)
+            timeline.append(("decision", decision))
+            return decision
+
+    _must_accept(
+        lambda: extractor.run(
+            fx.note_case(),
+            fx.SOURCE,
+            fx.NOTE_VARIABLES,
+            gate=Gate(StaticGate(DEFAULT_MATRIX)),
+            budget=None,
+            context=fx.run_context(),
+        ),
+        "extractor_raised",
+    )
+    permitted: set[str] = set()
+    for kind, value in timeline:
+        if kind == "decision":
+            if value.permitted and value.payload == "source_text":
+                permitted.add(value.destination)
+        elif value not in permitted:
+            _fail("model_call_without_its_own_decision")
+
+
+def check_ifc_08_gate(subject: Subject) -> None:
+    """A gate decides exactly the transfer asked about: check returns a Decision naming it and
+    never raises on refusal; require raises PolicyViolation carrying the refusal."""
+    gate = subject.gate()
+    data = DataPolicy(sensitivity=Sensitivity.synthetic)
+    narrow = _EXPORT.model_copy(update={"accepts": frozenset({"labels_only"})})
+
+    def decide(method: str, destination: Destination, payload: str) -> Any:
+        return getattr(gate, method)(data, destination, payload, now=_NOW, case_id="c-1")
+
+    for payload in ("labels_only", "derived_text"):
+        decision = _must_accept(partial(decide, "check", narrow, payload), "check_raised")
+        if not isinstance(decision, Decision):
+            _fail("not_a_decision")
+        if (
+            decision.payload != payload
+            or decision.destination != narrow.name
+            or decision.destination_kind != narrow.kind
+            or decision.zone is not narrow.zone
+            or decision.sensitivity is not data.sensitivity
+            or decision.case_id != "c-1"
+        ):
+            _fail("decision_names_another_transfer")
+    if decide("check", narrow, "derived_text").permitted:
+        _fail("unaccepted_payload_permitted")
+    try:
+        decide("require", narrow, "derived_text")
+    except PolicyViolation as violation:
+        if violation.decision.permitted or violation.decision.payload != "derived_text":
+            _fail("violation_without_refusal")
+    except Exception:
+        _fail("refusal_not_policy_violation")
+    else:
+        _fail("require_did_not_raise")
+    allowed = decide("check", narrow, "labels_only")
+    if allowed.permitted:
+        required = _must_accept(partial(decide, "require", narrow, "labels_only"), "require_raised")
+        if not isinstance(required, Decision) or not required.permitted:
+            _fail("require_disagrees_with_check")
+
+
 # Rule --------------------------------------------------------------------------------------
 
 
@@ -1131,6 +1411,10 @@ CHECKS: tuple[Check, ...] = (
     Check("IFC-12", "Extractor", check_ifc_12_extractor),
     Check("POL-08", "Extractor", check_pol_08),
     Check("MEN-11", "Extractor", check_men_11),
+    Check("IFC-08", "Exporter", check_ifc_08_exporter, also_covers=("PolicyGate",)),
+    Check("IFC-08", "PolicyGate", check_ifc_08_gate),
+    Check("POL-15", "Exporter", check_pol_15_exporter),
+    Check("POL-15", "Extractor", check_pol_15_extractor),
 )
 assert all(
     check.case_id in CASES and check.target in CASES[check.case_id].targets for check in CHECKS

@@ -110,6 +110,25 @@ def _stub_rule(rule: Any = None) -> Any:
     return make
 
 
+def _exporter(format: str = "amber-bundle/0.1", exporter_class: Any = None) -> Any:
+    from amber.bundles import ManifestDataset, ManifestProducer
+    from amber.reference.exporter import LocalExporter
+
+    def make(directory: Path, *, cases: Any, sources: Any, variables: Any, run_id: str) -> Any:
+        return (exporter_class or LocalExporter)(
+            directory,
+            format=format,
+            variables=variables,
+            dataset=ManifestDataset(name=fx.DATASET, manifest_hash="h", sensitivity="synthetic"),
+            producer=ManifestProducer(name="conformance", version="1", run_id=run_id),
+            policy_version=DEFAULT_MATRIX.version,
+            cases=cases,
+            sources=sources,
+        )
+
+    return make
+
+
 def _subject(
     store: type[InMemoryStore] = InMemoryStore,
     provider: Any = None,
@@ -117,6 +136,7 @@ def _subject(
     labeler: Any = None,
     review: Any = None,
     rule: Any = None,
+    exporter: Any = None,
 ) -> Subject:
     return Subject(
         name="amber-reference",
@@ -130,6 +150,8 @@ def _subject(
             "Labeler": labeler or _import_labeler,
             "ReviewBackend": review or _file_review(),
             "Rule": rule or _stub_rule(),
+            "Exporter": exporter or _exporter(),
+            "PolicyGate": lambda: StaticGate(DEFAULT_MATRIX),
         },
     )
 
@@ -193,6 +215,10 @@ def test_every_check_names_a_catalog_case_for_its_target() -> None:
         ("IFC-12", "Extractor"),
         ("POL-08", "Extractor"),
         ("MEN-11", "Extractor"),
+        ("IFC-08", "Exporter"),
+        ("IFC-08", "PolicyGate"),
+        ("POL-15", "Exporter"),
+        ("POL-15", "Extractor"),
     }
 
 
@@ -214,6 +240,8 @@ def test_the_references_pass_every_implemented_case() -> None:
         "Labeler",
         "ReviewBackend",
         "Rule",
+        "Exporter",
+        "PolicyGate",
     ):
         assert report.conforms(target)
     assert statuses["ANN-06"] == ("not_applicable", None)
@@ -221,14 +249,16 @@ def test_the_references_pass_every_implemented_case() -> None:
     assert statuses["WIR-01"] == ("not_applicable", None)
     assert statuses["WIR-04"] == ("not_applicable", None)
     assert report.counts() == {
-        "passed": 19,
+        "passed": 21,
         "failed": 0,
-        "not_applicable": 101 - 19 - 3,
-        "not_implemented": 3,
+        "not_applicable": 101 - 21 - 2,
+        "not_implemented": 2,
     }
     assert report.targets == (
+        "Exporter",
         "Extractor",
         "Labeler",
+        "PolicyGate",
         "Provider",
         "ReviewBackend",
         "Rule",
@@ -236,9 +266,8 @@ def test_the_references_pass_every_implemented_case() -> None:
         "SourceResolver",
         "Store",
     )
-    # ANN-13 and ANN-14 are loupe-bridge cases, and POL-15's Extractor part has no check yet.
+    # ANN-13 and ANN-14 are loupe-bridge cases (amber-u4c.5).
     assert statuses["ANN-13"] == statuses["ANN-14"] == ("not_implemented", None)
-    assert statuses["POL-15"] == ("not_implemented", None)
     assert report.catalog_revision == catalog_revision()
     assert report.fixtures_ref == fx.fixtures_ref()
 
@@ -760,3 +789,161 @@ def test_impure_rules_fail_the_purity_case(rule: Any, code: str) -> None:
     report = run_checks(_subject(rule=_stub_rule(rule)))
     assert _statuses(report)["IFC-05"] == ("failed", code)
     assert not report.conforms("Rule")
+
+
+# Exporters and gates -----------------------------------------------------------------------
+
+
+def _local_exporter() -> Any:
+    from amber.reference.exporter import LocalExporter
+
+    return LocalExporter
+
+
+def _ungated_exporter(base: Any) -> Any:
+    class Ungated(base):  # type: ignore[misc, valid-type]
+        def export(self, items: Any, target: Any, *, gate: Any, **kwargs: Any) -> Any:
+            return super().export(items, target, gate=StaticGate(DEFAULT_MATRIX), **kwargs)
+
+    return Ungated
+
+
+def _partial_writer(base: Any) -> Any:
+    class Partial(base):  # type: ignore[misc, valid-type]
+        def export(self, items: Any, target: Any, **kwargs: Any) -> Any:
+            self.directory.mkdir(parents=True, exist_ok=True)
+            (self.directory / "early.json").write_text("{}")
+            return super().export(items, target, **kwargs)
+
+    return Partial
+
+
+def _silent_refusal(base: Any) -> Any:
+    from amber.policy import PolicyViolation
+
+    class Silent(base):  # type: ignore[misc, valid-type]
+        def export(self, items: Any, target: Any, **kwargs: Any) -> Any:
+            try:
+                return super().export(items, target, **kwargs)
+            except PolicyViolation as violation:
+                raise PolicyViolation(violation.decision) from None
+
+    return Silent
+
+
+def _wrong_hash(base: Any) -> Any:
+    class WrongHash(base):  # type: ignore[misc, valid-type]
+        def export(self, *args: Any, **kwargs: Any) -> Any:
+            receipt = super().export(*args, **kwargs)
+            files = tuple(
+                item.model_copy(update={"content_sha256": "0" * 64}) for item in receipt.files
+            )
+            return receipt.model_copy(update={"files": files})
+
+    return WrongHash
+
+
+def _one_decision(base: Any) -> Any:
+    """Decides only the first payload kind and stamps that decision on every file."""
+
+    class OneDecision(base):  # type: ignore[misc, valid-type]
+        def export(self, items: Any, target: Any, *, gate: Any, data: Any, now: Any) -> Any:
+            first = None
+
+            class Once:
+                matrix = gate.matrix
+
+                def check(self, *args: Any, **kwargs: Any) -> Any:
+                    nonlocal first
+                    if first is None:
+                        first = gate.check(*args, **kwargs)
+                    return first
+
+            return super().export(items, target, gate=Once(), data=data, now=now)
+
+    return OneDecision
+
+
+@pytest.mark.parametrize(
+    ("wrap", "case_id", "code"),
+    [
+        (_ungated_exporter, "IFC-08", "file_not_gated"),
+        (_partial_writer, "IFC-08", "partial_write"),
+        (_silent_refusal, "IFC-08", "decisions_not_reported"),
+        (_wrong_hash, "IFC-08", "receipt_hash_mismatch"),
+        (_one_decision, "POL-15", "decision_reused"),
+    ],
+    ids=["ungated", "partial", "silent", "hash", "one_decision"],
+)
+def test_broken_exporters_fail_with_source_free_codes(wrap: Any, case_id: str, code: str) -> None:
+    report = run_checks(_subject(exporter=_exporter(exporter_class=wrap(_local_exporter()))))
+    assert _statuses(report)[case_id] == ("failed", code)
+    assert not report.conforms("Exporter")
+
+
+def test_a_labels_export_with_text_fails() -> None:
+    from amber.interfaces import ExportedFile
+
+    class Leaky(_local_exporter()):  # type: ignore[misc]
+        def export(self, *args: Any, **kwargs: Any) -> Any:
+            receipt = super().export(*args, **kwargs)
+            files = tuple(
+                ExportedFile.model_validate(
+                    {**item.model_dump(), "payload_kind": "derived_text"}
+                    if item.file == "claims.parquet"
+                    else item.model_dump()
+                )
+                for item in receipt.files
+            )
+            return receipt.model_copy(update={"files": files})
+
+    report = run_checks(_subject(exporter=_exporter("amber-labels/0.1", Leaky)))
+    assert _statuses(report)["IFC-08"][0] == "failed"
+
+
+def test_the_labels_format_passes_too() -> None:
+    report = run_checks(_subject(exporter=_exporter("amber-labels/0.1")))
+    assert report.conforms("Exporter")
+
+
+class _PermissiveGate(StaticGate):
+    def check(self, data: Any, destination: Any, payload: Any, **kwargs: Any) -> Any:
+        widened = destination.model_copy(update={"accepts": destination.accepts | {payload}})
+        return super().check(data, widened, payload, **kwargs)
+
+
+class _QuietGate(StaticGate):
+    def require(self, *args: Any, **kwargs: Any) -> Any:
+        return self.check(*args, **kwargs)
+
+
+class _ForgetfulGate(StaticGate):
+    def check(self, data: Any, destination: Any, payload: Any, **kwargs: Any) -> Any:
+        kwargs["case_id"] = None
+        return super().check(data, destination, payload, **kwargs)
+
+
+@pytest.mark.parametrize(
+    ("gate", "code"),
+    [
+        (_PermissiveGate, "unaccepted_payload_permitted"),
+        (_QuietGate, "require_did_not_raise"),
+        (_ForgetfulGate, "decision_names_another_transfer"),
+    ],
+)
+def test_broken_gates_fail_with_source_free_codes(gate: Any, code: str) -> None:
+    subject = _subject()
+    targets = {**subject.targets, "PolicyGate": lambda: gate(DEFAULT_MATRIX)}
+    report = run_checks(Subject(name="broken", version="1", targets=targets))
+    assert _statuses(report)["IFC-08"] == ("failed", code)
+    assert not report.conforms("PolicyGate")
+
+
+def test_an_extractor_calling_a_model_without_its_decision_fails_pol_15() -> None:
+    class Unchecked(DeterministicExtractor):
+        def run(self, case: Any, source: Any, variables: Any, **kwargs: Any) -> Any:
+            self.provider.complete(ProviderRequest(prompt="Invented prompt."))
+            return super().run(case, source, variables, **kwargs)
+
+    report = run_checks(_subject(extractor=lambda provider: Unchecked(provider)))
+    assert _statuses(report)["POL-15"] == ("failed", "model_call_without_its_own_decision")
