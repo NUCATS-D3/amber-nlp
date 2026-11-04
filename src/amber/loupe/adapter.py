@@ -160,6 +160,8 @@ class AmberClaimsAdapter:
         self.inventory: dict[str, Any] = {
             "concepts": copy.deepcopy(configuration.get("concepts") or []),
             "mode": "claims",
+            # Result keys loupe keeps with the stored annotation so the editor can reload them.
+            "state_keys": ["amber_mentions"],
             "variables": [
                 {
                     "name": name,
