@@ -553,12 +553,24 @@ negative**, not an abstention. *Coverage* is the share of target-bearing notes w
 answer. *Abstention calibration* asks whether abstentions concentrate on notes the rules would
 have gotten wrong.
 
-**Proposed mapping to amber outcomes** (needs confirmation against the contract, [§12](#12-open-questions)):
+**Mapping to amber outcomes** (decided 2026-11-04, amber-b5c; no contract change):
 
-- Abstain → `insufficient_evidence` (or `conflicting_evidence` for disagreeing values). Either
-  way it is evidence-backed, because it cites the triggering inclusion.
-- Silent → `not_mentioned` only if the task protocol accepts rule-based absence with
-  whole-note coverage. Otherwise the `Labeler` records no reference for that note.
+- Abstain → `insufficient_evidence`, with the reason code in `reason` and `evidence_ids` citing
+  the triggering inclusion (any non-answer may cite source-leaf evidence).
+- Disagreeing values → `conflicting_evidence` citing every conflicting inclusion, at note level
+  only. Mention-level variables never carry `conflicting_evidence` (VAR-14), so a
+  mention-level abstention is always `insufficient_evidence`.
+- Silent, in an extractor's result → `not_mentioned` only when the rule set declares
+  whole-note coverage, so `reviewed_source_ids` is the case's sources (which `not_mentioned`
+  requires). Otherwise `insufficient_evidence` with no reviewed sources, as for zero
+  mention claims without full review (contract decision 3). Evaluation then counts it as an
+  omission; a silent output on a target-bearing note is a false negative only under declared
+  coverage.
+- Silent, from a `Labeler` (references) without declared coverage → `LabelerFailure`: no
+  reference for that note, never a silver `not_mentioned`.
+- The coverage declaration belongs to the copal adapter's rule-set configuration (for
+  example `whole_note_coverage: true`, recorded in provenance), not to the contract. Tests
+  for these mappings come with the copal adapter.
 
 ### 6.3 The evolution loop
 
@@ -942,10 +954,9 @@ Each safeguard answers a specific way the results could mislead.
 
 ## 12. Open questions
 
-1. **Abstention in the contract.** Confirm the mapping in [§6.2](#62-explicit-abstention):
-   explicit abstain to `insufficient_evidence` or `conflicting_evidence` citing the triggering
-   inclusion; silent to `not_mentioned` only under a task protocol that accepts rule-based
-   whole-note coverage. Needed before Stage 4 emits labels.
+1. **Abstention in the contract.** Decided (amber-b5c): see the mapping in
+   [§6.2](#62-explicit-abstention). No contract change; the copal adapter declares whole-note
+   coverage per rule set.
 2. **Literature follow-ups.** The search (§2.1) is done, with gaps:
    - Read Varghese & Shang, "Benchmarking LLM Optimization Strategies for Clinical NER: DSPy
      GEPA vs Domain-Specific Transformers" (IEEE BigData 2025). The record exists, but the
