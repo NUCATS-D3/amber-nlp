@@ -251,7 +251,9 @@ Pure data and functions; no I/O, credentials, or clock (contract v0.1 §1).
   non-rejected claims of their own variable; a mention-level variable never reports
   `conflicting_evidence`; loading against a set whose name, version, or `schema_ref` differs
   from the result's is `variable_set_mismatch`.
-- `amber.graph_errors`: stable, source-free diagnostic codes.
+- `amber.graph_errors`: stable, source-free diagnostic codes. `GraphValidationError`,
+  `CaseValidationError`, `ExampleValidationError`, and `AnnotationValidationError` accept only
+  the codes their `Literal` type lists and raise `TypeError` for any other.
 - `EvidenceGraph.commit_claim(..., derivation=...)` (and the `commit_claim` tool) records a
   derivation on the claim's inference; with one, `evidence_ids` may name claims too.
 

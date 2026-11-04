@@ -32,7 +32,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Literal, NoReturn, TypeAlias
+from typing import Any, Literal, NoReturn, TypeAlias, get_args
 
 from amber._graph_validation import build_context, validate_state
 from amber.examples import mint_example
@@ -73,6 +73,9 @@ class AnnotationValidationError(ValueError):
     """Stable event or projection diagnostic that does not render event contents."""
 
     def __init__(self, code: AnnotationValidationCode) -> None:
+        # Codes are a closed, documented set; an unknown one is a programming error.
+        if code not in get_args(AnnotationValidationCode):
+            raise TypeError("unknown AnnotationValidationError code")
         self.code = code
         super().__init__(code)
 

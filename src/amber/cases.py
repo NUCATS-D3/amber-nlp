@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any, Literal, NoReturn, TypeAlias
+from typing import Any, Literal, NoReturn, TypeAlias, get_args
 
 from amber._graph_validation import ordered_records
 from amber.graph import EvidenceGraph
@@ -52,6 +52,9 @@ class CaseValidationError(ValueError):
     """Stable case diagnostic that does not render source-bearing inputs."""
 
     def __init__(self, code: CaseValidationCode) -> None:
+        # Codes are a closed, documented set; an unknown one is a programming error.
+        if code not in get_args(CaseValidationCode):
+            raise TypeError("unknown CaseValidationError code")
         self.code = code
         super().__init__(code)
 
@@ -324,9 +327,14 @@ def create_case_result(
         }
     else:
         supplied = variable_outcomes
-        single = (
-            supplied.get(finals[0]) if len(finals) == 1 and isinstance(supplied, Mapping) else None
-        )
+        try:
+            single = (
+                supplied.get(finals[0])
+                if len(finals) == 1 and isinstance(supplied, Mapping)
+                else None
+            )
+        except (TypeError, ValueError):
+            _raise("invalid_schema")
         if isinstance(single, VariableOutcome) and outcome is None and final_claim_ids is None:
             outcome, final_claim_ids = single.outcome, single.final_claim_ids
     validated_graph = EvidenceGraph.from_payload(
