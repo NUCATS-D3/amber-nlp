@@ -535,3 +535,75 @@ def test_the_loupe_backend_exports_gated_proposals(tmp_path: Any) -> None:
             variables=fx.NOTE_VARIABLES, streams=["corrections", "a"], gate=GATE, data=DATA,
         )  # fmt: skip
     assert not (tmp_path / "refused").exists() or not any((tmp_path / "refused").iterdir())
+
+
+# Review timing (loupe-2v9) -----------------------------------------------------------------
+
+
+def _timed(reference: dict[str, Any], active: float = 90.0) -> dict[str, Any]:
+    for record in reference["records"]:
+        for review in record["adjudication"]["reviews"]:
+            review["timing"] = {
+                "client": {
+                    "opened_at": "2026-11-04T12:00:00.000Z",
+                    "submitted_at": "2026-11-04T12:03:00.000Z",
+                    "active_seconds": active,
+                    "idle_seconds": 30,
+                    "focus_changes": 1,
+                },
+                "received_at": "2026-11-04T12:03:00.250Z",
+            }
+    return _rehash(reference)
+
+
+def test_review_timing_becomes_open_and_submit_events() -> None:
+    from amber.evaluation import expert_minutes_per_accepted_case, review_effort
+
+    imported = _import(_timed(_blind()))
+    assert len(imported.examples) == 2
+    opens = [e for e in imported.events if e.action == "review.open"]
+    submits = [e for e in imported.events if e.action == "review.submit"]
+    assert len(opens) == len(submits) == 4
+    assert {e.external_ref for e in opens} == {e.external_ref for e in submits}
+    assert all(e.after == {"opened_at": "2026-11-04T12:00:00.000Z"} for e in opens)
+    assert submits[0].after is not None and submits[0].after["active_seconds"] == 90.0
+    assert {e.stream for e in opens} == {"a", "b"}
+
+    effort = review_effort(imported.events)
+    assert (effort.reviews, effort.timed_reviews, effort.active_seconds) == (4, 4, 360.0)
+    measure = expert_minutes_per_accepted_case(effort, accepted_cases=2, other_minutes=1)
+    assert measure.value == pytest.approx((6 + 1) / 2)
+
+
+def test_untimed_reviews_leave_expert_minutes_undefined() -> None:
+    from amber.evaluation import expert_minutes_per_accepted_case, review_effort
+
+    imported = _import(_blind())
+    assert not [e for e in imported.events if e.action == "review.open"]
+    assert all(e.after is None for e in imported.events if e.action == "review.submit")
+    effort = review_effort(imported.events)
+    assert (effort.reviews, effort.timed_reviews, effort.complete) == (4, 0, False)
+    assert expert_minutes_per_accepted_case(effort, accepted_cases=2).value is None
+    timed = review_effort(_import(_timed(_blind())).events)
+    assert expert_minutes_per_accepted_case(timed, accepted_cases=0).value is None
+    with pytest.raises(ValueError, match="other_minutes"):
+        expert_minutes_per_accepted_case(timed, accepted_cases=2, other_minutes=-1)
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        lambda t: t["client"].update(active_seconds=-1),
+        lambda t: t["client"].update(opened_at="2026-11-04T13:00:00.000Z"),
+        lambda t: t["client"].update(focus_changes=True),
+        lambda t: t["client"].pop("idle_seconds"),
+        lambda t: t.update(received_at="soon"),
+        lambda t: t.update(extra=1),
+    ],
+    ids=["negative", "opened_after_submit", "boolean", "missing", "bad_receipt", "extra"],
+)
+def test_malformed_timing_is_refused(edit: Any) -> None:
+    reference = _timed(_blind())
+    edit(reference["records"][0]["adjudication"]["reviews"][0]["timing"])
+    with pytest.raises(ReferenceError, match="invalid_timing"):
+        _import(_rehash(reference))

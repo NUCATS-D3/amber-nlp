@@ -1214,9 +1214,11 @@ Rules:
   events from S and events with no stream (such as imported proposals), and never another
   stream's; an `adjudicator` sees every stream in the round, since resolving requires it;
   `system` and `importer` see everything. After resolve, every actor sees every stream.
-- Session timing for expert-effort measurement uses `review.open`/`review.submit` timestamps
-  plus optional `review.focus`/`review.idle` events (added to the action set when loupe
-  provides them); amber defines the actions, loupe emits them.
+- Session timing for expert-effort measurement comes from loupe's review timing, carried on
+  `review.open` (`after.opened_at`) and `review.submit` (`after`: `submitted_at`,
+  `active_seconds`, `idle_seconds`, `focus_changes`, `received_at`). loupe summarizes focus
+  and idle periods into these totals, so no `review.focus`/`review.idle` actions are needed;
+  imported event `at` stays ordinal so imports are deterministic.
 
 ### 4.5 Status transitions
 

@@ -14,14 +14,18 @@ diagnostic per record that yields no Example:
 - every considered review is rebuilt and reloaded by the adapter, so every quote is regrounded
   against the source and a tampered result, offset, or text is refused;
 - each review becomes reviewer events in its stream (``claim.create`` with its support,
-  ``outcome.set``, then ``review.submit`` with the submission ID); with one stream the reviewer
-  sets ``single_review``; otherwise the adjudicator keeps the selected review's claims, rejects
-  the others, sets the outcomes, resolves the case (publication hash as ``external_ref``), and
-  sets ``adjudicated``;
+  ``outcome.set``, then ``review.submit`` with the submission ID); a review loupe timed is
+  preceded by ``review.open`` (``after.opened_at``), and its ``review.submit`` carries
+  ``submitted_at``, ``active_seconds``, ``idle_seconds``, ``focus_changes``, and loupe's
+  ``received_at`` (self-reported by the editor; see ``amber.evaluation.review_effort``);
+  with one stream the reviewer sets ``single_review``; otherwise the adjudicator keeps the
+  selected review's claims, rejects the others, sets the outcomes, resolves the case
+  (publication hash as ``external_ref``), and sets ``adjudicated``;
 - ``unresolved`` and ``excluded`` decisions are resolved with their reason and give no Example.
 
-Event IDs are strictly increasing per case and event times are ordinal (loupe keeps the real
-review times), so the same publication always imports to the same events and Examples.
+Event IDs are strictly increasing per case and event times are ordinal (real review times
+travel in the review events' ``after``), so the same publication always imports to the same
+events and Examples.
 """
 
 from __future__ import annotations
@@ -387,6 +391,52 @@ def _outcome_events(
         )
 
 
+_TIMING_KEYS = {"opened_at", "submitted_at", "active_seconds", "idle_seconds", "focus_changes"}
+
+
+def _instant(value: Any) -> datetime:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise ReferenceError("invalid_timing")
+    try:
+        return datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError:
+        raise ReferenceError("invalid_timing") from None
+
+
+def _review_timing(value: Any) -> dict[str, Any] | None:
+    """A review's loupe timing (``{"client": ..., "received_at": ...}``) as event state, or
+    None when loupe recorded none (older publications and editors)."""
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) != {"client", "received_at"}:
+        raise ReferenceError("invalid_timing")
+    client = value["client"]
+    if client is None:
+        return None
+    if not isinstance(client, dict) or set(client) != _TIMING_KEYS:
+        raise ReferenceError("invalid_timing")
+    seconds = [client["active_seconds"], client["idle_seconds"]]
+    if any(
+        isinstance(item, bool) or not isinstance(item, int | float) or not 0 <= item < 1e9
+        for item in seconds
+    ):
+        raise ReferenceError("invalid_timing")
+    changes = client["focus_changes"]
+    if isinstance(changes, bool) or not isinstance(changes, int) or changes < 0:
+        raise ReferenceError("invalid_timing")
+    if not _instant(client["opened_at"]) <= _instant(client["submitted_at"]):
+        raise ReferenceError("invalid_timing")
+    _instant(value["received_at"])
+    return {
+        "opened_at": client["opened_at"],
+        "submitted_at": client["submitted_at"],
+        "active_seconds": float(client["active_seconds"]),
+        "idle_seconds": float(client["idle_seconds"]),
+        "focus_changes": changes,
+        "received_at": value["received_at"],
+    }
+
+
 def _check_reference(reference: Any, adapter: AmberClaimsAdapter) -> None:
     if not isinstance(reference, dict) or reference.get("format") != REFERENCE_FORMAT:
         raise ReferenceError("invalid_reference")
@@ -503,11 +553,26 @@ def _import_record(
             raise ReferenceError(error.code) from None
         actor = "human:" + "-".join(str(result["producer"]["reviewer"]).split())
         stream = review["stream"] if len(streams) > 1 else None
+        timing = _review_timing(review.get("timing"))
         spans.extend(item for item in loaded.evidence if isinstance(item, Inclusion))
+        if timing is not None:
+            log.add(
+                "review.open",
+                actor,
+                "reviewer",
+                stream=stream,
+                after={"opened_at": timing["opened_at"]},
+                external_ref=review["submission_id"],
+            )
         _claim_events(log, loaded, actor, stream)
         _outcome_events(log, loaded, actor, "reviewer", stream)
         log.add(
-            "review.submit", actor, "reviewer", stream=stream, external_ref=review["submission_id"]
+            "review.submit",
+            actor,
+            "reviewer",
+            stream=stream,
+            after=None if timing is None else {k: v for k, v in timing.items() if k != "opened_at"},
+            external_ref=review["submission_id"],
         )
         reviews[review["submission_id"]] = (actor, loaded)
 
