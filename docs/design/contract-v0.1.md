@@ -2048,7 +2048,7 @@ Reviewed and accepted 2026-11-02 (whole-document review):
 
 The catalog is the complete list of checks that define conformance to contract v0.1. It is
 implemented as the pytest plugin `amber.conformance` (Phase 2) and its IDs are stable: a
-consumer reports "amber conformance 0.1: 95/101, failing MEN-09, WIR-04". Changing a case's
+consumer reports "amber conformance 0.1: 95/100, failing MEN-09, WIR-04". Changing a case's
 meaning requires a new ID; retired IDs are never reused.
 
 Each case has a **level**:
@@ -2076,8 +2076,13 @@ protocols (`PolicyGate`, `SourceResolver`, `Provider`, `Extractor`, `Rule`, `Lab
 A check that touches both amber and an implementation is split into a `core` case and an
 `implementation` case.
 
-The catalog contains 101 cases. Every case uses invented data; no fixture contains clinical
-text. Fixtures include Unicode (non-BMP, combining marks), CRLF, repeated quotes, empty and
+The catalog contains 100 cases. Retired, never reused (2026-11-04, amber-u4c.5): `ANN-14`
+compared per-change review events with a single full-state `review.submit`, but the loupe
+import emits per-change events and replay treats `review.submit` as a marker without state, so
+there is no full-state path to compare; a full-state submit would get a new ID. `ANN-13`
+became `core`: it tests amber's own loupe import, which no consumer reimplements.
+
+Every case uses invented data; no fixture contains clinical text. Fixtures include Unicode (non-BMP, combining marks), CRLF, repeated quotes, empty and
 whitespace-only sources, and the three stand-in variable sets.
 
 ### 7.2 Policy (§1)
@@ -2167,8 +2172,7 @@ whitespace-only sources, and the three stand-in variable sets.
 | `ANN-10` | core | — | A claim can be `gold` only if the readings it relies on are `gold` or `verified`; a span is never updated or deleted, and a reading correction produces a new linked reading. |
 | `ANN-11` | implementation | Scorer | A `LabelRecord` cannot be loaded as an Example; a scorer scoring evidence metrics against LabelRecords reports `inconclusive`. |
 | `ANN-12` | implementation | Scorer | Scoring a configuration against silver Examples produced by the same configuration is refused. |
-| `ANN-13` | implementation | ReviewBackend | loupe mapping fixtures: accepted → adjudicated Example; unresolved → no Example, events retained; excluded → no Example; no-mentions confirmation → `not_mentioned`; unsubmitted → `insufficient_evidence`. |
-| `ANN-14` | implementation | ReviewBackend | Per-change events derived from a revision diff and a single full-state `review.submit` event replay to the same projection. |
+| `ANN-13` | core | — | loupe mapping fixtures: accepted → adjudicated Example; unresolved → no Example, events retained; excluded → no Example; no-mentions confirmation → `not_mentioned`; unsubmitted → `insufficient_evidence`. |
 | `ANN-15` | core | — | Snapshot identity: replaying the same events gives the same `example_id`; appending an event (a tier rise, a correction) gives a new `example_id`, and replaying the prefix reproduces the old snapshot exactly. |
 | `ANN-16` | implementation | Store | A store's `project` returns the same projection as amber's replay of the events it holds, for every actor and every `as_of_event`. |
 | `ANN-17` | implementation | Store, Scorer | A store rejects an Example whose `example_id` does not match its content; `current_example` returns the snapshot at the latest event; a `ScoreReport` lists the `example_id`s it scored against. |

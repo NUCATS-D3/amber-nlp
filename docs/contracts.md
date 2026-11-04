@@ -517,7 +517,7 @@ sensitivity. They ship with the core; `amber[reference]` installs what all of th
 
 ## Conformance kit (`amber.conformance`)
 
-- **Catalog**: the 101 cases of contract v0.1 §7 as data (`catalog.json`, generated from the
+- **Catalog**: the 100 cases of contract v0.1 §7 as data (`catalog.json`, generated from the
   design and checked against it), with `catalog_revision()` hashing every case's ID, level,
   targets, and text.
 - **Fixtures**: deterministic synthetic sources, variable set, cases, results, spans, and

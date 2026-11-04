@@ -244,6 +244,7 @@ def test_export_is_gated_and_checked() -> None:
 
 
 def test_accepted_blind_reviews_become_adjudicated_examples() -> None:
+    """ANN-13: accepted -> adjudicated Example; no-mentions confirmation -> not_mentioned."""
     reference = _blind()
     imported = _import(reference)
     assert imported.diagnostics == ()
@@ -309,6 +310,7 @@ def test_one_stream_gives_single_review_without_adjudication_events() -> None:
 
 @pytest.mark.parametrize("status", ["unresolved", "excluded"])
 def test_unresolved_and_excluded_records_keep_events_without_examples(status: str) -> None:
+    """ANN-13: unresolved -> no Example, events retained; excluded -> no Example."""
     first, second = fx.SOURCE.source_id, OTHER.source_id
     reference = _publication(
         {first: (status, 0 if status == "unresolved" else None), second: ("accepted", 0)},
@@ -324,6 +326,30 @@ def test_unresolved_and_excluded_records_keep_events_without_examples(status: st
     kept = [e for e in imported.events if e.case_id == "loupe-case-1"]
     assert any(e.action == "review.submit" for e in kept)
     assert kept[-1].action == "adjudication.resolve" and kept[-1].after == {"decision": status}
+
+
+def test_a_partial_review_imports_as_insufficient_evidence() -> None:
+    """ANN-13: an unsubmitted or partial review (loupe's partial processing state) imports
+    as insufficient_evidence."""
+    first, second = fx.SOURCE.source_id, OTHER.source_id
+    partial = {
+        "reviewer": "Reviewer A",
+        "whole_note_complete": True,
+        "variables": {
+            VARIABLE: {"status": "insufficient_evidence", "reason": "Invented: not finished."}
+        },
+    }
+    reference = _publication(
+        {first: ("accepted", 0), second: ("accepted", 0)},
+        {first: [("a", partial)], second: [("a", _absent("Reviewer A"))]},
+        streams=("a",),
+    )
+    assert reference["records"][0]["adjudication"]["reviews"][0]["result"]["processing_state"] == (
+        "partial"
+    )
+    by_case = {example.case_id: example for example in _import(reference).examples}
+    outcome = by_case["loupe-case-1"].references[VARIABLE].outcome
+    assert outcome.status == "insufficient_evidence"
 
 
 # Tampering ---------------------------------------------------------------------------------
