@@ -152,6 +152,138 @@ def source_manifest(
     return manifest, decision
 
 
+def freeze_manifest(manifest: Mapping[str, Any]) -> dict[str, Any]:
+    """The manifest in loupe's frozen form (``loupe freeze``): format, defaults, per-record
+    ``source_sha256``, records in ID order, and ``snapshot_sha256``. loupe's own tests check
+    that this matches its ``freeze_source``."""
+    body = json.loads(json.dumps(dict(manifest)))
+    body.pop("snapshot_sha256", None)
+    body["format"] = "loupe-source-v1"
+    body.setdefault("data_classification", "synthetic" if body["synthetic"] else "restricted")
+    body.setdefault("adapter", "generic")
+    for record in body["records"]:
+        record.setdefault("metadata", {})
+        record["source_sha256"] = hashlib.sha256(record["text"].encode()).hexdigest()
+    body["records"] = sorted(body["records"], key=lambda record: record["record_id"])
+    body["snapshot_sha256"] = loupe_digest(body)
+    return body
+
+
+# Proposals -----------------------------------------------------------------------------------
+
+PROPOSALS_FORMAT = "loupe-proposals-v1"
+
+
+def proposal_request(result: CaseResult, *, reviewer: str) -> dict[str, Any] | None:
+    """The claim-mode request that reproduces a note-level result, or None when any final
+    variable failed (failed runs are never proposals)."""
+    evidence = {item.evidence_id: item for item in result.evidence}
+    inclusions = {key: item for key, item in evidence.items() if isinstance(item, Inclusion)}
+    claims = {claim.claim_id: claim for claim in result.claims}
+
+    def span(item: Inclusion) -> dict[str, Any]:
+        return {"start": item.start, "end": item.end, "quote": item.quote}
+
+    variables: dict[str, Any] = {}
+    for name, item in sorted(result.variable_outcomes.items()):
+        status = item.outcome.status
+        if status == "failed":
+            return None
+        if status != "answered":
+            entry: dict[str, Any] = {"status": status, "reason": item.outcome.reason}
+            if status == "conflicting_evidence":
+                entry["evidence"] = [
+                    span(inclusions[i]) for i in item.outcome.evidence_ids if i in inclusions
+                ]
+            variables[name] = entry
+            continue
+        built = []
+        for claim_id in item.final_claim_ids:
+            edges = [edge for edge in result.edges if edge.claim_id == claim_id]
+            rationale = next(
+                (
+                    record.rationale
+                    for edge in edges
+                    if isinstance((record := evidence.get(edge.evidence_id)), InferenceEvidence)
+                ),
+                "Model proposal.",
+            )
+            cited: list[str] = []
+            for edge in edges:
+                record = evidence.get(edge.evidence_id)
+                inputs = (
+                    record.inputs if isinstance(record, InferenceEvidence) else [edge.evidence_id]
+                )
+                cited.extend(i for i in inputs if i in inclusions)
+            order = sorted(
+                dict.fromkeys(cited), key=lambda i: (inclusions[i].start, inclusions[i].end)
+            )
+            fields: dict[str, list[int]] = {}
+            for edge in edges:
+                if (
+                    edge.role
+                    and not edge.role.startswith("attribute:")
+                    and edge.evidence_id in order
+                ):
+                    fields.setdefault(edge.role, []).append(order.index(edge.evidence_id))
+            built.append(
+                {
+                    "value": json.loads(json.dumps(claims[claim_id].value)),
+                    "rationale": rationale,
+                    "evidence": [span(inclusions[i]) for i in order],
+                    "fields": {k: sorted(set(v)) for k, v in sorted(fields.items())},
+                }
+            )
+        variables[name] = {"status": "answered", "claims": built}
+    return {"reviewer": reviewer, "whole_note_complete": True, "variables": variables}
+
+
+def proposals_file(
+    frozen: Mapping[str, Any],
+    results: Sequence[CaseResult],
+    *,
+    producer: str,
+    streams: Sequence[str],
+    configuration_frozen: bool,
+    gate: PolicyGate,
+    data: DataPolicy,
+    destination: Destination,
+    now: datetime,
+) -> tuple[dict[str, Any], Decision]:
+    """A ``loupe-proposals-v1`` file for a frozen manifest: each result becomes the adapter
+    result its proposal request builds. Proposals are ``derived_text``, decided for the review
+    destination first. Results whose case is not in the manifest, or that failed, are skipped.
+    """
+    if destination.kind != "review":
+        raise ReferenceError("not_a_review_destination")
+    decision = gate.require(data, destination, "derived_text", now=now)
+    adapter = AmberClaimsAdapter(dict(frozen))
+    records = {record["metadata"].get("case_id"): record for record in frozen["records"]}
+    proposed: dict[str, Any] = {}
+    for result in results:
+        record = records.get(result.case_id)
+        request = proposal_request(result, reviewer=producer)
+        if record is None or request is None:
+            continue
+        example = {
+            "example_id": record["record_id"],
+            "source_text": record["text"],
+            "source_record": record,
+        }
+        proposed[record["record_id"]] = adapter.build_result(
+            request, example, adapter.inventory, "proposal"
+        )
+    body = {
+        "format": PROPOSALS_FORMAT,
+        "source_sha256": frozen["snapshot_sha256"],
+        "producer": producer,
+        "streams": list(streams),
+        "configuration_frozen": configuration_frozen,
+        "records": proposed,
+    }
+    return body, decision
+
+
 # Import --------------------------------------------------------------------------------------
 
 
@@ -433,12 +565,13 @@ def _import_record(
 
 
 class LoupeReviewBackend:
-    """``ReviewBackend`` over loupe's files: ``export_cases`` writes ``source.json`` (a loupe
-    source manifest) into a batch directory for the operator to freeze and set up in loupe;
+    """``ReviewBackend`` over loupe's files: ``export_cases`` writes ``source.json`` (the source
+    manifest in loupe's frozen form) into a batch directory for the operator to set up in loupe,
+    plus ``proposals.json`` (``loupe setup --proposals``) when cases carry results;
     ``import_references`` reads the publication's ``reference.json`` placed in that directory.
 
-    Proposals are not exported: teacher proposals in loupe are separate work (loupe-ub0), so a
-    ``CaseResult`` in ``cases`` is refused rather than silently dropped.
+    Proposals need ``proposal_streams`` (loupe keeps at least one stream source-only) and are
+    suppressed by loupe for test-split notes unless ``configuration_frozen``.
     """
 
     def __init__(
@@ -449,10 +582,16 @@ class LoupeReviewBackend:
         name: str,
         project_configuration: Mapping[str, Any],
         synthetic: bool,
+        proposal_streams: Sequence[str] = (),
+        producer: str | None = None,
+        configuration_frozen: bool = False,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         if destination.kind != "review":
             raise ReferenceError("not_a_review_destination")
+        self.proposal_streams = tuple(proposal_streams)
+        self.producer = producer
+        self.configuration_frozen = configuration_frozen
         self.directory = directory
         self.destination = destination
         self.name = name
@@ -469,8 +608,9 @@ class LoupeReviewBackend:
         gate: PolicyGate,
         data: DataPolicy,
     ) -> ReviewBatchReceipt:
-        if any(result is not None for _, _, result in cases):
-            raise ReferenceError("proposals_not_supported")
+        results = [result for _, _, result in cases if result is not None]
+        if results and (not self.proposal_streams or not self.producer):
+            raise ReferenceError("proposal_streams_required")
         now = self._clock()
         manifest, decision = source_manifest(
             [(case, source) for case, source, _ in cases],
@@ -484,12 +624,31 @@ class LoupeReviewBackend:
             destination=self.destination,
             now=now,
         )
+        frozen = freeze_manifest(manifest)
+        decisions = [decision]
+        proposals = None
+        if results:
+            assert self.producer is not None
+            proposals, proposal_decision = proposals_file(
+                frozen,
+                results,
+                producer=self.producer,
+                streams=self.proposal_streams,
+                configuration_frozen=self.configuration_frozen,
+                gate=gate,
+                data=data,
+                destination=self.destination,
+                now=now,
+            )
+            decisions.append(proposal_decision)
         batch_id = str(ULID.from_datetime(now))
         location = self.directory / batch_id
         location.mkdir(parents=True)
-        (location / "source.json").write_text(
-            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
+        for file, body in (("source.json", frozen), ("proposals.json", proposals)):
+            if body is not None:
+                (location / file).write_text(
+                    json.dumps(body, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+                )
         return ReviewBatchReceipt(
             batch_id=batch_id,
             destination=self.destination.name,
@@ -497,7 +656,7 @@ class LoupeReviewBackend:
             variable_set_ref=variables.schema_ref,
             case_ids=tuple(case.case_id for case, _, _ in cases),
             streams=tuple(streams),
-            decisions=(decision,),
+            decisions=tuple(decisions),
         )
 
     def import_references(
@@ -532,10 +691,14 @@ __all__ = [
     "ADAPTER_PATH",
     "REFERENCE_FORMAT",
     "ImportedReference",
+    "PROPOSALS_FORMAT",
     "RecordDiagnostic",
     "ReferenceError",
     "adapter_sha256",
+    "freeze_manifest",
     "import_reference",
     "loupe_digest",
+    "proposal_request",
+    "proposals_file",
     "source_manifest",
 ]

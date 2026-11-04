@@ -415,14 +415,16 @@ def test_the_loupe_backend_round_trips_through_files(tmp_path: Any) -> None:
     assert events
 
 
-def test_the_loupe_backend_refuses_proposals_and_foreign_publications(tmp_path: Any) -> None:
+def test_the_loupe_backend_needs_proposal_streams_and_refuses_foreign_publications(
+    tmp_path: Any,
+) -> None:
     import json
 
     from amber.review import ReviewImportError
 
     backend = _backend(tmp_path)
     proposal = fx.note_result(fx.RUN_IDS[0], present=True, producer="model:x@1")
-    with pytest.raises(ReferenceError, match="proposals_not_supported"):
+    with pytest.raises(ReferenceError, match="proposal_streams_required"):
         backend.export_cases(
             [(CASES[0][0], fx.SOURCE, proposal)],
             variables=fx.NOTE_VARIABLES, streams=["a"], gate=GATE, data=DATA,
@@ -436,3 +438,100 @@ def test_the_loupe_backend_refuses_proposals_and_foreign_publications(tmp_path: 
     (tmp_path / receipt.batch_id / "reference.json").write_text(json.dumps(_blind()))
     with pytest.raises(ReviewImportError, match="receipt_mismatch"):
         backend.import_references(receipt, resolver=RESOLVER)
+
+
+# Proposals (amber-sm8.4) -------------------------------------------------------------------
+
+
+def _note_result(case_id: str, **kwargs: Any) -> Any:
+    return fx.note_result(fx.RUN_IDS[0], producer="model:teacher@1", case_id=case_id, **kwargs)
+
+
+def test_a_result_becomes_the_request_that_rebuilds_it() -> None:
+    from amber.loupe.reference import proposal_request
+
+    result = _note_result("loupe-case-1", present=True)
+    request = proposal_request(result, reviewer="model:teacher@1")
+    assert request is not None
+    (claim,) = request["variables"][VARIABLE]["claims"]
+    sentence = fx.SENTENCE
+    assert claim["value"] == {"present": True}
+    assert claim["evidence"] == [
+        {"start": sentence.start, "end": sentence.end, "quote": sentence.quote}
+    ]
+    assert claim["fields"] == {"present": [0]}
+    adapter = AmberClaimsAdapter(copy.deepcopy(_manifest()))
+    record = next(r for r in _manifest()["records"] if r["record_id"] == fx.SOURCE.source_id)
+    example = {"example_id": record["record_id"], "source_text": record["text"],
+               "source_record": record}  # fmt: skip
+    built = adapter.build_result(request, example, adapter.inventory, "proposal")
+    assert adapter.validate_result(copy.deepcopy(built), example) == built
+
+
+def test_failed_results_are_never_proposals() -> None:
+    from amber.loupe.reference import proposal_request
+
+    result = fx.result(fx.RUN_IDS[0])
+    failed = result.model_copy(
+        update={
+            "variable_outcomes": {
+                name: item.model_copy(
+                    update={
+                        "outcome": item.outcome.model_copy(
+                            update={"status": "failed", "failure_kind": "provider"}
+                        )
+                    }
+                )
+                for name, item in result.variable_outcomes.items()
+            }
+        }
+    )
+    assert proposal_request(failed, reviewer="model:x@1") is None
+
+
+def test_the_frozen_manifest_is_stable_and_self_consistent() -> None:
+    from amber.loupe.reference import freeze_manifest
+
+    frozen = freeze_manifest(_manifest())
+    assert frozen["format"] == "loupe-source-v1"
+    assert freeze_manifest(frozen) == frozen
+    body = {key: value for key, value in frozen.items() if key != "snapshot_sha256"}
+    assert frozen["snapshot_sha256"] == loupe_digest(body)
+    assert all(len(r["source_sha256"]) == 64 for r in frozen["records"])
+
+
+def test_the_loupe_backend_exports_gated_proposals(tmp_path: Any) -> None:
+    import json
+
+    from amber.loupe import LoupeReviewBackend
+
+    backend = LoupeReviewBackend(
+        tmp_path, REVIEW.model_copy(update={"accepts": frozenset({"source_text", "derived_text"})}),
+        name="amber-claims", project_configuration=PROJECT, synthetic=True,
+        proposal_streams=["corrections"], producer="model:teacher@1", clock=lambda: NOW,
+    )  # fmt: skip
+    first, second = CASES
+    proposed = _note_result(first[0].case_id, present=True)
+    receipt = backend.export_cases(
+        [(first[0], first[1], proposed), (second[0], second[1], None)],
+        variables=fx.NOTE_VARIABLES, streams=["corrections", "a", "b"], gate=GATE, data=DATA,
+    )  # fmt: skip
+    assert [d.payload for d in receipt.decisions] == ["source_text", "derived_text"]
+    batch = tmp_path / receipt.batch_id
+    frozen = json.loads((batch / "source.json").read_text())
+    proposals = json.loads((batch / "proposals.json").read_text())
+    assert proposals["source_sha256"] == frozen["snapshot_sha256"]
+    assert proposals["streams"] == ["corrections"] and proposals["configuration_frozen"] is False
+    assert list(proposals["records"]) == [fx.SOURCE.source_id]
+    assert "proposal" not in json.dumps(frozen["records"])
+
+    no_derived = LoupeReviewBackend(
+        tmp_path / "refused", REVIEW, name="amber-claims", project_configuration=PROJECT,
+        synthetic=True, proposal_streams=["corrections"], producer="model:teacher@1",
+    )  # fmt: skip
+    with pytest.raises(PolicyViolation):
+        no_derived.export_cases(
+            [(first[0], first[1], _note_result(first[0].case_id, present=True))],
+            variables=fx.NOTE_VARIABLES, streams=["corrections", "a"], gate=GATE, data=DATA,
+        )  # fmt: skip
+    assert not (tmp_path / "refused").exists() or not any((tmp_path / "refused").iterdir())
