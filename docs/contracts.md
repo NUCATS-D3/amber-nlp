@@ -526,14 +526,25 @@ sensitivity. They ship with the core; `amber[reference]` installs what all of th
 - **Checks**: implementation cases run against a consumer's declared targets and fail with
   source-free codes. Implemented today for `Store` (ANN-05, ANN-16, ANN-17, IFC-07, IFC-11,
   IFC-12), `Provider` (IFC-04, IFC-12), `Extractor` (IFC-02, IFC-03, IFC-12, IFC-13,
-  POL-08, MEN-11; the kit supplies scripted providers to the consumer's extractor factory and,
+  POL-08, POL-15, MEN-11; POL-15 requires each model call to follow a permitting
+  `source_text` decision for that model's destination; the kit supplies scripted providers to the consumer's extractor factory and,
   for capability fixtures, answers every schema request with a minimal instance whose strings
   are the known span), `Scorer` (IFC-09, ANN-11,
   ANN-12, ANN-17), `Labeler` (IFC-06), `ReviewBackend` (IFC-10; the factory returns
   the backend and a callable that completes the reviews for a receipt), and `Rule` (VAR-09,
   IFC-05; the factory returns the rule, a result with its derivations, and the variable set;
   purity runs `apply` twice and once more with the common clock and randomness entry points
-  raising). A case
+  raising), `Exporter` (IFC-08, POL-15; the factory takes an empty directory and keyword
+  `cases`, `sources`, `variables`, and `run_id` and returns an exporter for them; the kit
+  exports one fixture result through a recording gate, then again refusing one payload kind,
+  and checks that every file was gated, the refused export wrote nothing and reported every
+  decision, the receipt matches the written files (for amber's formats, the manifest's
+  content and file hashes), `amber-labels/0.1` carries no text payloads, and each file's
+  decision was made for its own payload kind and the export destination), and `PolicyGate`
+  (IFC-08; a zero-argument factory; `check` names the transfer asked about and refuses a
+  payload the destination does not accept without raising, and `require` raises
+  `PolicyViolation` carrying that refusal; a declared gate also backs the exporter's
+  permitted run). A case
   shared by several targets records which declared targets failed it, so `conforms(target)`
   is per target, and is reported `passed` only when every declared target it applies to was
   checked. A store rejects by raising; the kit does not depend on its exception types.
