@@ -32,3 +32,4 @@ notebooks/**/__marimo__/
 
 # env vars
 .envrc
+/mutation-report.json
