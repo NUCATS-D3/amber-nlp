@@ -304,7 +304,8 @@ complete the case.
   `missing_field_evidence`, `invalid_outcome`, `source_identity_mismatch`,
   `claim_mention_required`, `invalid_mention_type`, ...). Patient-level variables are refused
   (`unsupported_variable_level`). The inventory lists each variable's level, mention types,
-  and required attributes.
+  and required attributes, and names `amber_mentions` in `state_keys`: result keys loupe keeps
+  with the stored annotation so the editor can reload them.
 
 Export and import (`amber.loupe.reference`):
 

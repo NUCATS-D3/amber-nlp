@@ -382,3 +382,7 @@ def test_a_mention_result_becomes_a_request_that_rebuilds_it() -> None:
     assert sorted((c.variable, c.value["present"]) for c in again.claims) == sorted(
         (c.variable, c.value["present"]) for c in loaded.claims
     )
+
+
+def test_the_inventory_names_the_editor_state_loupe_keeps() -> None:
+    assert ADAPTER.inventory["state_keys"] == ["amber_mentions"]
