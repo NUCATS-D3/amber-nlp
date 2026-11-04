@@ -622,6 +622,17 @@ accepted.
   `variable_set_mismatch`); loading checks structure, grounding, and tiers, and with the stored
   `events` per case each Example must also equal the replay of its events, which is what pins
   reviewed values.
+- `amber.mlflow_ext.deployment`: any `Extractor` as a pyfunc model. `model_config(*,
+  extractor, variables, sensitivity, policy_version, gate=None, dataset_manifest_hash=None)`
+  names a zero-argument extractor factory, the `VariableSet`, and optionally a gate factory
+  by import path (no code is pickled by value) and is checked by loading it once;
+  `save_extractor_model` and `log_extractor_model` write it with a fixed signature (`case`
+  and `source` JSON columns, a `run_id` param). Loading refuses an extractor missing a
+  capability the variable set needs (`mentions` for mention-level, `note_claims` for
+  note-level; patient-level sets are refused) or a destination the gate does not permit
+  `source_text` at the configured sensitivity. Predicting refuses cases of another
+  sensitivity or variable set and reloads every `CaseResult` (returned as JSON) at amber's
+  boundary. `DeploymentError` codes are source-free.
 
 ## Planned contract work
 
