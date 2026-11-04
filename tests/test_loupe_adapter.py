@@ -12,9 +12,23 @@ import pytest
 from amber.cases import load_case_result
 from amber.conformance import fixtures as fx
 from amber.loupe import SCHEMA_VERSION, AdapterError, AmberClaimsAdapter
+from amber.schemas import Variable, VariableSet
 
 TEXT = fx.TEXT
 CONFIG_SHA = "c" * 64
+PATIENT_VARIABLES = VariableSet.create(
+    name="conformance_patient",
+    version="1.0.0",
+    variables=(
+        Variable(
+            name="finding",
+            level="patient",
+            answer_model=fx.FindingAnswer,
+            instructions="Invented: is the invented finding present for the patient?",
+            final=True,
+        ),
+    ),
+)
 
 
 def _configuration(**changes: Any) -> dict[str, Any]:
@@ -227,8 +241,8 @@ def test_configuration_is_checked() -> None:
     with pytest.raises(AdapterError, match="unsupported_variable_level"):
         AmberClaimsAdapter(
             _configuration(
-                variable_set="amber.conformance.fixtures:VARIABLES",
-                variable_set_ref=fx.VARIABLES.schema_ref,
+                variable_set="tests.test_loupe_adapter:PATIENT_VARIABLES",
+                variable_set_ref=PATIENT_VARIABLES.schema_ref,
             )
         )
     with pytest.raises(AdapterError, match="variable_set_unavailable"):

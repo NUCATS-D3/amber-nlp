@@ -179,14 +179,45 @@ PROPOSALS_FORMAT = "loupe-proposals-v1"
 
 
 def proposal_request(result: CaseResult, *, reviewer: str) -> dict[str, Any] | None:
-    """The claim-mode request that reproduces a note-level result, or None when any final
-    variable failed (failed runs are never proposals)."""
+    """The claim-mode request that reproduces a result, or None when any final variable failed
+    (failed runs are never proposals) or a mention has fragments (the request cannot express
+    them). Each live reading becomes a request mention keyed by its reading ID, with its label,
+    value, and attributes; units and concepts are not carried."""
     evidence = {item.evidence_id: item for item in result.evidence}
     inclusions = {key: item for key, item in evidence.items() if isinstance(item, Inclusion)}
     claims = {claim.claim_id: claim for claim in result.claims}
+    spans_by_id = {mention.mention_id: mention for mention in result.mentions}
 
-    def span(item: Inclusion) -> dict[str, Any]:
+    def span(item: Inclusion | Mention) -> dict[str, Any]:
         return {"start": item.start, "end": item.end, "quote": item.quote}
+
+    mentions: list[dict[str, Any]] = []
+    for reading in result.mention_readings:
+        if reading.status == "rejected":
+            continue
+        mention = spans_by_id[reading.mention_id]
+        if mention.fragments:
+            return None
+        entry_mention: dict[str, Any] = {
+            "key": reading.reading_id,
+            **span(mention),
+            "mention_type": mention.mention_type,
+        }
+        if reading.label is not None:
+            entry_mention["label"] = reading.label
+        if reading.value is not None:
+            entry_mention["value"] = reading.value
+        attributes: dict[str, Any] = {}
+        for category, attribute in sorted(reading.attributes.items()):
+            attributes[category] = {"value": attribute.value}
+            for role, evidence_id in (
+                ("cue", attribute.evidence_id),
+                ("scope", attribute.scope_evidence_id),
+            ):
+                if evidence_id in inclusions:
+                    attributes[category][role] = span(inclusions[evidence_id])
+        entry_mention["attributes"] = attributes
+        mentions.append(entry_mention)
 
     variables: dict[str, Any] = {}
     for name, item in sorted(result.variable_outcomes.items()):
@@ -230,16 +261,23 @@ def proposal_request(result: CaseResult, *, reviewer: str) -> dict[str, Any] | N
                     and edge.evidence_id in order
                 ):
                     fields.setdefault(edge.role, []).append(order.index(edge.evidence_id))
+            reading_id = claims[claim_id].reading_id
             built.append(
                 {
                     "value": json.loads(json.dumps(claims[claim_id].value)),
                     "rationale": rationale,
+                    **({"mention": reading_id} if reading_id is not None else {}),
                     "evidence": [span(inclusions[i]) for i in order],
                     "fields": {k: sorted(set(v)) for k, v in sorted(fields.items())},
                 }
             )
         variables[name] = {"status": "answered", "claims": built}
-    return {"reviewer": reviewer, "whole_note_complete": True, "variables": variables}
+    return {
+        "reviewer": reviewer,
+        "whole_note_complete": True,
+        **({"mentions": mentions} if mentions else {}),
+        "variables": variables,
+    }
 
 
 def proposals_file(
@@ -372,6 +410,44 @@ def _claim_events(log: _Log, result: CaseResult, actor: str, stream: str | None)
                 "edges": [edge.model_dump(mode="json") for edge in edges],
             },
         )
+
+
+def _mention_events(
+    log: _Log, result: CaseResult, actor: str, stream: str | None, *, verify: bool
+) -> None:
+    """A review's mentions, its attribute cue and scope spans, and its readings; with one
+    stream the reviewer verifies its own readings (no adjudicator will)."""
+    for mention in result.mentions:
+        log.add("mention.create", actor, "reviewer", stream=stream, target_id=mention.mention_id)
+    cues = sorted(
+        {
+            evidence_id
+            for reading in result.mention_readings
+            for attribute in reading.attributes.values()
+            for evidence_id in (attribute.evidence_id, attribute.scope_evidence_id)
+            if evidence_id is not None
+        }
+    )
+    for evidence_id in cues:
+        log.add("evidence.cite", actor, "reviewer", stream=stream, target_id=evidence_id)
+    for reading in result.mention_readings:
+        log.add(
+            "reading.create",
+            actor,
+            "reviewer",
+            stream=stream,
+            target_id=reading.reading_id,
+            after={"reading": reading.model_dump(mode="json")},
+        )
+        if verify:
+            log.add(
+                "reading.set_status",
+                actor,
+                "reviewer",
+                stream=stream,
+                target_id=reading.reading_id,
+                after={"status": "verified"},
+            )
 
 
 def _outcome_events(
@@ -517,7 +593,7 @@ def _import_record(
     variables: VariableSet,
     streams: list[str],
     publication: str,
-) -> tuple[list[AnnotationEvent], list[Inclusion], Example | RecordDiagnostic]:
+) -> tuple[list[AnnotationEvent], list[Inclusion | Mention], Example | RecordDiagnostic]:
     status = record.get("status")
     adjudication = record.get("adjudication")
     if status not in ("accepted", "unresolved", "excluded") or not isinstance(adjudication, dict):
@@ -536,7 +612,7 @@ def _import_record(
         version="1",
     )
     log = _Log(case, f"{publication}\x00{case.case_id}", stamp)
-    spans: list[Inclusion] = []
+    spans: list[Inclusion | Mention] = []
     reviews: dict[str, tuple[str, CaseResult]] = {}
     for review in adjudication.get("reviews", []):
         if not isinstance(review, dict) or review.get("stream") not in streams:
@@ -555,6 +631,7 @@ def _import_record(
         stream = review["stream"] if len(streams) > 1 else None
         timing = _review_timing(review.get("timing"))
         spans.extend(item for item in loaded.evidence if isinstance(item, Inclusion))
+        spans.extend(loaded.mentions)
         if timing is not None:
             log.add(
                 "review.open",
@@ -564,6 +641,7 @@ def _import_record(
                 after={"opened_at": timing["opened_at"]},
                 external_ref=review["submission_id"],
             )
+        _mention_events(log, loaded, actor, stream, verify=len(streams) == 1)
         _claim_events(log, loaded, actor, stream)
         _outcome_events(log, loaded, actor, "reviewer", stream)
         log.add(
@@ -608,6 +686,19 @@ def _import_record(
                         after={"status": "rejected"},
                         reason="Not the selected review.",
                     )
+        # The selected review's readings become gold (gold claims rely on reviewed readings);
+        # the others' are rejected with their claims.
+        for _, (_, review_result) in sorted(reviews.items()):
+            chosen_review = review_result is selected
+            for reading in review_result.mention_readings:
+                log.add(
+                    "adjudication.resolve",
+                    adjudicator,
+                    "adjudicator",
+                    target_id=reading.reading_id,
+                    after={"status": "gold" if chosen_review else "rejected"},
+                    reason=None if chosen_review else "Not the selected review.",
+                )
         _outcome_events(log, selected, adjudicator, "adjudicator", None)
         log.add(
             "adjudication.resolve",
