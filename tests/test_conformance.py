@@ -177,8 +177,8 @@ def test_catalog_matches_the_design_document() -> None:
         for case_id, level, applies, body in rows
     ]
     assert [(c.id, c.level, c.targets, c.text) for c in CATALOG] == expected
-    assert len(CATALOG) == 101
-    assert len(CASES) == 101
+    assert len(CATALOG) == 100
+    assert len(CASES) == 100
     assert CATALOG_VERSION == "0.1"
 
 
@@ -251,8 +251,8 @@ def test_the_references_pass_every_implemented_case() -> None:
     assert report.counts() == {
         "passed": 21,
         "failed": 0,
-        "not_applicable": 101 - 21 - 2,
-        "not_implemented": 2,
+        "not_applicable": 100 - 21,
+        "not_implemented": 0,
     }
     assert report.targets == (
         "Exporter",
@@ -266,8 +266,9 @@ def test_the_references_pass_every_implemented_case() -> None:
         "SourceResolver",
         "Store",
     )
-    # ANN-13 and ANN-14 are loupe-bridge cases (amber-u4c.5).
-    assert statuses["ANN-13"] == statuses["ANN-14"] == ("not_implemented", None)
+    # ANN-13 is core, covered by amber.loupe's own tests; ANN-14 is retired (amber-u4c.5).
+    assert statuses["ANN-13"] == ("not_applicable", None)
+    assert "ANN-14" not in statuses
     assert report.catalog_revision == catalog_revision()
     assert report.fixtures_ref == fx.fixtures_ref()
 

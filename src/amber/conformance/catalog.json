@@ -431,19 +431,9 @@
   },
   {
    "id": "ANN-13",
-   "level": "implementation",
-   "targets": [
-    "ReviewBackend"
-   ],
+   "level": "core",
+   "targets": [],
    "text": "loupe mapping fixtures: accepted → adjudicated Example; unresolved → no Example, events retained; excluded → no Example; no-mentions confirmation → `not_mentioned`; unsubmitted → `insufficient_evidence`."
-  },
-  {
-   "id": "ANN-14",
-   "level": "implementation",
-   "targets": [
-    "ReviewBackend"
-   ],
-   "text": "Per-change events derived from a revision diff and a single full-state `review.submit` event replay to the same projection."
   },
   {
    "id": "ANN-15",

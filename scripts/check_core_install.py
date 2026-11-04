@@ -179,7 +179,7 @@ def main() -> None:
             targets={"Store": InMemoryStore, "SourceResolver": InMemoryResolver},
         )
     )
-    assert len(report.cases) == 101 and report.counts()["failed"] == 0
+    assert len(report.cases) == 100 and report.counts()["failed"] == 0
     assert report.counts()["passed"] > 0
     try:
         importlib.import_module("amber.conformance.plugin")
