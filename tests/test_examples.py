@@ -650,3 +650,141 @@ def test_mint_example_assigns_the_content_id() -> None:
     edited = mint_example(payload, case=CASE, source=SOURCE, variables=VARIABLES)
     assert edited.example_id != example.example_id
     assert _load(json.loads(edited.model_dump_json())) == edited
+
+
+# Loading edges found by mutation testing (amber-u4c.10) -------------------------------------
+
+
+def test_references_may_be_given_as_models() -> None:
+    from amber.schemas import CaseOutcome, VariableReference
+
+    example = _load(Fixture().payload())
+    payload = json.loads(example.model_dump_json())
+    as_models = {
+        name: VariableReference.model_validate(reference)
+        for name, reference in payload["references"].items()
+    }
+    assert _load({**payload, "references": as_models}) == example
+    with_outcome = {
+        name: {**reference, "outcome": CaseOutcome.model_validate(reference["outcome"])}
+        for name, reference in payload["references"].items()
+    }
+    assert _load({**payload, "references": with_outcome}) == example
+
+
+def test_record_lists_and_final_ids_must_be_lists() -> None:
+    payload = json.loads(_load(Fixture().payload()).model_dump_json())
+    _assert_code("invalid_schema", _load, {**payload, "claims": tuple(payload["claims"])})
+    reference = payload["references"]["summary"]
+    broken = {**reference, "final_claim_ids": reference["final_claim_ids"][0]}
+    _assert_code(
+        "invalid_schema",
+        _load,
+        {**payload, "references": {**payload["references"], "summary": broken}},
+    )
+
+
+def test_an_example_loads_only_for_its_patient() -> None:
+    payload = Fixture().payload()
+    other = CASE.model_copy(update={"patient_id": "another-patient"})
+    with pytest.raises(ExampleValidationError):
+        _load(payload, case=other)
+
+
+def test_a_label_record_names_its_variable_by_string() -> None:
+    _assert_code("invalid_context", load_label_record, _label(variable=["summary"]), case=CASE,
+                 variables=VARIABLES)  # fmt: skip
+
+
+def test_a_human_supporting_claim_that_no_reference_names_final_may_be_verified() -> None:
+    """amber-u4c.10: a claim served only through another reference's closure is held to the
+    supporting standard (gold or verified), not the final one."""
+    fixture = Fixture()
+    payload = fixture.payload(statuses={fixture.finding: "verified"})
+    unanswered = fixture.reference(
+        "finding",
+        final_claim_ids=[],
+        outcome={
+            **payload["references"]["finding"]["outcome"],
+            "status": "not_mentioned",
+            "reason": "Invented: reviewed, nothing at mention level.",
+            "reviewed_source_ids": [SOURCE.source_id],
+        },
+    )
+    payload = _keyed({**payload, "references": {**payload["references"], "finding": unanswered}})
+    example = _load(payload)
+    statuses = {claim.claim_id: claim.status for claim in example.claims}
+    assert statuses == {fixture.finding: "verified", fixture.summary: "gold"}
+
+
+def _edit_reference(**changes: Any) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    def edit(payload: dict[str, Any]) -> dict[str, Any]:
+        reference = {**payload["references"]["summary"], **changes}
+        return {**payload, "references": {**payload["references"], "summary": reference}}
+
+    return edit
+
+
+def _edit_outcome(**changes: Any) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    def edit(payload: dict[str, Any]) -> dict[str, Any]:
+        outcome = {**payload["references"]["summary"]["outcome"], **changes}
+        return _edit_reference(outcome=outcome)(payload)
+
+    return edit
+
+
+@pytest.mark.parametrize(
+    ("edit", "context", "code"),
+    [
+        (lambda p: [p], {}, "invalid_schema"),
+        (lambda p: {**p, 1: "x"}, {}, "invalid_schema"),
+        (lambda p: {**p, "case_id": 1}, {}, "invalid_context"),
+        (lambda p: {**p, "example_id": 1}, {}, "invalid_schema"),
+        (lambda p: {**p, "created_at": "not a time"}, {}, "invalid_schema"),
+        (_edit_reference(extra=1), {}, "invalid_schema"),
+        (_edit_reference(variable="finding"), {}, "invalid_context"),
+        (_edit_reference(outcome={"status": "answered"}), {}, "invalid_schema"),
+        (_edit_outcome(reviewed_source_ids=["another-source"]), {}, "invalid_context"),
+        (
+            _edit_outcome(provenance={**make_provenance().model_dump(mode="json"),
+                                      "sensitivity": "phi"}),
+            {},
+            "invalid_context",
+        ),
+        (lambda p: p, {"case": "not a case"}, "invalid_context"),
+        (lambda p: p, {"variables": "not a set"}, "invalid_context"),
+        (lambda p: p, {"case": CASE.model_copy(update={"task": "other"})}, "invalid_context"),
+    ],
+    ids=[
+        "not_a_mapping", "non_string_key", "case_id_type", "example_id_type", "created_at",
+        "reference_extra_key", "reference_variable", "reference_outcome", "reviewed_elsewhere",
+        "outcome_sensitivity", "case_type", "variables_type", "case_task",
+    ],
+)  # fmt: skip
+def test_malformed_examples_name_their_code(edit: Any, context: dict[str, Any], code: str) -> None:
+    """amber-u4c.10: each refusal names its code."""
+    _assert_code(code, _load, edit(Fixture().payload()), **context)
+
+
+def test_label_values_are_normalized_to_json() -> None:
+    """amber-u4c.10: a label's value is stored in its answer model's JSON form."""
+    from datetime import date
+
+    class DatedAnswer(AnswerModel):
+        on: date
+
+    dated = VariableSet.create(
+        name=VARIABLES.name,
+        version="1.0.0",
+        variables=(
+            Variable(name="summary", level="note", answer_model=DatedAnswer,
+                     instructions="Invented.", final=True),
+        ),
+    )  # fmt: skip
+    record = load_label_record(
+        _label(variable_set_ref=dated.schema_ref, value={"on": "2026-01-02"}),
+        case=CASE,
+        variables=dated,
+    )
+    assert record.value == {"on": "2026-01-02"}
+    assert DatedAnswer.model_validate(record.value).on == date(2026, 1, 2)
