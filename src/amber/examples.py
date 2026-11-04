@@ -9,7 +9,7 @@ snapshot those events produce.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any, Literal, NoReturn, TypeAlias
+from typing import Any, Literal, NoReturn, TypeAlias, get_args
 
 from pydantic import ValidationError
 
@@ -57,6 +57,9 @@ class ExampleValidationError(ValueError):
     """Stable annotated-data diagnostic that does not render source-bearing inputs."""
 
     def __init__(self, code: ExampleValidationCode) -> None:
+        # Codes are a closed, documented set; an unknown one is a programming error.
+        if code not in get_args(ExampleValidationCode):
+            raise TypeError("unknown ExampleValidationError code")
         self.code = code
         super().__init__(code)
 

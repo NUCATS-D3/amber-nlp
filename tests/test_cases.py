@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import warnings
+from collections.abc import Iterator, Mapping
 from copy import deepcopy
 from typing import Any
 
@@ -644,3 +645,69 @@ def test_case_dataset_is_nonblank_when_given(dataset: str) -> None:
     assert Case.model_validate({**case.model_dump(), "dataset": "synthetic-set"}).dataset
     with pytest.raises(ValidationError):
         Case.model_validate({**case.model_dump(), "dataset": dataset})
+
+
+def test_duplicate_final_claim_ids_are_refused() -> None:
+    """amber-u4c.9: well-formed but repeated IDs are invalid_schema, not deduplicated."""
+    case, graph, inclusion = _setup()
+    claim_id = _commit(graph, inclusion)
+    with pytest.raises(CaseValidationError, match="^invalid_schema$"):
+        create_case_result(
+            case,
+            graph=graph,
+            run_id=SYNTHETIC_RUN_ID,
+            outcome=_outcome("answered"),
+            final_claim_ids=[claim_id, claim_id],
+        )
+
+
+def test_a_single_outcome_needs_its_final_claim_ids() -> None:
+    """amber-u4c.9: the one-final-variable shorthand needs both outcome and final_claim_ids."""
+    case, graph, inclusion = _setup()
+    _commit(graph, inclusion)
+    with pytest.raises(CaseValidationError, match="^invalid_outcome$"):
+        create_case_result(case, graph=graph, run_id=SYNTHETIC_RUN_ID, outcome=_outcome("answered"))
+
+
+class _Unreadable(Mapping[str, Any]):
+    """A mapping that cannot be copied."""
+
+    def __init__(self, keys: list[str]) -> None:
+        self._keys = keys
+
+    def __getitem__(self, key: str) -> Any:
+        raise TypeError("unreadable")
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._keys)
+
+    def __len__(self) -> int:
+        return len(self._keys)
+
+
+def test_results_need_a_graph_and_copyable_mappings() -> None:
+    """amber-u4c.9: each refusal names its code."""
+    case, graph, inclusion = _setup()
+    claim_id = _commit(graph, inclusion)
+    with pytest.raises(CaseValidationError, match="^invalid_context$"):
+        create_case_result(
+            case,
+            graph="not a graph",  # type: ignore[arg-type]
+            run_id=SYNTHETIC_RUN_ID,
+            outcome=_outcome("answered"),
+            final_claim_ids=[claim_id],
+        )
+    with pytest.raises(CaseValidationError, match="^invalid_schema$"):
+        create_case_result(
+            case,
+            graph=graph,
+            run_id=SYNTHETIC_RUN_ID,
+            variable_outcomes=_Unreadable([graph.task.name]),  # type: ignore[arg-type]
+        )
+    result = create_case_result(
+        case, graph=graph, run_id=SYNTHETIC_RUN_ID, outcome=_outcome("answered"),
+        final_claim_ids=[claim_id],
+    )  # fmt: skip
+    keys = list(result.model_dump(mode="json"))
+    with pytest.raises(CaseValidationError, match="^invalid_schema$"):
+        _load(_Unreadable(keys), case, graph)  # type: ignore[arg-type]
