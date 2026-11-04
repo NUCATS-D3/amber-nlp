@@ -262,7 +262,7 @@ Pure data and functions; no I/O, credentials, or clock (contract v0.1 §1).
 ## loupe adapter (`amber.loupe`, experimental)
 
 `AmberClaimsAdapter` is loupe's `AnnotationAdapter` for claim and outcome review of
-note-level variables, loaded by loupe from `"adapter": "amber.loupe:AmberClaimsAdapter"`;
+note- and mention-level variables, loaded by loupe from `"adapter": "amber.loupe:AmberClaimsAdapter"`;
 amber never imports loupe. Its `project_configuration` names the variable set by import path
 and pins its `schema_ref`, and gives the dataset, manifest hash, sensitivity, policy version,
 and the review destination and zone stamped on provenance. Each loupe record must be the
@@ -277,6 +277,17 @@ complete the case.
   evidence) and a reason; `failed` is never a review outcome. Every quote must equal the note
   text at its offsets, and the result is built only through `exact_quote`, `commit_claim`,
   `no_claim`, and `create_case_result`, with `human:` provenance and the review destination.
+- Mention-level variables: the request's `mentions` list gives each mention a key, offsets
+  and quote, a `mention_type` some variable declares, an optional reading `label` and
+  `value`, and `attributes` (value, optional `cue` and `scope` spans). Each becomes a
+  grounded `Mention` (`exact_mention`) registered with one reading by the reviewer; cue and
+  scope spans are grounded inclusions. A mention-level claim names its mention's key, relies
+  on that reading, and cites the mention's position and every attribute cue (as
+  `attribute:<category>`) besides its own evidence, which may be empty. Required attributes,
+  permitted values, and cue evidence are enforced by the graph; mention-level variables are
+  never `conflicting_evidence`. The result keeps the normalized mentions as `amber_mentions`.
+  Mentions join the ID seed only when present, so note-only results rebuild as before.
+  Fragmented mentions are not supported.
 - IDs come from a seed over the record, configuration, reviewer, and normalized request, and
   provenance carries a fixed time, so the same request always builds the same bytes (loupe
   rebuilds at publication).
@@ -288,8 +299,10 @@ complete the case.
   identical bytes and its `CaseResult` loads at amber's boundary. `binding()` hashes the amber
   version, adapter version, variable set, and manifest hash.
 - Errors are `AdapterError` with a source-free code (`quote_mismatch`, `invalid_span`,
-  `missing_field_evidence`, `invalid_outcome`, `source_identity_mismatch`, ...).
-  Mention-level variables are refused (`unsupported_variable_level`).
+  `missing_field_evidence`, `invalid_outcome`, `source_identity_mismatch`,
+  `claim_mention_required`, `invalid_mention_type`, ...). Patient-level variables are refused
+  (`unsupported_variable_level`). The inventory lists each variable's level, mention types,
+  and required attributes.
 
 Export and import (`amber.loupe.reference`):
 
@@ -307,7 +320,10 @@ Export and import (`amber.loupe.reference`):
   A review that loupe timed is preceded by `review.open` with `after.opened_at`, and its
   `review.submit` carries `submitted_at`, `active_seconds`, `idle_seconds`, `focus_changes`,
   and loupe's `received_at` in `after` (malformed timing: `invalid_timing`). Event `at` stays
-  ordinal; the editor's times are self-reported.
+  ordinal; the editor's times are self-reported. A review's mentions come first:
+  `mention.create`, `evidence.cite` for attribute cue and scope spans, and `reading.create`
+  (with one stream the reviewer then verifies each reading; with several the adjudicator
+  makes the selected review's readings `gold` and rejects the others').
   With one stream the reviewer sets `single_review`; otherwise the adjudicator rejects the
   unselected reviews' claims, sets the selected outcomes, resolves with the publication hash
   as `external_ref`, and sets `adjudicated`. `unresolved` and `excluded` records are resolved
@@ -317,10 +333,11 @@ Export and import (`amber.loupe.reference`):
   source-free.
 - `freeze_manifest` returns a manifest in loupe's frozen form (`loupe-source-v1`, per-record
   `source_sha256`, `snapshot_sha256`); loupe's tests check it matches loupe's `freeze_source`.
-- `proposal_request(result, *, reviewer)` turns a note-level `CaseResult` into the claim-mode
-  request that reproduces it (final claims with their rationale, evidence offsets, and field
-  links; non-answers with reasons; conflicts with their evidence), or `None` when any final
-  variable failed. `proposals_file(frozen, results, *, producer, streams,
+- `proposal_request(result, *, reviewer)` turns a `CaseResult` into the claim-mode request
+  that reproduces it (final claims with their rationale, evidence offsets, and field links;
+  each live reading as a request mention keyed by its reading ID, with label, value, and
+  attributes, but not units or concepts; non-answers with reasons; conflicts with their
+  evidence), or `None` when any final variable failed or a mention has fragments. `proposals_file(frozen, results, *, producer, streams,
   configuration_frozen, gate, data, destination, now)` decides `derived_text` for the review
   destination and builds a `loupe-proposals-v1` file of adapter results keyed by record ID,
   bound to the frozen snapshot hash (loupe validates each one and suppresses test-split
