@@ -70,13 +70,13 @@ def _value(report: Any, name: str) -> float | None:
 def _protocol_example() -> tuple[list[str], list[Gold], list[Prediction]]:
     eligible = [f"note-{index}" for index in range(1, 11)]
     gold = [
-        *(_gold(eligible[index], True) for index in range(0, 4)),
+        *(_gold(eligible[index], True) for index in range(4)),
         *(_gold(eligible[index], False) for index in range(4, 8)),
         _gold(eligible[8], None),
         _gold(eligible[9], None),
     ]
     predicted = [
-        *(_answer(eligible[index], True) for index in range(0, 3)),
+        *(_answer(eligible[index], True) for index in range(3)),
         *(_answer(eligible[index], False) for index in range(4, 7)),
         *(_abstain(eligible[index]) for index in (3, 7, 8, 9)),
     ]
