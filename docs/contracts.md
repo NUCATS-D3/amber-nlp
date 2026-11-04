@@ -311,8 +311,19 @@ Export and import (`amber.loupe.reference`):
   per case and event times are ordinal, so imports are reproducible. Returns
   `ImportedReference(examples, events, spans, diagnostics)`; `ReferenceError` codes are
   source-free.
-- `LoupeReviewBackend` implements `ReviewBackend` over these files: `export_cases` writes
-  `source.json` into a batch directory (proposals are refused until loupe supports them), and
+- `freeze_manifest` returns a manifest in loupe's frozen form (`loupe-source-v1`, per-record
+  `source_sha256`, `snapshot_sha256`); loupe's tests check it matches loupe's `freeze_source`.
+- `proposal_request(result, *, reviewer)` turns a note-level `CaseResult` into the claim-mode
+  request that reproduces it (final claims with their rationale, evidence offsets, and field
+  links; non-answers with reasons; conflicts with their evidence), or `None` when any final
+  variable failed. `proposals_file(frozen, results, *, producer, streams,
+  configuration_frozen, gate, data, destination, now)` decides `derived_text` for the review
+  destination and builds a `loupe-proposals-v1` file of adapter results keyed by record ID,
+  bound to the frozen snapshot hash (loupe validates each one and suppresses test-split
+  proposals until the configuration is frozen).
+- `LoupeReviewBackend` implements `ReviewBackend` over these files: `export_cases` writes the
+  frozen `source.json` into a batch directory and, when cases carry results, `proposals.json`
+  for `loupe setup --proposals` (it needs `proposal_streams` and a `producer`); and
   `import_references` reads the publication's `reference.json` placed beside it.
 
 ## Rules (`amber.rules`, experimental)
