@@ -27,7 +27,7 @@ from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from amber.schemas import CaseResult, Example, LabelRecord, ReferenceTier
+from amber.schemas import AnnotationEvent, CaseResult, Example, LabelRecord, ReferenceTier
 
 GateStatus: TypeAlias = Literal["met", "unmet", "inconclusive"]
 BOOTSTRAP_SEED = 20260915
@@ -237,6 +237,60 @@ def binary_measures(counts: BinaryCounts, *, cost: float | None = None) -> dict[
             name="mean_cost", kind="proportion", numerator=cost, denominator=counts.N
         )
     return measures
+
+
+# Expert effort -----------------------------------------------------------------------------
+
+
+class ReviewEffort(BaseModel):
+    """Review time recorded on ``review.submit`` events (loupe's timing, imported by
+    ``amber.loupe.import_reference``). ``timed_reviews < reviews`` means some reviews carry no
+    timing, so the recorded minutes are incomplete."""
+
+    model_config = _FROZEN
+
+    reviews: int
+    timed_reviews: int
+    active_seconds: float
+    idle_seconds: float
+
+    @property
+    def complete(self) -> bool:
+        return self.timed_reviews == self.reviews
+
+
+def review_effort(events: Iterable[AnnotationEvent]) -> ReviewEffort:
+    """Sum active and idle review time over the ``review.submit`` events in ``events``."""
+    submits = [event for event in events if event.action == "review.submit"]
+    timed = [
+        event.after
+        for event in submits
+        if event.after is not None and "active_seconds" in event.after
+    ]
+    return ReviewEffort(
+        reviews=len(submits),
+        timed_reviews=len(timed),
+        active_seconds=sum(float(after["active_seconds"]) for after in timed),
+        idle_seconds=sum(float(after["idle_seconds"]) for after in timed),
+    )
+
+
+def expert_minutes_per_accepted_case(
+    effort: ReviewEffort, *, accepted_cases: int, other_minutes: float = 0.0
+) -> Measure:
+    """The protocol's ``T / K``: recorded active review minutes plus ``other_minutes`` (declared
+    setup, prompt development, and other attributed effort) over accepted cases. Undefined when
+    any review is untimed (a missing measurement is never zero) or there are no accepted cases.
+    """
+    if other_minutes < 0 or not math.isfinite(other_minutes):
+        raise ValueError("other_minutes must be a finite non-negative number")
+    return Measure(
+        name="expert_minutes_per_accepted_case",
+        kind="proportion",
+        numerator=effort.active_seconds / 60 + other_minutes,
+        denominator=accepted_cases,
+        defined=effort.complete,
+    )
 
 
 # Intervals ---------------------------------------------------------------------------------

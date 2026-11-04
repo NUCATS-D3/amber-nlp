@@ -304,6 +304,10 @@ Export and import (`amber.loupe.reference`):
   review is rebuilt by the adapter and reloaded at amber's boundary, so quotes are regrounded
   and tampered values, offsets, or failed outcomes are refused. Reviews become reviewer events
   in their streams (claims with support, outcomes, `review.submit` with the submission ID).
+  A review that loupe timed is preceded by `review.open` with `after.opened_at`, and its
+  `review.submit` carries `submitted_at`, `active_seconds`, `idle_seconds`, `focus_changes`,
+  and loupe's `received_at` in `after` (malformed timing: `invalid_timing`). Event `at` stays
+  ordinal; the editor's times are self-reported.
   With one stream the reviewer sets `single_review`; otherwise the adjudicator rejects the
   unselected reviews' claims, sets the selected outcomes, resolves with the publication hash
   as `external_ref`, and sets `adjudicated`. `unresolved` and `excluded` records are resolved
@@ -557,6 +561,13 @@ Evidence measures are inconclusive against label-only references. The overall st
 attempts. Wilson intervals accompany every defined case-level proportion, and a seeded
 (20260915) case-level bootstrap reports percentile intervals with counts of undefined
 replicates. `gold_from` and `prediction_from` adapt Examples, label records, and results.
+
+Expert effort: `review_effort(events)` sums active and idle seconds over the
+`review.submit` events that carry loupe timing and counts reviews with and without it.
+`expert_minutes_per_accepted_case(effort, *, accepted_cases, other_minutes=0)` is the
+protocol's `T / K`: recorded active minutes plus declared other attributed minutes (setup,
+prompt development) over accepted cases, undefined when any review is untimed or no case is
+accepted.
 
 ## MLflow plugins (`tracking` extra)
 
