@@ -130,7 +130,8 @@ def test_the_registry_keys_rules_by_name_and_version() -> None:
     assert "ajcc_stub@0.1" in REGISTRY
     assert REGISTRY.get("ajcc_stub", "0.1") is RULE
     assert REGISTRY.get("ajcc_stub", "0.2") is None
-    REGISTRY.register(AjccStub())
+    # Re-registering an identical spec is allowed; done on a copy so REGISTRY keeps RULE.
+    Registry([RULE]).register(AjccStub())
     changed = AjccStub()
     changed.spec = RULE.spec.model_copy(update={"defaults": {"M": "M1"}})
     with pytest.raises(RuleRegistrationError, match="rule_version_conflict"):
