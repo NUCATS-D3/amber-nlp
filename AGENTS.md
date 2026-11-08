@@ -23,10 +23,16 @@ tracked in lapidary.
 
 ## Agent hooks
 
-`.claude/settings.json` runs two hooks. After each edit to a Python file under `src/` or `tests/`,
-`post_edit.py` runs Ruff (with fixes) and, under `src/`, mypy, and reports failures. Before you
-stop with changes under `src/` or `tests/`, `stop_gate.py` runs `make lint typecheck test-fast`
-and keeps you working until they pass. Fix what they report; never work around them.
+Two hooks in `.claude/hooks/` check agent work. OpenCode runs them through
+`.opencode/plugins/amber-harness.ts`; Claude Code runs them through `.claude/settings.json`.
+
+- After each edit to a Python file under `src/` or `tests/`, `post_edit.py` runs Ruff (with
+  fixes) and, under `src/`, mypy. Failures are appended to the edit's result.
+- When a top-level session ends a turn with changes under `src/` or `tests/`, `stop_gate.py` runs
+  `make lint typecheck test-fast` (about 45 s). Failures come back as a "Stop gate" message, at
+  most once in a row.
+
+Fix what they report; never work around them.
 
 ## Development skills
 

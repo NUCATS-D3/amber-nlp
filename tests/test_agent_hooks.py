@@ -225,6 +225,15 @@ def test_git_failure_runs_the_gate_anyway(capsys: pytest.CaptureFixture[str]) ->
     assert _makes(runner) == ["lint", "typecheck", "test-fast"]
 
 
+def test_the_opencode_plugin_runs_the_same_scripts() -> None:
+    plugin = (ROOT / ".opencode" / "plugins" / "amber-harness.ts").read_text()
+    assert '".claude", "hooks"' in plugin
+    for script in ("post_edit.py", "stop_gate.py"):
+        assert f'"{script}"' in plugin and (HOOKS / script).is_file()
+    assert "stop_hook_active: active" in plugin
+    assert '"session.execution.succeeded"' in plugin and '"execute.after"' in plugin
+
+
 def test_settings_wire_both_hooks() -> None:
     settings = json.loads((ROOT / ".claude" / "settings.json").read_text())
     hooks = settings["hooks"]
