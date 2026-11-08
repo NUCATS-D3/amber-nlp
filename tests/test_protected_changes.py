@@ -124,3 +124,75 @@ def test_the_label_approves_and_output_names_no_contents(
     output = capsys.readouterr().out
     assert "tests/test_x.py:3" in output and "value == 1" not in output
     assert guard.main([str(diff), "--labels", "documentation, contract-approved"]) == 0
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ".claude/settings.json",
+        ".claude/hooks/stop_gate.py",
+        ".opencode/plugin/harness.ts",
+        "opencode.json",
+        ".pre-commit-config.yaml",
+        ".github/workflows/ci.yml",
+        "Makefile",
+        "scripts/check_protected_changes.py",
+    ],
+)
+def test_harness_files_are_protected(repo: Path, path: str) -> None:
+    (repo / path).parent.mkdir(parents=True, exist_ok=True)
+    (repo / path).write_text("changed\n")
+    assert _found(repo) == [path]
+
+
+@pytest.mark.parametrize(
+    "path", [".claude/settings.local.json", ".claude/skills/x/SKILL.md", "scripts/other.py"]
+)
+def test_neighbouring_files_are_not_protected(repo: Path, path: str) -> None:
+    (repo / path).parent.mkdir(parents=True, exist_ok=True)
+    (repo / path).write_text("changed\n")
+    assert _found(repo) == []
+
+
+def _staged(repo: Path, monkeypatch: pytest.MonkeyPatch, allow: str | None) -> int:
+    _git(repo, "add", "-A")
+    monkeypatch.chdir(repo)
+    if allow is None:
+        monkeypatch.delenv("ALLOW_ORACLE_CHANGE", raising=False)
+    else:
+        monkeypatch.setenv("ALLOW_ORACLE_CHANGE", allow)
+    return guard.main(["--staged"])
+
+
+@pytest.mark.parametrize("allow", [None, "", "0", "true", "yes"])
+def test_staged_protected_changes_need_the_environment_variable(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, allow: str | None
+) -> None:
+    (repo / "src/amber/conformance/catalog.json").write_text('{"x": 1}\n')
+    assert _staged(repo, monkeypatch, allow) == 1
+
+
+def test_allow_oracle_change_approves_staged_changes(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    test = repo / "tests" / "test_x.py"
+    test.write_text(test.read_text().replace("    assert value == 1\n", ""))
+    assert _staged(repo, monkeypatch, "1") == 0
+    output = capsys.readouterr().out
+    assert "tests/test_x.py:3" in output and "value == 1" not in output
+
+
+def test_unprotected_staged_changes_pass(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (repo / "src" / "amber" / "other.py").write_text("Y = 2\n")
+    assert _staged(repo, monkeypatch, None) == 0
+
+
+def test_the_environment_variable_never_approves_a_pull_request_diff(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    (repo / "src/amber/conformance/catalog.json").write_text('{"x": 1}\n')
+    _git(repo, "add", "-A")
+    diff = tmp_path_factory.mktemp("diff") / "changes.diff"
+    diff.write_text(_git(repo, "diff", "--cached", "--unified=0", "HEAD"))
+    monkeypatch.setenv("ALLOW_ORACLE_CHANGE", "1")
+    assert guard.main([str(diff), "--labels", ""]) == 1
