@@ -486,9 +486,10 @@ def test_the_scorer_passes_the_conformance_kit() -> None:
 
 
 def test_long_augmenting_paths_do_not_recurse() -> None:
-    # Prediction k overlaps gold k and k+1; in canonical order every new prediction displaces the
-    # previous ones along a path as long as the chain, past Python's recursion limit.
-    size = 3000
+    # Prediction k overlaps gold k and k+1, and the last prediction holds gold 0. In canonical
+    # order each new prediction first searches the whole chain below it before taking gold k+1,
+    # a path deeper than Python's recursion limit.
+    size = 1200
     gold = [_span(2 * k, 2 * k + 2) for k in range(size)]
     predicted = [_span(2 * k + 1, 2 * k + 3) for k in range(size - 1)] + [_span(0, 1)]
     values = _values(span_metrics(predicted, gold))
