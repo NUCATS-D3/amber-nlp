@@ -6,6 +6,7 @@ from collections import deque
 from collections.abc import Iterable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
+from itertools import chain
 from types import MappingProxyType
 from typing import Any, NoReturn
 
@@ -330,6 +331,15 @@ def _validate_reading(
     return record
 
 
+def _validate_edge(candidate: Mapping[str, Any]) -> EvidenceEdge:
+    try:
+        return EvidenceEdge.model_validate(_copy_mapping(candidate))
+    except GraphValidationError:
+        raise
+    except (TypeError, ValueError, ValidationError):
+        _raise("invalid_schema")
+
+
 def _validate_reading_references(
     reading: MentionReading,
     mentions: Mapping[str, Mention],
@@ -525,22 +535,29 @@ def _require_declared_dependencies(
 def validate_state(
     context: _GraphContext,
     *,
-    claims: Sequence[Mapping[str, Any]],
-    evidence: Sequence[Mapping[str, Any]],
-    edges: Sequence[Mapping[str, Any]],
+    claims: Sequence[Mapping[str, Any]] = (),
+    evidence: Sequence[Mapping[str, Any]] = (),
+    edges: Sequence[Mapping[str, Any]] = (),
     mentions: Sequence[Mapping[str, Any]] = (),
     readings: Sequence[Mapping[str, Any]] = (),
     statuses: frozenset[str] = GRAPH_STATUSES,
+    base: _ValidatedState | None = None,
 ) -> _ValidatedState:
     """Validate every retained component before issuing any accepted Claim.
 
     Working graphs hold ``proposed`` and ``rejected`` claims and readings; reviewed
     statuses are admitted only by the annotated-data boundary through ``statuses``.
+
+    ``base`` is a state already validated under this context; the payloads extend it. Its
+    records are immutable and their own checks depend only on the context, so only the new
+    payloads are checked record by record; the graph-wide checks cover the whole result.
     """
-    claim_records: dict[str, _ClaimRecord] = {}
-    evidence_records: dict[str, Inclusion | InferenceEvidence] = {}
-    mention_records: dict[str, Mention] = {}
-    reading_records: dict[str, MentionReading] = {}
+    claim_records: dict[str, _ClaimRecord] = {} if base is None else dict(base.claims)
+    evidence_records: dict[str, Inclusion | InferenceEvidence] = (
+        {} if base is None else dict(base.evidence)
+    )
+    mention_records: dict[str, Mention] = {} if base is None else dict(base.mentions)
+    reading_records: dict[str, MentionReading] = {} if base is None else dict(base.readings)
 
     for candidate in claims:
         claim_record = _validate_claim(context, candidate, statuses)
@@ -587,6 +604,10 @@ def validate_state(
         _validate_reading_references(reading_record, mention_records, evidence_records)
         reading_records[reading_id] = reading_record
 
+    record_ids = [*claim_records, *evidence_records, *mention_records, *reading_records]
+    if len(record_ids) != len(set(record_ids)):
+        _raise("duplicate_reference")
+
     if {reading.mention_id for reading in reading_records.values()} != set(mention_records):
         _raise("missing_reading")
 
@@ -600,13 +621,8 @@ def validate_state(
     }
     field_names = context.field_names
     field_roles: dict[str, set[str]] = {claim_id: set() for claim_id in claim_records}
-    for candidate in edges:
-        try:
-            edge = EvidenceEdge.model_validate(_copy_mapping(candidate))
-        except GraphValidationError:
-            raise
-        except (TypeError, ValueError, ValidationError):
-            _raise("invalid_schema")
+    base_edges = () if base is None else base.edges
+    for edge in chain(base_edges, map(_validate_edge, edges)):
         key = (edge.claim_id, edge.evidence_id, edge.role)
         if key in edge_keys:
             _raise("duplicate_reference")
@@ -694,7 +710,11 @@ def validate_state(
     minted: dict[str, Claim] = {}
     try:
         for claim_id, claim_record in claim_records.items():
-            minted[claim_id] = _mint_claim(claim_record.model_dump())
+            minted[claim_id] = (
+                claim_record
+                if isinstance(claim_record, Claim)
+                else _mint_claim(claim_record.model_dump())
+            )
     except (TypeError, ValueError, ValidationError):
         _raise("invalid_schema")
 
