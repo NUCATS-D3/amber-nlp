@@ -458,6 +458,15 @@ sensitivity. They ship with the core; `amber[reference]` installs what all of th
   snapshot includes it). References: `StructuralValidityScorer` (outcome mix, failure kinds,
   grounding failures) and `LabelCorrectScorer` (label accuracy, coverage, omissions, tokens
   per case, and evidence overlap against Examples, `inconclusive` against label records).
+  `amber.span_scoring.MentionSpanScorer` (experimental; any data, not only synthetic) scores
+  predicted mentions against Example spans: strict (same offsets and fragments, the same
+  `mention_id`) and lenient (fragment overlap, paired one-to-one by a maximum matching)
+  precision, recall, and F1 as counts, micro, per `mention_type` (`strict_f1:<type>`), and
+  macro over defined per-type ratios, plus attribute accuracy per category on strict matches.
+  Spans match within a case, source, and `mention_type`; a span is a mention with a
+  non-rejected reading, and a type that a human-tier reference covers admits only `gold` and
+  `verified` readings. Only cases with an Example are scored; every metric is `inconclusive`
+  against label records only. `span_metrics` and `spans_of` expose the pure core.
 - **`Labeler`**: `name`, `version`, `tier`, and `label(case, source, variables, *, gate,
   context)` returning `(events, Example)`, a `LabelRecord`, or a source-free `LabelerFailure`
   (`amber.labeling`). Models, rules, and importers are `silver`; `admit_labeler` rejects a
