@@ -45,6 +45,14 @@ trigger applies:
 | [contract-change](.agents/skills/contract-change/SKILL.md) | A diff touches schemas, wire forms, ID derivation, protocols, golden records, or the conformance catalog or fixtures | Changes classified and approved; migration and conformance updated for breaking ones |
 | [deslop-diff](.agents/skills/deslop-diff/SKILL.md) | A feature is finished, before landing | Simplified diff passes with tests unchanged by the pass |
 
+## Review
+
+Before landing a branch, get an independent review from the read-only `reviewer` agent
+(`.opencode/agents/reviewer.md`; `.claude/agents/reviewer.md` for Claude Code). Both follow
+[docs/review_prompt.md](docs/review_prompt.md) and reply `VERDICT: PASS` or `FAIL` with `path:line`
+findings. Resolve every blocking finding or explain it in the pull request; never edit the prompt
+or the agents to get a PASS.
+
 ## Layout and dependency direction
 
 ```
@@ -128,8 +136,9 @@ dependency, or wire-format changes, and their migrations.
 
 Work lands on `main` through pull requests. CI's "Protected contract artifacts" check fails a
 pull request that changes golden records, the catalog, conformance fixtures, the verification
-harness (agent hook settings and scripts, `.pre-commit-config.yaml`, `Makefile`, CI workflows,
-the guard script), or existing test assertions until a human adds the `contract-approved` label;
+harness (agent hook settings and scripts, agent definitions and the review prompt,
+`.pre-commit-config.yaml`, `Makefile`, CI workflows, the guard script), or existing test
+assertions until a human adds the `contract-approved` label;
 agents never add it. The same guard runs as a pre-commit hook (`make hooks`), where only a human
 sets `ALLOW_ORACLE_CHANGE=1`; agents never set it or commit with `--no-verify`. An agent may
 merge its own pull request once every check passes and the protected-artifacts check passed
