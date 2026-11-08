@@ -5,13 +5,16 @@ RUN := uv run --no-sync
 PYTEST := $(RUN) pytest --strict-markers -ra
 
 .DEFAULT_GOAL := help
-.PHONY: help sync lint format typecheck imports lock test-fast test check mutation
+.PHONY: help sync hooks lint format typecheck imports lock test-fast test check mutation
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
 
 sync: ## Install the locked development environment
 	uv sync --locked $(UV_EXTRAS)
+
+hooks: ## Install the pre-commit hooks, including the oracle guard
+	$(RUN) pre-commit install
 
 lint: ## Ruff lint and format check
 	$(RUN) ruff check .
