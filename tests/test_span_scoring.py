@@ -84,8 +84,9 @@ def test_the_mention_type_must_agree() -> None:
     assert values["lenient_precision"] == (0, 1)
     assert values["strict_recall:finding"] == (0, 1)
     assert values["strict_precision:site"] == (0, 1)
-    # Undefined per-type ratios are absent, never 0 or 1.
-    assert "strict_precision:finding" not in values and "strict_recall:site" not in values
+    # Undefined per-type ratios are reported as undefined, never 0 or 1.
+    assert values["strict_precision:finding"] == (0, 0)
+    assert values["strict_recall:site"] == (0, 0)
 
 
 def test_spans_never_match_across_cases_or_sources() -> None:
@@ -138,6 +139,16 @@ def test_lenient_is_never_below_strict() -> None:
 def test_duplicate_spans_count_once() -> None:
     values = _values(span_metrics([_span(0, 4), _span(0, 4)], [_span(0, 4), _span(0, 4)]))
     assert values["strict_precision"] == (1, 1) and values["strict_recall"] == (1, 1)
+
+
+def test_duplicate_spans_merge_their_attributes_in_any_order() -> None:
+    # Two predictions at one position that disagree are one span whose readings disagree.
+    gold = [_span(0, 4, attributes={"negation": [True]})]
+    agreeing = _span(0, 4, attributes={"negation": [True]})
+    disagreeing = _span(0, 4, attributes={"negation": [False]})
+    for predicted in ([agreeing, disagreeing], [disagreeing, agreeing]):
+        values = _values(span_metrics(predicted, gold))
+        assert values["attribute_accuracy:negation"] == (0, 1)
 
 
 def test_discontinuous_spans_match_by_fragments() -> None:
@@ -428,6 +439,28 @@ def test_self_reference_is_refused() -> None:
     assert caught.value.code == "self_reference"
 
 
+def test_single_review_references_must_include_the_move_on_decision() -> None:
+    log, ids = fx.silver_import()
+    fx.raise_to_single_review(log, ids)
+    case = fx.case()
+    projection = replay(
+        log.events, case=case, source=fx.SOURCE, variables=fx.VARIABLES, spans=fx.SPANS
+    )
+    example = example_from_projection(
+        projection, case=case, source=fx.SOURCE, variables=fx.VARIABLES
+    )
+    later = fx.fixed_ulid(10_000_000)
+    with pytest.raises(ScoringRefused) as caught:
+        MentionSpanScorer(move_on_event=later).score([], [example], variables=fx.VARIABLES)
+    assert caught.value.code == "move_on_not_included"
+    shared = set.intersection(
+        *(set(ref.derived_from_events) for ref in example.references.values())
+    )
+    decision = max(shared)  # the reviewer's submission, which every reference includes
+    report = MentionSpanScorer(move_on_event=decision).score([], [example], variables=fx.VARIABLES)
+    assert report.provisional
+
+
 def test_duplicate_or_mismatched_records_are_refused() -> None:
     first = _mention("mass")
     predicted = _result([(first, [_reading(first, CANDIDATE)])])
@@ -450,3 +483,13 @@ def test_the_scorer_passes_the_conformance_kit() -> None:
     )
     assert report.conforms("Scorer")
     assert report.counts()["failed"] == 0 and report.counts()["passed"] > 0
+
+
+def test_long_augmenting_paths_do_not_recurse() -> None:
+    # Prediction k overlaps gold k and k+1; in canonical order every new prediction displaces the
+    # previous ones along a path as long as the chain, past Python's recursion limit.
+    size = 3000
+    gold = [_span(2 * k, 2 * k + 2) for k in range(size)]
+    predicted = [_span(2 * k + 1, 2 * k + 3) for k in range(size - 1)] + [_span(0, 1)]
+    values = _values(span_metrics(predicted, gold))
+    assert values["lenient_precision"] == (size, size)

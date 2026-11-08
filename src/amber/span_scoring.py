@@ -1,29 +1,32 @@
 """Span-level scoring of mentions (experimental; amber-a6d.10).
 
-A span is a ``Mention`` with at least one admitted reading. Spans match within one case,
-source, and ``mention_type``:
+A span is a ``Mention`` with at least one admitted reading. Spans match within one case, source, and
+``mention_type``:
 
 - **strict**: identical offsets and fragments (equivalently, the same ``mention_id``);
 - **lenient**: any positive overlap of their fragments, paired one-to-one by a maximum matching,
   so no span is credited twice and no pairing choice undercounts. Lenient is never below strict.
 
-Precision, recall, and F1 are kept as counts (``Metric`` numerator and denominator): micro over
-all spans, per mention type (``strict_f1:<type>``), and macro means over the types whose ratio is
-defined. A zero denominator is undefined, never 0 or 1; per-type ratios that are undefined are
-omitted. Attribute accuracy is scored on strict matches, per category the reference assessed: a
-prediction that omits the category or whose readings disagree is wrong; a reference whose
-readings disagree on a category does not score it. Values compare by type, so ``True`` is not
-``1``. Results do not depend on input order.
+Precision, recall, and F1 are kept as counts (``Metric`` numerator and denominator): micro over all
+spans, per mention type (``strict_f1:<type>``, for every type either side has), and macro means over
+the types whose ratio is defined. A zero denominator is undefined, never 0 or 1. Macro metrics hold
+a sum of ratios over a count of types, so they cannot be pooled across reports; pool the per-type
+counts and recompute instead. Duplicate spans at one position are one span with their attribute
+values merged. Attribute accuracy is scored on strict matches, per category the reference assessed:
+a prediction that omits the category or whose readings disagree is wrong; a reference whose readings
+disagree on a category does not score it. Values compare by type, so ``True`` is not ``1``. Results
+do not depend on input order.
 
-``MentionSpanScorer`` adapts ``CaseResult`` predictions and ``Example`` references and applies
-the rules every scorer follows (``amber.scoring``). Diagnostics never carry source text.
+``MentionSpanScorer`` adapts ``CaseResult`` predictions and ``Example`` references and applies the
+rules every scorer follows (``amber.scoring``). Diagnostics never carry source text.
 """
 
 from __future__ import annotations
 
+import itertools
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Literal, TypeAlias
 
 from amber.interfaces import ScorerNeed
@@ -85,29 +88,52 @@ def _overlaps(left: Span, right: Span) -> bool:
 
 
 def _distinct(spans: Iterable[Span]) -> dict[tuple[str, str, str], list[Span]]:
-    """Spans grouped for matching, one per position, in a canonical order."""
+    """Spans grouped for matching, one per position in a canonical order; duplicates at one
+    position are one span whose attribute values are merged."""
     groups: dict[tuple[str, str, str], dict[tuple[tuple[int, int], ...], Span]] = defaultdict(dict)
     for span in spans:
-        groups[span.group].setdefault(span.pieces, span)
+        found = groups[span.group]
+        if (seen := found.get(span.pieces)) is None:
+            found[span.pieces] = span
+            continue
+        merged = dict(seen.attributes)
+        for category, values in span.attributes.items():
+            merged[category] = merged.get(category, frozenset()) | values
+        found[span.pieces] = replace(seen, attributes=merged)
     return {key: [found[piece] for piece in sorted(found)] for key, found in groups.items()}
 
 
 def _maximum_matching(predicted: Sequence[Span], gold: Sequence[Span]) -> int:
-    """Size of a maximum one-to-one overlap matching (augmenting paths; inputs are ordered)."""
+    """Size of a maximum one-to-one overlap matching: Kuhn's augmenting paths, searched with an
+    explicit stack so long paths cannot exhaust the recursion limit. Inputs are ordered."""
     neighbours = [[j for j, item in enumerate(gold) if _overlaps(span, item)] for span in predicted]
     owner: dict[int, int] = {}
-
-    def augment(i: int, seen: set[int]) -> bool:
-        for j in neighbours[i]:
+    size = 0
+    for root in range(len(predicted)):
+        seen: set[int] = set()
+        # Each frame is (predicted index, next neighbour position, gold index reached through).
+        stack: list[tuple[int, int, int | None]] = [(root, 0, None)]
+        while stack:
+            i, position, via = stack[-1]
+            if position == len(neighbours[i]):
+                stack.pop()
+                continue
+            stack[-1] = (i, position + 1, via)
+            j = neighbours[i][position]
             if j in seen:
                 continue
             seen.add(j)
-            if j not in owner or augment(owner[j], seen):
-                owner[j] = i
-                return True
-        return False
-
-    return sum(augment(i, set()) for i in range(len(predicted)))
+            if j in owner:
+                stack.append((owner[j], 0, j))
+                continue
+            # A free gold span ends the path: each gold span on it moves to the frame below.
+            owner[j] = i
+            for (parent, _, _), (_, _, reached) in itertools.pairwise(stack):
+                if reached is not None:
+                    owner[reached] = parent
+            size += 1
+            break
+    return size
 
 
 @dataclass
@@ -188,7 +214,7 @@ def span_metrics(predicted: Iterable[Span], gold: Iterable[Span]) -> tuple[Metri
                     denominator=len(defined),
                 )
             )
-        metrics.extend(metric for metric in per_type if metric.denominator)
+        metrics.extend(per_type)
     metrics.append(
         Metric(
             name="attribute_accuracy",
@@ -225,8 +251,9 @@ def _human_types(example: Example, variables: VariableSet) -> frozenset[str]:
 def spans_of(record: CaseResult | Example, variables: VariableSet) -> tuple[Span, ...]:
     """The record's spans: mentions with an admitted reading, attributes merged per category.
 
-    Rejected readings are never admitted. In an Example, a mention type that a human-tier
-    reference covers admits only ``gold`` and ``verified`` readings.
+    Rejected readings are never admitted. In an Example, a mention type that any human-tier
+    reference covers admits only ``gold`` and ``verified`` readings, even when a silver
+    reference covers the same type.
     """
     human = _human_types(record, variables) if isinstance(record, Example) else frozenset()
     readings: dict[str, list[MentionReading]] = defaultdict(list)

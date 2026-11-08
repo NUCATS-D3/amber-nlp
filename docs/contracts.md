@@ -465,8 +465,11 @@ sensitivity. They ship with the core; `amber[reference]` installs what all of th
   macro over defined per-type ratios, plus attribute accuracy per category on strict matches.
   Spans match within a case, source, and `mention_type`; a span is a mention with a
   non-rejected reading, and a type that a human-tier reference covers admits only `gold` and
-  `verified` readings. Only cases with an Example are scored; every metric is `inconclusive`
-  against label records only. `span_metrics` and `spans_of` expose the pure core.
+  `verified` readings (even when a silver reference covers the same type). Per-type ratios are
+  reported for every type either side has, undefined (`0/0`) when their denominator is zero;
+  macro metrics are a sum of ratios over a count of types and cannot be pooled across reports.
+  Only cases with an Example are scored; every metric is `inconclusive` against label records
+  only. `span_metrics` and `spans_of` expose the pure core.
 - **`Labeler`**: `name`, `version`, `tier`, and `label(case, source, variables, *, gate,
   context)` returning `(events, Example)`, a `LabelRecord`, or a source-free `LabelerFailure`
   (`amber.labeling`). Models, rules, and importers are `silver`; `admit_labeler` rejects a

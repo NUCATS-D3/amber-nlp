@@ -506,12 +506,21 @@ def test_large_floats_survive_canonical_json_and_parquet_columns(tmp_path: Any) 
 @st.composite
 def scored_spans(draw: Any) -> Span:
     start = draw(st.integers(0, 6))
+    end = start + draw(st.integers(1, 4))
+    fragments: tuple[tuple[int, int], ...] = ()
+    if draw(st.booleans()):
+        first = start + draw(st.integers(1, 2))
+        end = first + draw(st.integers(1, 3)) + draw(st.integers(1, 2))
+        fragments = ((start, first), (end - draw(st.integers(1, end - first - 1)), end))
+    negation = draw(st.lists(st.booleans(), max_size=2))
     return Span(
         case_id="c",
         source_id="s",
         mention_type=draw(st.sampled_from(("finding", "site"))),
         start=start,
-        end=start + draw(st.integers(1, 4)),
+        end=end,
+        fragments=fragments,
+        attributes={"negation": frozenset((bool, value) for value in negation)} if negation else {},
     )
 
 
@@ -527,18 +536,18 @@ def _counts(predicted: list[Span], gold: list[Span]) -> dict[str, tuple[float, i
 
 def _brute_force_lenient(predicted: list[Span], gold: list[Span]) -> int:
     """Largest one-to-one overlap matching, by trying every assignment."""
-    mine = sorted({(span.mention_type, span.start, span.end) for span in predicted})
-    theirs = sorted({(span.mention_type, span.start, span.end) for span in gold})
-    best = 0
+    mine = sorted({(span.mention_type, span.pieces) for span in predicted})
+    theirs = sorted({(span.mention_type, span.pieces) for span in gold})
+
+    def overlap(a: tuple[str, Any], b: tuple[str, Any]) -> bool:
+        return a[0] == b[0] and any(s < f and t < e for s, e in a[1] for t, f in b[1])
+
     for size in range(min(len(mine), len(theirs)), 0, -1):
         for chosen in itertools.combinations(mine, size):
             for partners in itertools.permutations(theirs, size):
-                if all(
-                    a[0] == b[0] and a[1] < b[2] and b[1] < a[2]
-                    for a, b in zip(chosen, partners, strict=True)
-                ):
+                if all(overlap(a, b) for a, b in zip(chosen, partners, strict=True)):
                     return size
-    return best
+    return 0
 
 
 def _finding(start: int, end: int) -> Span:
