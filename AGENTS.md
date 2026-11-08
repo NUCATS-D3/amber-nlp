@@ -71,6 +71,9 @@ scripts/                  core-install check and local MLflow launcher
 
 ## Commands
 
+`make check` runs sync, lint, mypy, lint-imports, the lock check, and the fast test suite; `make
+help` lists the other targets. The underlying commands:
+
 ```sh
 uv sync --extra dev --extra tracking --extra bundles   # full development environment
 uv run pytest
