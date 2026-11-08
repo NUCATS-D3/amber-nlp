@@ -5,8 +5,8 @@ contract-change skill).
 Protected:
 
 - ``src/amber/conformance/golden/*.json``, ``catalog.json``, and ``fixtures.py``: any change;
-- the harness: agent hook settings and scripts, the pre-commit config, the Makefile, CI
-  workflows, and this script: any change;
+- the harness: agent hook settings and scripts, agent definitions and the review prompt, the
+  pre-commit config, the Makefile, CI workflows, and this script: any change;
 - ``tests/**/*.py``: any removed line that asserts (``assert``, ``pytest.raises``, or an
   ``_assert*`` helper call), which covers deleted, edited, and moved assertions. Added tests
   are unrestricted.
@@ -35,6 +35,8 @@ _PROTECTED = (
     re.compile(r"^\.claude/settings\.json$"),
     re.compile(r"^\.claude/hooks/"),
     re.compile(r"^\.opencode/plugins?/"),
+    re.compile(r"^\.(?:claude|opencode)/agents/"),
+    re.compile(r"^docs/review_prompt\.md$"),
     re.compile(r"^opencode\.jsonc?$"),
     re.compile(r"^\.pre-commit-config\.yaml$"),
     re.compile(r"^\.github/workflows/"),

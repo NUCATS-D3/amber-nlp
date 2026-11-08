@@ -132,6 +132,9 @@ def test_the_label_approves_and_output_names_no_contents(
         ".claude/settings.json",
         ".claude/hooks/stop_gate.py",
         ".opencode/plugin/harness.ts",
+        ".opencode/agents/reviewer.md",
+        ".claude/agents/reviewer.md",
+        "docs/review_prompt.md",
         "opencode.json",
         ".pre-commit-config.yaml",
         ".github/workflows/ci.yml",
@@ -146,7 +149,14 @@ def test_harness_files_are_protected(repo: Path, path: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "path", [".claude/settings.local.json", ".claude/skills/x/SKILL.md", "scripts/other.py"]
+    "path",
+    [
+        ".claude/settings.local.json",
+        ".claude/skills/x/SKILL.md",
+        ".opencode/skills/x/SKILL.md",
+        "docs/review_notes.md",
+        "scripts/other.py",
+    ],
 )
 def test_neighbouring_files_are_not_protected(repo: Path, path: str) -> None:
     (repo / path).parent.mkdir(parents=True, exist_ok=True)
