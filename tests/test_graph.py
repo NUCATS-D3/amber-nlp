@@ -5,19 +5,35 @@ from __future__ import annotations
 import json
 import random
 import warnings
+from collections import Counter
 from collections.abc import Callable
 from copy import deepcopy
 from typing import Any
 
 import pytest
 
+from amber import _graph_validation
 from amber.graph import EvidenceGraph
 from amber.graph_errors import GraphValidationError
-from amber.grounding import exact_quote
-from amber.schemas import Inclusion, Sensitivity
+from amber.grounding import exact_mention, exact_quote
+from amber.ids import new_ulid
+from amber.schemas import (
+    Claim,
+    Inclusion,
+    InferenceEvidence,
+    Mention,
+    MentionReading,
+    Sensitivity,
+)
 from amber.schemas.variables import VariableSet
 
-from ._claim_helpers import make_claim_record, make_inference_record, make_source, make_task
+from ._claim_helpers import (
+    make_claim_record,
+    make_inference_record,
+    make_provenance,
+    make_source,
+    make_task,
+)
 
 FIELD = "finding_present"
 
@@ -476,3 +492,155 @@ def test_payload_containers_are_detached_at_every_level() -> None:
     payload["edges"].clear()
 
     assert graph.to_payload() == original
+
+
+# Incremental validation (amber-2ad) -----------------------------------------------------------
+
+
+def _reading(span: Mention, reading_id: str | None = None) -> MentionReading:
+    return MentionReading.model_validate(
+        {
+            "reading_id": new_ulid() if reading_id is None else reading_id,
+            "mention_id": span.mention_id,
+            "label": "invented",
+            "provenance": make_provenance(),
+        }
+    )
+
+
+def _register_word(graph: EvidenceGraph, word: str) -> tuple[Inclusion, MentionReading, Claim]:
+    source = graph.source
+    leaf = exact_quote(source, word)
+    span = exact_mention(source, word, None, "finding")
+    assert isinstance(leaf, Inclusion)
+    assert isinstance(span, Mention)
+    graph.register_evidence(leaf)
+    _, (reading,) = graph.register_mention(span, [_reading(span)])
+    claim = graph.commit_claim(
+        make_task(),
+        {FIELD: True},
+        [leaf.evidence_id],
+        "Invented.",
+        {FIELD: [leaf.evidence_id]},
+        provenance=make_provenance(),
+    )
+    return leaf, reading, claim
+
+
+def test_each_mutation_checks_only_its_new_records(monkeypatch: pytest.MonkeyPatch) -> None:
+    words = [f"word{index}" for index in range(6)]
+    graph = EvidenceGraph(
+        source=make_source(" ".join(words)), task=make_task(), sensitivity=Sensitivity.synthetic
+    )
+    calls: Counter[str] = Counter()
+    for name in (
+        "_validate_claim",
+        "_validate_inclusion",
+        "_validate_inference",
+        "_validate_mention",
+        "_validate_reading",
+    ):
+        original = getattr(_graph_validation, name)
+
+        def counted(*args: Any, _name: str = name, _original: Any = original, **kwargs: Any) -> Any:
+            calls[_name] += 1
+            return _original(*args, **kwargs)
+
+        monkeypatch.setattr(_graph_validation, name, counted)
+
+    for word in words:
+        _register_word(graph, word)
+
+    assert calls == {
+        "_validate_claim": 6,
+        "_validate_inclusion": 6,
+        "_validate_inference": 6,
+        "_validate_mention": 6,
+        "_validate_reading": 6,
+    }
+    graph.validate()
+
+
+_NEXT_IDS: list[str] = []
+
+
+def _graph_with_every_kind() -> tuple[EvidenceGraph, dict[str, str]]:
+    _NEXT_IDS.clear()
+    graph = EvidenceGraph(
+        source=make_source("Alpha beta"),
+        task=make_task(),
+        sensitivity=Sensitivity.synthetic,
+        ids=lambda: _NEXT_IDS.pop(0) if _NEXT_IDS else new_ulid(),
+    )
+    leaf, reading, claim = _register_word(graph, "Alpha")
+    inference_id = next(
+        evidence_id
+        for evidence_id, record in graph.evidence.items()
+        if isinstance(record, InferenceEvidence)
+    )
+    return graph, {
+        "claim": claim.claim_id,
+        "inference": inference_id,
+        "inclusion": leaf.evidence_id,
+        "reading": reading.reading_id,
+    }
+
+
+def _new_reading(graph: EvidenceGraph, existing: str) -> None:
+    span = next(iter(graph.mentions.values()))
+    graph.register_reading(_reading(span, reading_id=existing))
+
+
+def _new_mention(graph: EvidenceGraph, existing: str) -> None:
+    span = exact_mention(graph.source, "beta", None, "finding")
+    assert isinstance(span, Mention)
+    graph.register_mention(span, [_reading(span, reading_id=existing)])
+
+
+def _new_inference(graph: EvidenceGraph, existing: str) -> None:
+    leaf = next(record for record in graph.evidence.values() if isinstance(record, Inclusion))
+    graph.register_evidence(
+        InferenceEvidence.model_validate(
+            {**make_inference_record(inputs=[leaf.evidence_id]), "evidence_id": existing}
+        )
+    )
+
+
+def _new_claim(graph: EvidenceGraph, existing: str, *, collide_inference: bool) -> None:
+    _NEXT_IDS[:] = [new_ulid(), existing] if collide_inference else [existing, new_ulid()]
+    leaf = next(record for record in graph.evidence.values() if isinstance(record, Inclusion))
+    graph.commit_claim(
+        make_task(),
+        {FIELD: True},
+        [leaf.evidence_id],
+        "Invented.",
+        {FIELD: [leaf.evidence_id]},
+        provenance=make_provenance(),
+    )
+
+
+@pytest.mark.parametrize(
+    ("new_record", "existing_kind"),
+    [
+        (_new_reading, "claim"),
+        (_new_reading, "inference"),
+        (_new_mention, "claim"),
+        (_new_mention, "inference"),
+        (_new_inference, "claim"),
+        (_new_inference, "reading"),
+        (lambda graph, existing: _new_claim(graph, existing, collide_inference=False), "reading"),
+        (lambda graph, existing: _new_claim(graph, existing, collide_inference=True), "reading"),
+        (lambda graph, existing: _new_claim(graph, existing, collide_inference=False), "inference"),
+        (lambda graph, existing: _new_claim(graph, existing, collide_inference=True), "claim"),
+    ],
+)
+def test_new_records_cannot_reuse_an_existing_id_of_another_kind(
+    new_record: Callable[[EvidenceGraph, str], None], existing_kind: str
+) -> None:
+    graph, ids = _graph_with_every_kind()
+    before = graph.to_payload()
+
+    _assert_error("duplicate_reference", new_record, graph, ids[existing_kind])
+
+    assert graph.to_payload() == before
+    graph.validate()

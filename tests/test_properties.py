@@ -7,12 +7,16 @@ in tests/conftest.py."""
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from typing import Any
+from unittest.mock import patch
 
 from hypothesis import assume, given
 from hypothesis import strategies as st
+from pydantic import ValidationError
 
+from amber import _graph_validation
 from amber.annotations import replay
 from amber.bundles import (
     BundleContents,
@@ -25,13 +29,22 @@ from amber.cases import create_case_result, load_case_result
 from amber.conformance import fixtures as fx
 from amber.graph import EvidenceGraph
 from amber.graph_errors import GraphValidationError
-from amber.grounding import exact_quote
-from amber.ids import canonical_json, canonical_sha256, new_ulid, parse_canonical_json
+from amber.grounding import exact_mention, exact_quote
+from amber.ids import (
+    canonical_json,
+    canonical_sha256,
+    new_ulid,
+    parse_canonical_json,
+    seeded_ulids,
+)
 from amber.reference import InMemoryResolver
 from amber.schemas import (
     Case,
     CaseOutcome,
     Inclusion,
+    InferenceEvidence,
+    Mention,
+    MentionReading,
     Sensitivity,
     Source,
     SourceKind,
@@ -315,6 +328,155 @@ def test_random_graphs_validate_exactly_when_acyclic_and_source_backed(
     else:
         assert valid
     assert claim.claim_id not in claim_ids
+
+
+# Incremental validation equals full revalidation (amber-2ad) --------------------------------
+
+_MUTATION_TEXT = "alpha beta alpha\r\ngamma \U0001f642 e\u0301 beta"
+_MUTATION_SPANS = [(match.start(), match.end()) for match in re.finditer(r"\S+", _MUTATION_TEXT)]
+_SPAN_INDEX = st.integers(min_value=0, max_value=len(_MUTATION_SPANS) - 1)
+_KNOWN_INDEX = st.integers(min_value=-1, max_value=12)
+_MUTATIONS = st.lists(
+    st.one_of(
+        st.tuples(st.just("inclusion"), _SPAN_INDEX),
+        st.tuples(
+            st.just("mention"),
+            _SPAN_INDEX,
+            st.sampled_from(["finding", "anatomy"]),
+            st.integers(min_value=-1, max_value=len(_MUTATION_SPANS) - 1),
+        ),
+        st.tuples(st.just("reading"), _SPAN_INDEX),
+        st.tuples(st.just("inference"), st.lists(_KNOWN_INDEX, min_size=1, max_size=2)),
+        st.tuples(st.just("claim"), st.lists(_KNOWN_INDEX, min_size=1, max_size=2)),
+        st.tuples(st.just("reuse_id"), _KNOWN_INDEX),
+    ),
+    max_size=10,
+)
+
+
+def _mutate(
+    graph: EvidenceGraph, mutation: tuple[Any, ...], mint: Any, known: list[str]
+) -> list[str]:
+    """Apply one mutation; return the IDs it registered."""
+    source = graph.source
+
+    def known_id(index: int) -> str:
+        return known[index % len(known)] if known and index >= 0 else "invented-unknown-id"
+
+    def inclusion(index: int) -> Inclusion:
+        start, end = _MUTATION_SPANS[index]
+        result = exact_quote(source, _MUTATION_TEXT[start:end], start)
+        assert isinstance(result, Inclusion)
+        return result
+
+    def reading(span: Mention, cue: int = -1) -> MentionReading:
+        attributes = (
+            {}
+            if cue < 0
+            else {"negation": {"value": True, "evidence_id": inclusion(cue).evidence_id}}
+        )
+        return MentionReading.model_validate(
+            {
+                "reading_id": mint(),
+                "mention_id": span.mention_id,
+                "label": "invented",
+                "attributes": attributes,
+                "provenance": make_provenance(),
+            }
+        )
+
+    def mention(index: int, mention_type: str = "finding") -> Mention:
+        start, end = _MUTATION_SPANS[index]
+        result = exact_mention(source, _MUTATION_TEXT[start:end], start, mention_type)
+        assert isinstance(result, Mention)
+        return result
+
+    def inference(evidence_id: str, inputs: list[str]) -> InferenceEvidence:
+        return InferenceEvidence.model_validate(
+            {
+                "kind": "inference",
+                "evidence_id": evidence_id,
+                "rationale": "Invented.",
+                "inputs": inputs,
+                "trace_id": None,
+                "span_id": None,
+                "provenance": make_provenance(),
+            }
+        )
+
+    kind = mutation[0]
+    if kind == "inclusion":
+        return [graph.register_evidence(inclusion(mutation[1])).evidence_id]
+    if kind == "mention":
+        span = mention(mutation[1], mutation[2])
+        _, readings = graph.register_mention(span, [reading(span, mutation[3])])
+        return [readings[0].reading_id]
+    if kind == "reading":
+        return [graph.register_reading(reading(mention(mutation[1]))).reading_id]
+    if kind == "inference":
+        inputs = list(dict.fromkeys(known_id(index) for index in mutation[1]))
+        return [graph.register_evidence(inference(mint(), inputs)).evidence_id]
+    if kind == "claim":
+        cited = list(dict.fromkeys(known_id(index) for index in mutation[1]))
+        claim = graph.commit_claim(
+            TASK, {"finding_present": True}, cited, "Invented.", provenance=make_provenance()
+        )
+        return [claim.claim_id]
+    graph.register_evidence(inference(known_id(mutation[1]), [known_id(0)]))
+    return []
+
+
+def _apply_mutations(mutations: list[tuple[Any, ...]]) -> tuple[list[str], dict[str, Any]]:
+    mint = seeded_ulids("amber-2ad")
+    graph = EvidenceGraph(
+        source=_source(_MUTATION_TEXT), task=TASK, sensitivity=Sensitivity.synthetic, ids=mint
+    )
+    known: list[str] = []
+    outcomes: list[str] = []
+    for mutation in mutations:
+        try:
+            known.extend(_mutate(graph, mutation, mint, known))
+        except GraphValidationError as error:
+            outcomes.append(error.code)
+        except ValidationError:
+            outcomes.append("record_refused_before_the_graph")
+        else:
+            outcomes.append("ok")
+    return outcomes, graph.to_payload()
+
+
+def _revalidate_everything(context: Any, *, base: Any = None, **records: Any) -> Any:
+    """Validation as it was before amber-2ad: the base state's records are checked again."""
+    if base is not None:
+        existing = {
+            "claims": base.claims.values(),
+            "evidence": base.evidence.values(),
+            "edges": base.edges,
+            "mentions": base.mentions.values(),
+            "readings": base.readings.values(),
+        }
+        for name, values in existing.items():
+            records[name] = [
+                *(value.model_dump() for value in values),
+                *records.get(name, ()),
+            ]
+    return _graph_validation.validate_state(context, **records)
+
+
+@given(_MUTATIONS)
+def test_incremental_validation_matches_full_revalidation(
+    mutations: list[tuple[Any, ...]],
+) -> None:
+    outcomes, payload = _apply_mutations(mutations)
+    with patch("amber.graph.validate_state", _revalidate_everything):
+        expected_outcomes, expected_payload = _apply_mutations(mutations)
+
+    assert outcomes == expected_outcomes
+    assert payload == expected_payload
+    restored = EvidenceGraph.from_payload(
+        payload, source=_source(_MUTATION_TEXT), task=TASK, sensitivity=Sensitivity.synthetic
+    )
+    assert restored.to_payload() == payload
 
 
 def test_large_floats_survive_canonical_json_and_parquet_columns(tmp_path: Any) -> None:

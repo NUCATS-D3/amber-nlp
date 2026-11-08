@@ -227,6 +227,26 @@ class EvidenceGraph:
             readings=records["readings"],
         )
 
+    def _extended(
+        self,
+        *,
+        claims: Sequence[Mapping[str, Any]] = (),
+        evidence: Sequence[Mapping[str, Any]] = (),
+        edges: Sequence[Mapping[str, Any]] = (),
+        mentions: Sequence[Mapping[str, Any]] = (),
+        readings: Sequence[Mapping[str, Any]] = (),
+    ) -> _ValidatedState:
+        """Validate the current state plus new records, checking only the new ones singly."""
+        return validate_state(
+            self._context,
+            claims=claims,
+            evidence=evidence,
+            edges=edges,
+            mentions=mentions,
+            readings=readings,
+            base=self._state,
+        )
+
     def register_evidence(
         self, record: Inclusion | InferenceEvidence
     ) -> Inclusion | InferenceEvidence:
@@ -239,29 +259,25 @@ class EvidenceGraph:
         except (AttributeError, TypeError, ValueError):
             _raise("invalid_schema")
 
-        records = self._records()
-        evidence = records["evidence"]
-        existing_index = next(
-            (
-                index
-                for index, candidate in enumerate(evidence)
-                if candidate.get("evidence_id") == record_id
-            ),
-            None,
-        )
-        if existing_index is None:
-            evidence.append(record_payload)
-        else:
-            evidence[existing_index] = record_payload
-
-        candidate_state = self._validated(records)
-        incoming = candidate_state.evidence[record_id]
         current = self._state.evidence.get(record_id)
-        if current is not None and incoming != current:
-            _raise("duplicate_reference")
+        if current is None:
+            candidate_state = self._extended(evidence=[record_payload])
+        elif record == current:
+            return current.model_copy(deep=True)
+        else:
+            # A different record under a registered ID: revalidate with it in place, so an
+            # invalid replacement reports its own error before the conflict.
+            records = self._records()
+            records["evidence"] = [
+                record_payload if candidate.get("evidence_id") == record_id else candidate
+                for candidate in records["evidence"]
+            ]
+            candidate_state = self._validated(records)
+            if candidate_state.evidence[record_id] != current:
+                _raise("duplicate_reference")
 
         self._state = candidate_state
-        return incoming.model_copy(deep=True)
+        return candidate_state.evidence[record_id].model_copy(deep=True)
 
     def register_mention(
         self, mention: Mention, readings: Sequence[MentionReading]
@@ -305,12 +321,11 @@ class EvidenceGraph:
     def _publish_mention_records(
         self, mention_payload: dict[str, Any], reading_payloads: list[dict[str, Any]]
     ) -> tuple[Mention, tuple[MentionReading, ...]]:
-        records = self._records()
         mention_id = mention_payload.get("mention_id")
         if type(mention_id) is not str:
             _raise("invalid_schema")
-        if mention_id not in self._state.mentions:
-            records["mentions"].append(mention_payload)
+        new_mentions = [] if mention_id in self._state.mentions else [mention_payload]
+        new_readings: list[dict[str, Any]] = []
         reading_ids: list[str] = []
         for payload in reading_payloads:
             reading_id = payload.get("reading_id")
@@ -318,8 +333,8 @@ class EvidenceGraph:
                 _raise("duplicate_reference")
             reading_ids.append(reading_id)
             if reading_id not in self._state.readings:
-                records["readings"].append(payload)
-        candidate_state = self._validated(records)
+                new_readings.append(payload)
+        candidate_state = self._extended(mentions=new_mentions, readings=new_readings)
         incoming_mention = candidate_state.mentions[mention_id]
         if incoming_mention.model_dump() != mention_payload:
             _raise("duplicate_reference")
@@ -472,11 +487,9 @@ class EvidenceGraph:
                 for evidence_id in role_ids
             )
 
-        records = self._records()
-        records["claims"].append(claim_payload)
-        records["evidence"].append(inference_payload)
-        records["edges"].extend(new_edges)
-        candidate_state = self._validated(records)
+        candidate_state = self._extended(
+            claims=[claim_payload], evidence=[inference_payload], edges=new_edges
+        )
         minted = candidate_state.claims[claim_id].model_copy(deep=True)
         self._state = candidate_state
         return minted

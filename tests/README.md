@@ -31,7 +31,7 @@ The suite is flat and grouped by the boundary under test. All inputs are invente
 | `test_mlflow_datasets.py` | Examples as MLflow evaluation datasets: lossless records, gating, reload and event verification (needs tracking) |
 | `test_mlflow_evaluation.py` | MLflow validity scorer and gated report logging (needs tracking) |
 | `test_derivations.py` | Derivation records: inputs within the inference, defaults only on rule derivations and empty roles, unset derivations omitted from JSON |
-| `test_properties.py` | Hypothesis properties: canonical hashing, quote offsets, graph/result/bundle round trips, replay prefixes, random support graphs |
+| `test_properties.py` | Hypothesis properties: canonical hashing, quote offsets, graph/result/bundle round trips, replay prefixes, random support graphs, incremental graph validation equal to full revalidation |
 | `test_protected_changes.py` | CI guard for pinned contract artifacts and existing test assertions (uses git) |
 | `test_reference_guard.py` | Reference implementations refuse non-synthetic cases, runs, results, and exports |
 | `test_review.py` | Review backends: file round trips (single review, adjudication, unresolved, excluded, unreviewed), export gating, import refusals |
@@ -41,7 +41,7 @@ The suite is flat and grouped by the boundary under test. All inputs are invente
 | `test_answer_schemas.py` | Frozen, closed, strict `AnswerModel` subclasses |
 | `test_claim_schemas.py` | Task, claim, inference, and edge records; canonical IDs; immutability; wire shapes |
 | `test_graph_validation.py` | Full graph, context, and source validation; field citations; cycles; deep chains |
-| `test_graph.py` | Graph state, atomic registration, traversal, snapshots, and restore |
+| `test_graph.py` | Graph state, atomic registration, incremental validation and ID reuse across record kinds, traversal, snapshots, and restore |
 | `test_commit.py` | Proposed answers, field citations, atomic failure, supporting-claim chains |
 | `test_case_schemas.py` | Case membership and outcome consistency |
 | `test_cases.py` | Final vs. supporting claims; result creation and load revalidation |
