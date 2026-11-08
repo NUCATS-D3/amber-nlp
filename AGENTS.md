@@ -67,6 +67,7 @@ src/amber/annotations.py  annotation-event replay, projections, Examples from ev
 src/amber/interfaces.py   protocols (Store, SourceResolver, PolicyGate, Exporter, Provider, Extractor, Scorer,
                           Labeler, ReviewBackend; Rule is re-exported from rules.py)
 src/amber/scoring.py      score reports and the self-reference and move-on rules
+src/amber/span_scoring.py strict/lenient mention-span P/R/F1 and attribute accuracy (experimental)
 src/amber/evaluation.py   tier-aware binary metric harness: gates, Wilson, bootstrap
 src/amber/labeling.py     Labeler outputs, silver-only admission, import events from results
 src/amber/rules.py        RuleSpec, rule reduction and derivation, replay of rule derivations

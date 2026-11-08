@@ -1,18 +1,20 @@
 """Property tests for amber's core relations (amber-2sw; the invariant-tests skill): canonical
 hashing, quote faithfulness, wire and bundle round trips, replay prefix determinism, and
-random support graphs that must refuse cycles and source-free branches. Strategies are
+random support graphs that must refuse cycles and source-free branches, and span scoring
+(amber-a6d.10). Strategies are
 bounded so the suite stays fast; example counts and deadlines come from the Hypothesis profile
 in tests/conftest.py."""
 
 from __future__ import annotations
 
+import itertools
 import json
 import re
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import patch
 
-from hypothesis import assume, given
+from hypothesis import assume, example, given
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
@@ -50,6 +52,7 @@ from amber.schemas import (
     SourceKind,
     VariableSet,
 )
+from amber.span_scoring import Span, span_metrics
 
 from ._claim_helpers import SYNTHETIC_RUN_ID, make_provenance, make_task
 
@@ -495,3 +498,89 @@ def test_large_floats_survive_canonical_json_and_parquet_columns(tmp_path: Any) 
     from amber.bundles.parquet import _parse_json
 
     assert _parse_json("claims", "value", text) == value
+
+
+# Span scoring ---------------------------------------------------------------------------------
+
+
+@st.composite
+def scored_spans(draw: Any) -> Span:
+    start = draw(st.integers(0, 6))
+    end = start + draw(st.integers(1, 4))
+    fragments: tuple[tuple[int, int], ...] = ()
+    if draw(st.booleans()):
+        first = start + draw(st.integers(1, 2))
+        end = first + draw(st.integers(1, 3)) + draw(st.integers(1, 2))
+        fragments = ((start, first), (end - draw(st.integers(1, end - first - 1)), end))
+    negation = draw(st.lists(st.booleans(), max_size=2))
+    return Span(
+        case_id="c",
+        source_id="s",
+        mention_type=draw(st.sampled_from(("finding", "site"))),
+        start=start,
+        end=end,
+        fragments=fragments,
+        attributes={"negation": frozenset((bool, value) for value in negation)} if negation else {},
+    )
+
+
+_SPAN_LISTS = st.lists(scored_spans(), max_size=5)
+
+
+def _counts(predicted: list[Span], gold: list[Span]) -> dict[str, tuple[float, int]]:
+    return {
+        metric.name: (metric.numerator, metric.denominator)
+        for metric in span_metrics(predicted, gold)
+    }
+
+
+def _brute_force_lenient(predicted: list[Span], gold: list[Span]) -> int:
+    """Largest one-to-one overlap matching, by trying every assignment."""
+    mine = sorted({(span.mention_type, span.pieces) for span in predicted})
+    theirs = sorted({(span.mention_type, span.pieces) for span in gold})
+
+    def overlap(a: tuple[str, Any], b: tuple[str, Any]) -> bool:
+        return a[0] == b[0] and any(s < f and t < e for s, e in a[1] for t, f in b[1])
+
+    for size in range(min(len(mine), len(theirs)), 0, -1):
+        for chosen in itertools.combinations(mine, size):
+            for partners in itertools.permutations(theirs, size):
+                if all(overlap(a, b) for a, b in zip(chosen, partners, strict=True)):
+                    return size
+    return 0
+
+
+def _finding(start: int, end: int) -> Span:
+    return Span(case_id="c", source_id="s", mention_type="finding", start=start, end=end)
+
+
+@given(_SPAN_LISTS, _SPAN_LISTS)
+@example([_finding(0, 2), _finding(2, 3)], [_finding(0, 3), _finding(1, 2)])
+def test_lenient_span_matching_is_maximum_and_never_below_strict(
+    predicted: list[Span], gold: list[Span]
+) -> None:
+    counts = _counts(predicted, gold)
+    strict, lenient = counts["strict_precision"][0], counts["lenient_precision"][0]
+    assert strict <= lenient == _brute_force_lenient(predicted, gold)
+
+
+@given(_SPAN_LISTS, _SPAN_LISTS, st.randoms())
+def test_span_scores_ignore_order_and_swap_precision_with_recall(
+    predicted: list[Span], gold: list[Span], random: Any
+) -> None:
+    counts = _counts(predicted, gold)
+    shuffled_predicted, shuffled_gold = list(predicted), list(gold)
+    random.shuffle(shuffled_predicted)
+    random.shuffle(shuffled_gold)
+    assert span_metrics(shuffled_predicted, shuffled_gold) == span_metrics(predicted, gold)
+    swapped = _counts(gold, predicted)
+    for match in ("strict", "lenient"):
+        assert swapped[f"{match}_precision"] == counts[f"{match}_recall"]
+        assert swapped[f"{match}_f1"] == counts[f"{match}_f1"]
+
+
+@given(st.lists(scored_spans(), min_size=1, max_size=5))
+def test_predicting_the_reference_scores_perfectly(gold: list[Span]) -> None:
+    for metric in span_metrics(gold, gold):
+        if metric.kind == "evidence":
+            assert metric.value == 1
