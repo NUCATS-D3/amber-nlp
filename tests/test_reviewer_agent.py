@@ -61,14 +61,14 @@ def test_opencode_reviewer_denies_everything_then_allows_only_reads() -> None:
     assert rules[shell[-1]]["effect"] == "deny"
 
 
-def test_claude_reviewer_has_no_edit_tools_and_only_guarded_bash() -> None:
+def test_claude_reviewer_has_no_edit_tools() -> None:
     match = re.search(r"^tools: (.+)$", _frontmatter(CLAUDE), re.MULTILINE)
     assert match is not None
     tools = {tool.strip() for tool in match.group(1).split(",")}
     assert tools == {"Read", "Grep", "Glob", "Bash"}
 
 
-def _bash_guard() -> object:
+def _bash_guard() -> Any:
     import importlib.util
 
     path = ROOT / ".claude" / "hooks" / "reviewer_bash.py"
@@ -92,7 +92,7 @@ def _bash_guard() -> object:
     ],
 )
 def test_the_claude_reviewer_may_run_read_only_commands(command: str) -> None:
-    assert _bash_guard().allowed(command)  # type: ignore[attr-defined]
+    assert _bash_guard().allowed(command)
 
 
 @pytest.mark.parametrize(
@@ -114,12 +114,14 @@ def test_the_claude_reviewer_may_run_read_only_commands(command: str) -> None:
         "bd close amber-a6d.7",
         "gh pr merge 27",
         "gh pr view 27 --web",
+        "gh pr view 27 -w",
+        "gh pr diff 27 -w",
         "git diff\nrm -rf src",
         "",
     ],
 )
 def test_the_claude_reviewer_may_not_run_anything_else(command: str) -> None:
-    assert not _bash_guard().allowed(command)  # type: ignore[attr-defined]
+    assert not _bash_guard().allowed(command)
 
 
 def test_the_claude_reviewer_bash_guard_blocks_with_exit_2(
@@ -137,4 +139,4 @@ def test_the_claude_reviewer_bash_guard_blocks_with_exit_2(
 def test_the_claude_reviewer_runs_the_bash_guard() -> None:
     frontmatter = _frontmatter(CLAUDE)
     assert "PreToolUse:" in frontmatter and 'matcher: "Bash"' in frontmatter
-    assert ".claude/hooks/reviewer_bash.py" in frontmatter
+    assert 'command: python3 "${CLAUDE_PROJECT_DIR}/.claude/hooks/reviewer_bash.py"' in frontmatter

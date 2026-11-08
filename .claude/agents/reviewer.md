@@ -7,8 +7,7 @@ hooks:
     - matcher: "Bash"
       hooks:
         - type: command
-          command: python3
-          args: ["${CLAUDE_PROJECT_DIR}/.claude/hooks/reviewer_bash.py"]
+          command: python3 "${CLAUDE_PROJECT_DIR}/.claude/hooks/reviewer_bash.py"
 ---
 
 Read `docs/review_prompt.md` before anything else and follow it exactly. You are read-only: Bash

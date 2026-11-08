@@ -16,7 +16,7 @@ _ALLOWED = re.compile(
     r"^(?:git (?:diff|log|show|status|blame|merge-base|rev-parse|ls-files)"
     r"|bd show|gh pr (?:view|diff))(?: |$)"
 )
-_FORBIDDEN = re.compile(r"[<>|;&`\n\r]|\$\(|--output|--web\b")
+_FORBIDDEN = re.compile(r"[<>|;&`\n\r]|\$\(|--output|--web\b|(?:^| )-w\b")
 
 
 def allowed(command: str) -> bool:
