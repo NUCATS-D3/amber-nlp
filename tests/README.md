@@ -53,11 +53,14 @@ exercise the task-agnostic kernel.
 
 ## Local checks
 
+`make check` runs all of the following in about a minute (`make help` lists the targets):
+
 ```sh
 uv sync --locked --extra dev --extra tracking --extra bundles
 uv run --no-sync pytest --strict-markers -ra -m "not slow"
 uv run --no-sync ruff check . && uv run --no-sync ruff format --check .
 uv run --no-sync mypy src
+uv run --no-sync lint-imports
 uv lock --check
 ```
 
