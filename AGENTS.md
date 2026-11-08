@@ -21,6 +21,13 @@ File follow-up work with `bd create` instead of Markdown TODO lists. Never use `
 is interactive. Keep issue text free of clinical text, quotes, or offsets. Experiment work is
 tracked in lapidary.
 
+## Agent hooks
+
+`.claude/settings.json` runs two hooks. After each edit to a Python file under `src/` or `tests/`,
+`post_edit.py` runs Ruff (with fixes) and, under `src/`, mypy, and reports failures. Before you
+stop with changes under `src/` or `tests/`, `stop_gate.py` runs `make lint typecheck test-fast`
+and keeps you working until they pass. Fix what they report; never work around them.
+
 ## Development skills
 
 Project skills live in `.agents/skills/` (linked from `.claude/skills/`). Use them when their
