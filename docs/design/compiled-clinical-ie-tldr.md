@@ -79,8 +79,15 @@ N1 to N3.
 | 5 Distill | The student takes over finding mentions (L1/L2); copal keeps combining them (L3), so every claim stays replayable |
 | 6 Evaluate | Every artifact is scored on test gold. Silent and abstention rates are monitored and trigger new gold and recompilation |
 
-A silent output on a note that has a gold target counts as a false negative, never as an
-abstention ([§6.2](compiled-clinical-ie.md#62-explicit-abstention)).
+How these outputs become amber outcomes was decided on 2026-11-04 (amber-b5c), with no contract
+change ([§6.2](compiled-clinical-ie.md#62-explicit-abstention)):
+
+- **Abstain** becomes `insufficient_evidence`, citing the span that triggered it. Disagreeing
+  values become `conflicting_evidence` instead, for note-level variables only.
+- **Silent** becomes `not_mentioned` only when the rule set declares that it covers the whole
+  note. Only then does silence on a note with a gold target count as a false negative.
+  Without that declaration, an extractor reports `insufficient_evidence` and a labeler records
+  no reference for the note.
 
 ## Phases and gates
 
@@ -146,7 +153,6 @@ Full list in [§11](compiled-clinical-ie.md#11-risks-and-mitigations).
 
 From [§12](compiled-clinical-ie.md#12-open-questions):
 
-- How abstain and silent outputs map to amber outcomes.
 - Which copal features each phase needs.
 - Whether accepting score-neutral edits lets harmful ones accumulate.
 - Whether the shareable HF-symptom corpus's terms allow the reflection-LLM setup.
