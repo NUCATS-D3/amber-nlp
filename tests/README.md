@@ -32,7 +32,7 @@ The suite is flat and grouped by the boundary under test. All inputs are invente
 | `test_mlflow_evaluation.py` | MLflow validity scorer and gated report logging (needs tracking) |
 | `test_derivations.py` | Derivation records: inputs within the inference, defaults only on rule derivations and empty roles, unset derivations omitted from JSON |
 | `test_properties.py` | Hypothesis properties: canonical hashing, quote offsets, graph/result/bundle round trips, replay prefixes, random support graphs, incremental graph validation equal to full revalidation |
-| `test_protected_changes.py` | CI guard for pinned contract artifacts and existing test assertions (uses git) |
+| `test_protected_changes.py` | CI and pre-commit guard for pinned contract artifacts, harness files, and existing test assertions; label vs. `ALLOW_ORACLE_CHANGE` approval (uses git) |
 | `test_reference_guard.py` | Reference implementations refuse non-synthetic cases, runs, results, and exports |
 | `test_review.py` | Review backends: file round trips (single review, adjudication, unresolved, excluded, unreviewed), export gating, import refusals |
 | `test_rules.py` | Rules: specs and registry, reduction (equal, conflicting, many, rejected), on_missing, conflict propagation, replay and tampering, events and bundles |

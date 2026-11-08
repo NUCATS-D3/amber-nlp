@@ -1,0 +1,36 @@
+# Install with `make hooks`. Ruff and mypy run from the locked environment (`make sync`).
+# CI runs the same oracle guard on pull requests; --no-verify skips these hooks, not CI.
+# Golden records are byte-pinned; tool state and generated slides are not ours to reformat.
+exclude: ^(src/amber/conformance/golden/|\.omx/|\.beads/|docs/slides/|data/)
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-added-large-files
+        args: [--maxkb=500]
+  - repo: local
+    hooks:
+      - id: oracle-guard
+        name: protected artifacts, harness files, and test assertions (ALLOW_ORACLE_CHANGE=1)
+        entry: python3 scripts/check_protected_changes.py --staged
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: ruff
+        name: ruff check
+        entry: uv run --no-sync ruff check --fix
+        language: system
+        types_or: [python, pyi]
+      - id: ruff-format
+        name: ruff format
+        entry: uv run --no-sync ruff format
+        language: system
+        types_or: [python, pyi]
+      - id: mypy
+        name: mypy src
+        entry: uv run --no-sync mypy src
+        language: system
+        types_or: [python, pyi]
+        pass_filenames: false
