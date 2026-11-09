@@ -206,3 +206,142 @@ def test_the_environment_variable_never_approves_a_pull_request_diff(
     diff.write_text(_git(repo, "diff", "--cached", "--unified=0", "HEAD"))
     monkeypatch.setenv("ALLOW_ORACLE_CHANGE", "1")
     assert guard.main([str(diff), "--labels", ""]) == 1
+
+
+# Moving tests out of make check (amber-a6d.16) -------------------------------------------------
+
+PYPROJECT = """[project]
+name = "x"
+dependencies = ["pydantic"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: long-running"]
+"""
+
+
+def _with_pyproject(repo: Path) -> Path:
+    (repo / "pyproject.toml").write_text(PYPROJECT)
+    (repo / "tests" / "conftest.py").write_text("PROFILE = 'dev'\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "config")
+    return repo
+
+
+@pytest.mark.parametrize("path", ["tests/conftest.py", "tests/sub/conftest.py"])
+def test_conftest_files_are_protected(repo: Path, path: str) -> None:
+    (repo / path).parent.mkdir(parents=True, exist_ok=True)
+    (repo / path).write_text("PROFILE = 'quick'\n")
+    assert _found(repo) == [path]
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "line"),
+    [
+        ('testpaths = ["tests"]\n', 'testpaths = ["tests/unit"]\n', 6),
+        (
+            'markers = ["slow: long-running"]\n',
+            'markers = ["slow: long-running"]\naddopts = "-m fast"\n',
+            8,
+        ),
+        (
+            "[tool.pytest.ini_options]\n",
+            "[tool.pytest.ini_options]\nfilterwarnings = ['ignore']\n",
+            6,
+        ),
+    ],
+    ids=["edited-key", "added-addopts", "added-filterwarnings"],
+)
+def test_pytest_configuration_changes_are_found(repo: Path, old: str, new: str, line: int) -> None:
+    _with_pyproject(repo)
+    pyproject = repo / "pyproject.toml"
+    pyproject.write_text(pyproject.read_text().replace(old, new))
+    assert _found(repo) == [f"pyproject.toml:{line}"]
+
+
+def test_other_pyproject_changes_are_unrestricted(repo: Path) -> None:
+    _with_pyproject(repo)
+    pyproject = repo / "pyproject.toml"
+    pyproject.write_text(pyproject.read_text().replace('["pydantic"]', '["pydantic", "ulid"]'))
+    assert _found(repo) == []
+
+
+@pytest.mark.parametrize(
+    "added",
+    [
+        "@pytest.mark.slow\n",
+        "@pytest.mark.skip(reason='later')\n",
+        "@pytest.mark.skipif(True, reason='x')\n",
+        "@pytest.mark.xfail\n",
+        "@settings(max_examples=5)\n",
+    ],
+    ids=["slow", "skip", "skipif", "xfail", "max-examples"],
+)
+def test_added_marks_that_deselect_tests_are_found(repo: Path, added: str) -> None:
+    test = repo / "tests" / "test_x.py"
+    test.write_text(test.read_text().replace("def test_one():\n", added + "def test_one():\n"))
+    assert _found(repo) == ["tests/test_x.py:1"]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "    pytest.skip('flaky')\n",
+        "    pytest.xfail('flaky')\n",
+        "    pytest.importorskip('numpy')\n",
+    ],
+    ids=["skip-call", "xfail-call", "importorskip"],
+)
+def test_added_skip_calls_are_found(repo: Path, body: str) -> None:
+    test = repo / "tests" / "test_x.py"
+    test.write_text(test.read_text().replace("    value = 1\n", body + "    value = 1\n"))
+    assert _found(repo) == ["tests/test_x.py:2"]
+
+
+def test_marks_outside_tests_and_unchanged_marks_are_unrestricted(repo: Path) -> None:
+    (repo / "src" / "amber" / "other.py").write_text("# pytest.mark.skip is just text here\n")
+    assert _found(repo) == []
+    test = repo / "tests" / "test_x.py"
+    test.write_text("import pytest\n\n\n@pytest.mark.slow\n" + test.read_text())
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "mark")
+    test.write_text(test.read_text() + "\n\ndef test_three():\n    assert True\n")
+    assert _found(repo) == []
+
+
+@pytest.mark.parametrize(
+    "added",
+    [
+        "pytestmark = pytest.mark.slow\n",
+        "CASES = [pytest.param(1, marks=pytest.mark.xfail)]\n",
+    ],
+    ids=["module-mark", "param-mark"],
+)
+def test_module_and_param_marks_are_found(repo: Path, added: str) -> None:
+    test = repo / "tests" / "test_x.py"
+    test.write_text(added + test.read_text())
+    assert _found(repo) == ["tests/test_x.py:1"]
+
+
+def test_mark_names_inside_strings_and_comments_are_not_flagged(repo: Path) -> None:
+    test = repo / "tests" / "test_x.py"
+    added = (
+        'EXAMPLES = ["@pytest.mark.slow\\n", "pytest.skip(\'x\')"]\n'
+        "# pytest.mark.xfail is described here\n"
+    )
+    test.write_text(added + test.read_text())
+    assert _found(repo) == []
+
+
+def test_a_removed_pytest_configuration_line_is_found(repo: Path) -> None:
+    _with_pyproject(repo)
+    pyproject = repo / "pyproject.toml"
+    pyproject.write_text(pyproject.read_text().replace('markers = ["slow: long-running"]\n', ""))
+    assert _found(repo) == ["pyproject.toml:7"]
+
+
+def test_quoted_test_data_is_not_flagged(repo: Path) -> None:
+    test = repo / "tests" / "test_x.py"
+    added = 'CASES = [\n    "x = [pytest.param(1, marks=pytest.mark.xfail)]",\n]\n'
+    test.write_text(added + test.read_text())
+    assert _found(repo) == []

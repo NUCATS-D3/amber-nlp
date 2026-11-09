@@ -8,8 +8,13 @@ Protected:
 - the harness: agent hook settings and scripts, agent definitions and the review prompt, the
   pre-commit config, the Makefile, CI workflows, and this script: any change;
 - ``tests/**/*.py``: any removed line that asserts (``assert``, ``pytest.raises``, or an
-  ``_assert*`` helper call), which covers deleted, edited, and moved assertions. Added tests
-  are unrestricted.
+  ``_assert*`` helper call), which covers deleted, edited, and moved assertions;
+- moving tests out of ``make check`` (amber-a6d.16): any change to ``tests/**/conftest.py``; an
+  added or removed line of pytest configuration in ``pyproject.toml``; an added line in
+  ``tests/**/*.py`` that skips, deselects, or marks a test (``pytest.mark.skip``, ``skipif``,
+  ``xfail``, ``slow``; ``pytest.skip``, ``xfail``, ``importorskip``) or sets Hypothesis
+  ``settings``. Otherwise added tests are unrestricted. Dropped parametrized cases cannot be
+  told from refactors in a diff and are left to review.
 
 Pull requests: ``git diff --unified=0 BASE HEAD | python3 scripts/check_protected_changes.py
 --labels "a,b"``; the ``contract-approved`` label approves. Commits (pre-commit): ``--staged``
@@ -42,19 +47,48 @@ _PROTECTED = (
     re.compile(r"^\.github/workflows/"),
     re.compile(r"^Makefile$"),
     re.compile(r"^scripts/check_protected_changes\.py$"),
+    re.compile(r"^tests/(?:.+/)?conftest\.py$"),
 )
 _TESTS = re.compile(r"^tests/.+\.py$")
 _ASSERTION = re.compile(r"^\s*assert\b|\bpytest\.raises\(|\b_assert\w*\(")
-_HUNK = re.compile(r"^@@ -(\d+)(?:,\d+)? \+\d+(?:,\d+)? @@")
+# Code positions only (decorators, module marks, param marks, statement-level calls), so the
+# same words inside strings or comments are not flagged.
+_MARK = r"pytest\.mark\.(?:skip|skipif|xfail|slow)\b"
+_DESELECTION = re.compile(
+    rf"^\s*@{_MARK}|^\s*pytestmark\s*=.*{_MARK}|\bmarks\s*=.*{_MARK}"
+    r"|^\s*(?:\w+\s*=\s*)?pytest\.(?:skip|xfail|importorskip)\("
+    r"|^\s*@settings\(|^\s*settings\.register_profile\("
+)
+_PYTEST_CONFIG = re.compile(
+    r"^\s*(?:\[tool\.pytest|addopts|testpaths|markers|python_files|python_classes"
+    r"|python_functions|norecursedirs|filterwarnings|required_plugins|xfail_strict|minversion)\b"
+)
+_HUNK = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+
+
+def _removed_is_protected(path: str, body: str) -> bool:
+    """A removed assertion in a test, or removed pytest configuration."""
+    if _TESTS.match(path):
+        return bool(_ASSERTION.search(body))
+    return path == "pyproject.toml" and bool(_PYTEST_CONFIG.search(body))
+
+
+def _added_is_protected(path: str, body: str) -> bool:
+    """An added line that deselects a test (not quoted data or a comment), or added pytest
+    configuration."""
+    if _TESTS.match(path):
+        quoted = body.lstrip().startswith(('"', "'", "#"))
+        return not quoted and bool(_DESELECTION.search(body))
+    return path == "pyproject.toml" and bool(_PYTEST_CONFIG.search(body))
 
 
 def violations(diff: Iterable[str]) -> list[str]:
-    """``path`` for changed protected artifacts and ``path:line`` for removed assertions
-    (line numbers in the base version)."""
+    """``path`` for changed protected artifacts and ``path:line`` for flagged lines: removed
+    lines by their base line number, added lines by their new line number."""
     found: list[str] = []
     old_path: str | None = None
     new_path: str | None = None
-    line = 0
+    line = new_line = 0
     for raw in diff:
         text = raw.rstrip("\n")
         if text.startswith("diff --git "):
@@ -72,15 +106,20 @@ def violations(diff: Iterable[str]) -> list[str]:
             continue
         hunk = _HUNK.match(text)
         if hunk:
-            line = int(hunk.group(1))
+            line, new_line = int(hunk.group(1)), int(hunk.group(2))
             continue
         if text.startswith("-") and old_path is not None:
-            if _TESTS.match(old_path) and _ASSERTION.search(text[1:]):
+            if _removed_is_protected(old_path, text[1:]):
                 found.append(f"{old_path}:{line}")
             line += 1
+        elif text.startswith("+") and new_path is not None:
+            if _added_is_protected(new_path, text[1:]):
+                found.append(f"{new_path}:{new_line}")
+            new_line += 1
         elif text.startswith(" "):
             line += 1
-    return found
+            new_line += 1
+    return list(dict.fromkeys(found))
 
 
 def main(argv: list[str] | None = None) -> int:
