@@ -18,6 +18,7 @@ def _report(
     scorer: str = "amber-mention-spans",
     example_ids: tuple[str, ...] = (),
     inconclusive: tuple[str, ...] = (),
+    tier_mix: dict[str, int] | None = None,
 ) -> ScoreReport:
     return ScoreReport(
         scorer=scorer,
@@ -26,7 +27,8 @@ def _report(
             for name, (num, den) in metrics.items()
         ),
         example_ids=example_ids,
-        provisional=False,
+        tier_mix={"silver": 2} if tier_mix is None else tier_mix,
+        provisional=tier_mix is None or "silver" in tier_mix,
         inconclusive=inconclusive,
     )
 
@@ -173,8 +175,8 @@ def test_different_gold_is_inconclusive() -> None:
     baseline = _baseline(metrics=("strict_f1", "strict_f1:site"))
     result = compare(report, baseline, references=RELABELLED)
     assert result.status == "inconclusive" and result.reasons == ("reference_changed",)
-    fewer = compare(report, baseline, references=REFS[:1])
-    assert fewer.reasons == ("reference_changed",)
+    with pytest.raises(ValueError, match="references_mismatch"):
+        compare(report, baseline, references=REFS[:1])  # the tier mix says two records
     reordered = compare(report, baseline, references=tuple(reversed(REFS)))
     assert reordered.status == "passed"
 
@@ -266,7 +268,8 @@ def test_a_broken_extractor_fails_a_span_baseline() -> None:
         return ScoreReport(
             scorer="amber-mention-spans",
             metrics=span_metrics(spans(predicted), gold),
-            provisional=False,
+            tier_mix={"silver": 2},
+            provisional=True,
         )
 
     good = report([(0, 4), (10, 14), (20, 24)])
@@ -289,7 +292,8 @@ def _variable_report(
             )
             for var, (num, den) in per_variable.items()
         ),
-        provisional=False,
+        tier_mix={"silver": 2},
+        provisional=True,
         **kwargs,
     )
 
@@ -326,14 +330,19 @@ def test_examples_are_pinned_by_their_content_ids() -> None:
 
     example = fx.note_example("adjudicated", present=True, producer=fx.TEACHER)
     other = fx.note_example("adjudicated", present=False, producer=fx.TEACHER)
-    report = _report({"strict_f1": (160, 200)}, example_ids=(example.example_id,))
+    one = {"adjudicated": 1}
+    report = _report({"strict_f1": (160, 200)}, example_ids=(example.example_id,), tier_mix=one)
     baseline = baseline_from(report, references=(example,))
     assert compare(report, baseline, references=(example,)).status == "passed"
-    moved = _report({"strict_f1": (160, 200)}, example_ids=(other.example_id,))
+    moved = _report({"strict_f1": (160, 200)}, example_ids=(other.example_id,), tier_mix=one)
     assert compare(moved, baseline, references=(other,)).reasons == ("reference_changed",)
-    both = _report({"strict_f1": (160, 200)}, example_ids=(other.example_id, example.example_id))
+    two = {"adjudicated": 2}
+    ids = (other.example_id, example.example_id)
+    both = _report({"strict_f1": (160, 200)}, example_ids=ids, tier_mix=two)
     pinned = baseline_from(both, references=(example, other))
     assert compare(both, pinned, references=(other, example)).status == "passed"
+    with pytest.raises(ValueError, match="references_mismatch"):
+        compare(both, pinned, references=(other, example, other))
 
 
 def test_options_for_untracked_metrics_are_refused() -> None:
@@ -394,8 +403,15 @@ def test_a_per_variable_metric_is_inconclusive_when_its_name_is() -> None:
     undefined = ScoreReport(
         scorer="amber-label-correct",
         metrics=(),
-        provisional=False,
+        tier_mix={"silver": 2},
+        provisional=True,
         inconclusive=("label_accuracy",),
     )
     result = compare(undefined, baseline, references=REFS)
     assert result.status == "inconclusive" and result.exit_code == 3
+
+
+def test_a_baseline_fingerprint_must_be_a_sha256() -> None:
+    data = _baseline().model_dump(mode="json")
+    with pytest.raises(ValidationError):
+        Baseline.model_validate({**data, "references": "Z" * 64})

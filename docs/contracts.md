@@ -476,7 +476,8 @@ sensitivity. They ship with the core; `amber[reference]` installs what all of th
   metric its name, variable, counts, direction, and optional tolerance; the value is derived
   from the counts); amber never writes one. References are pinned by Example content IDs and a
   canonical hash of each label record, since no report carries label-record content; the
-  report's `example_id`s must be exactly the Examples given (`references_mismatch`). Metrics are
+  report's `example_id`s must be exactly the Examples given, and its tier mix that of the
+  references (`references_mismatch`); callers pass the references the report was scored on. Metrics are
   keyed by name and variable (`label_accuracy[finding]`); a duplicate key is refused
   (`duplicate_metric`), as are options for unknown or untracked metrics. `compare(report,
   baseline, *, references)` refuses another scorer (`scorer_mismatch`) and rates each tracked

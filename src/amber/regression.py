@@ -36,7 +36,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from amber.ids import canonical_sha256
 from amber.schemas import Example, LabelRecord
-from amber.scoring import Metric, ScoreReport
+from amber.scoring import Metric, ScoreReport, tier_mix
 
 BASELINE_VERSION: Literal["amber-baseline/0.1"] = "amber-baseline/0.1"
 DEFAULT_TOLERANCE = 0.005
@@ -95,7 +95,7 @@ class Baseline(BaseModel):
 
     schema_version: Literal["amber-baseline/0.1"] = BASELINE_VERSION
     scorer: str = Field(min_length=1)
-    references: str = Field(min_length=64, max_length=64)
+    references: str = Field(pattern=r"^[0-9a-f]{64}$")
     metrics: tuple[BaselineMetric, ...] = Field(min_length=1)
     default_tolerance: _Tolerance = DEFAULT_TOLERANCE
     low_support: LowSupport | None = None
@@ -116,9 +116,13 @@ class Baseline(BaseModel):
 
 
 def _references(report: ScoreReport, references: Sequence[Example | LabelRecord]) -> str:
-    """SHA-256 of the references, after checking they are the ones the report scored."""
-    examples = sorted(record.example_id for record in references if isinstance(record, Example))
-    if examples != sorted(report.example_ids):
+    """SHA-256 of the references, after checking they match the report's Examples and tier mix.
+
+    Label records cannot be checked against the report beyond their tiers: callers pass the
+    references the report was scored on.
+    """
+    examples = sorted({record.example_id for record in references if isinstance(record, Example)})
+    if examples != sorted(set(report.example_ids)) or tier_mix(references) != dict(report.tier_mix):
         raise ValueError("references_mismatch")
     labels = sorted(
         canonical_sha256(record.model_dump(mode="json"))
