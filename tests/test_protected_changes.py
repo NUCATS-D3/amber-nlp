@@ -558,3 +558,36 @@ def test_aliases_of_deselection_are_found(repo: Path, added: str) -> None:
 def test_an_empty_new_protected_file_is_found(repo: Path) -> None:
     (repo / "pytest.ini").write_text("")
     assert _found(repo) == ["pytest.ini"]
+
+
+@pytest.mark.parametrize(
+    "added",
+    [
+        "    ROWS = (1, 2)  # fmt: skip\n",
+        "    review(cases, skip=['case-1'])\n",
+        "    TEXT = 'a # pytest.mark.skip in a string'\n",
+    ],
+    ids=["fmt-skip", "skip-keyword", "hash-in-string"],
+)
+def test_ordinary_test_lines_are_not_flagged(repo: Path, added: str) -> None:
+    test = repo / "tests" / "test_x.py"
+    test.write_text(test.read_text().replace("    value = 1\n", "    value = 1\n" + added))
+    assert _found(repo) == []
+
+
+def test_a_mark_before_a_trailing_comment_is_still_found(repo: Path) -> None:
+    test = repo / "tests" / "test_x.py"
+    test.write_text("@pytest.mark.skip  # temporary\n" + test.read_text())
+    assert _found(repo) == ["tests/test_x.py:1"]
+
+
+def test_single_quoted_entry_points_are_found(repo: Path) -> None:
+    pyproject = _with_plugin(repo)
+    pyproject.write_text(pyproject.read_text() + "extra = 'amber.extra'\n")
+    assert _found(repo) == ["pyproject.toml:7"]
+
+
+def test_renaming_a_test_to_another_test_name_is_not_flagged(repo: Path) -> None:
+    test = repo / "tests" / "test_x.py"
+    test.write_text(test.read_text().replace("def test_one():", "def test_first():"))
+    assert _found(repo) == []
