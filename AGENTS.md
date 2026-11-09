@@ -182,9 +182,10 @@ For the core-only installation check, see [tests/README.md](tests/README.md#ci).
   databases, MLflow artifacts, or model weights.
 - Datasets live outside repositories and are registered in lapidary; `data/` and
   `experiments/` stay ignored here as a safety net.
-- `examples/` is synthetic only. `make phi-scan` (part of `make check` and pre-commit) fails on
-  identifier-shaped text (SSNs, phone numbers, emails outside reserved test domains, MRN- or
-  birth-date-like values) in `tests/`, `examples/`, `src/amber/conformance/`, and `docs/`. Use
+- `examples/` is synthetic only. `make phi-scan` (part of `make check`, pre-commit, and CI) fails
+  on identifier-shaped text (SSNs, phone numbers, emails outside reserved test domains, MRN- or
+  birth-date-like values) anywhere in the repository, including Beads issue text; only package
+  authors' emails in the npm lockfile and each Beads issue's creator email are skipped. Use
   invented values that do not look like identifiers, or `example.invalid` addresses.
 - The worktree may contain user changes: check `git status` first and preserve unrelated work.
 
