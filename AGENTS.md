@@ -16,15 +16,17 @@ A task is done when all of these hold:
    `check ok`) in your final message. Without that output, do not say the work passes.
 2. The bead's acceptance criteria are met, each with the evidence: a test, a command and its
    output, or a review.
-3. The `reviewer` agent has reviewed the branch (see [Review](#review)).
+3. The `reviewer` agent has reviewed the branch, and every blocking finding is resolved or
+   explained in the pull request (see [Review](#review)).
 
 ### Protected paths
 
 These are the oracle. They judge your work, so you never change them:
 
 - golden records, the conformance catalog, and conformance fixtures;
-- the verification harness: agent hooks and settings, agent definitions and the review prompt,
-  `.pre-commit-config.yaml`, `Makefile`, CI workflows, and the guard script;
+- the verification harness: Claude Code hooks and settings, the OpenCode plugin and config,
+  agent definitions and the review prompt, `.pre-commit-config.yaml`, `Makefile`, CI workflows,
+  and the guard script;
 - every existing test assertion.
 
 The authoritative list is `_PROTECTED` in
@@ -36,12 +38,15 @@ test or check looks wrong, stop and explain why in your reply or the bead; a hum
 
 - Adding `skip`, `skipif`, `xfail`, or `importorskip` to make a failure go away.
 - Loosening an assertion, tolerance, exception match, or Hypothesis strategy.
+- Moving a test out of `make check` (a `slow` mark, `conftest.py`, pytest options), dropping
+  parametrized cases, or lowering Hypothesis example counts.
 - Special-casing a test input, fixture value, ID, or file name, or behaving differently under
   pytest or CI.
 - Catching and suppressing an exception so a test passes.
 - Adding `# type: ignore`, `# noqa`, or configuration that silences a real error.
-- Regenerating golden records or a baseline to match new output, outside the contract-change
-  skill and a human's approval.
+- Regenerating golden records to match new output outside the contract-change skill and a
+  human's approval. (Regression baselines live with consumers such as lapidary, which protect
+  their own.)
 - Setting `ALLOW_ORACLE_CHANGE`, committing with `--no-verify`, or adding the
   `contract-approved` label.
 
