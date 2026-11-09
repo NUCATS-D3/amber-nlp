@@ -5,7 +5,7 @@ RUN := uv run --no-sync
 PYTEST := $(RUN) pytest --strict-markers -ra
 
 .DEFAULT_GOAL := help
-.PHONY: help sync hooks lint format typecheck imports lock test-fast test check mutation
+.PHONY: help sync hooks lint format typecheck imports lock phi-scan test-fast test check mutation
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -33,13 +33,16 @@ imports: ## Dependency direction (import-linter)
 lock: ## uv.lock matches pyproject.toml
 	uv lock --check
 
+phi-scan: ## Identifier-shaped text in tests, examples, conformance, docs
+	python3 scripts/phi_scan.py
+
 test-fast: ## Offline suite without slow tests (about 40 s)
 	$(PYTEST) -m "not slow"
 
 test: ## Every test, including slow ones
 	$(PYTEST)
 
-check: sync lint typecheck imports lock test-fast ## Definition of done
+check: sync lint typecheck imports lock phi-scan test-fast ## Definition of done
 	@echo "check ok"
 
 mutation: ## Mutation testing of the validation core (about 25 min); ARGS="--module grounding"
