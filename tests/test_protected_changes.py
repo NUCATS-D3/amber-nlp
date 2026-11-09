@@ -610,6 +610,8 @@ def test_a_test_class_renamed_out_beside_a_filler_is_found(repo: Path, hidden: s
     renamed = test.read_text().replace("class TestOne:", f"class {hidden}:")
     test.write_text(renamed + "\n\ndef test_filler():\n    assert True\n")
     assert _found(repo) == ["tests/test_x.py:1"]
+
+
 def test_staged_diffs_are_read_as_text(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # A -diff attribute would hide the removed assertion behind "Binary files ... differ".
     (repo / ".gitattributes").write_text("tests/test_x.py -diff\n")
