@@ -36,6 +36,7 @@ numbers only, never line contents. Standard library only.
 from __future__ import annotations
 
 import argparse
+import io
 import os
 import re
 import subprocess
@@ -244,8 +245,11 @@ def violations(diff: Iterable[str]) -> list[str]:
 
 
 def _lines(diff: bytes) -> list[str]:
-    """A diff's lines; ``--text`` puts binary bytes in it, which decode with replacement."""
-    return diff.decode("utf-8", errors="replace").splitlines(keepends=True)
+    """A diff's lines, split on ``\\n`` only: git ends every diff line with it, while form feeds,
+    lone carriage returns, and Unicode line separators are content (``str.splitlines`` would cut
+    there and hide the rest of the line). ``--text`` puts binary bytes in the diff, which decode
+    with replacement."""
+    return list(io.StringIO(diff.decode("utf-8", errors="replace"), newline="\n"))
 
 
 def main(argv: list[str] | None = None) -> int:

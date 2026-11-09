@@ -654,3 +654,36 @@ def test_binary_bytes_in_a_text_diff_do_not_crash_the_guard(
         ["python3", str(SCRIPT)], input=diff, capture_output=True, check=False
     )
     assert from_stdin.returncode == 0 and b"Traceback" not in from_stdin.stderr
+
+
+@pytest.mark.parametrize("prefix", ["\x0c", "\u2028", "\x85", "\r"], ids=["ff", "ls", "nel", "cr"])
+def test_odd_line_breaks_do_not_hide_a_removed_assertion(
+    repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path_factory: pytest.TempPathFactory,
+    prefix: str,
+) -> None:
+    test = repo / "tests" / "test_x.py"
+    test.write_text(test.read_text() + f"\n\ndef test_three():\n{prefix}    assert value\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "odd")
+    test.write_text(test.read_text().replace(f"{prefix}    assert value\n", "    pass\n"))
+    _git(repo, "add", "-A")
+    monkeypatch.chdir(repo)
+    monkeypatch.delenv("ALLOW_ORACLE_CHANGE", raising=False)
+    staged = subprocess.run(
+        ["python3", str(SCRIPT), "--staged"], capture_output=True, text=True, check=False
+    )
+    assert staged.returncode == 1 and "tests/test_x.py:" in staged.stdout
+    diff = subprocess.run(
+        ["git", "diff", "--cached", "--unified=0", "--text", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        check=True,
+    ).stdout
+    path = tmp_path_factory.mktemp("diff") / "changes.diff"
+    path.write_bytes(diff)
+    from_file = subprocess.run(
+        ["python3", str(SCRIPT), str(path)], capture_output=True, text=True, check=False
+    )
+    assert from_file.returncode == 1 and "tests/test_x.py:" in from_file.stdout

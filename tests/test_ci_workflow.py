@@ -39,7 +39,8 @@ def test_ci_runs_every_check_target_except_the_editable_sync() -> None:
     prerequisites = _check_prerequisites()
     assert "sync" in prerequisites and "test-fast" in prerequisites
     job = _tests_job()
-    assert "continue-on-error" not in job and "\n        if:" not in job
+    assert "continue-on-error" not in job
+    assert not re.search(r"^\s+if:", job, re.MULTILINE), "the tests job or a step is conditional"
     missing = set(prerequisites) - {"sync"} - _make_targets(job)
     assert not missing, f"the tests job skips make check targets: {sorted(missing)}"
 
