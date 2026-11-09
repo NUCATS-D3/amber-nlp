@@ -40,6 +40,7 @@ from amber.ids import (
     seeded_ulids,
 )
 from amber.reference import InMemoryResolver
+from amber.regression import baseline_from, compare
 from amber.schemas import (
     Case,
     CaseOutcome,
@@ -52,6 +53,7 @@ from amber.schemas import (
     SourceKind,
     VariableSet,
 )
+from amber.scoring import Metric, ScoreReport
 from amber.span_scoring import Span, span_metrics
 
 from ._claim_helpers import SYNTHETIC_RUN_ID, make_provenance, make_task
@@ -584,3 +586,37 @@ def test_predicting_the_reference_scores_perfectly(gold: list[Span]) -> None:
     for metric in span_metrics(gold, gold):
         if metric.kind == "evidence":
             assert metric.value == 1
+
+
+# Regression gate ----------------------------------------------------------------------------
+
+_METRICS = st.dictionaries(
+    st.sampled_from(("a", "b", "c:x", "d:y")),
+    st.integers(0, 50).flatmap(lambda den: st.tuples(st.integers(0, den), st.just(den))),
+    min_size=1,
+)
+
+
+@given(_METRICS, st.integers(-3, 3), st.sampled_from(("a", "b", "c:x", "d:y")))
+def test_a_report_passes_its_own_baseline_and_a_large_drop_regresses(
+    counts: dict[str, tuple[int, int]], shift: int, moved: str
+) -> None:
+    def report(values: dict[str, tuple[int, int]]) -> ScoreReport:
+        return ScoreReport(
+            scorer="s",
+            metrics=tuple(
+                Metric(name=name, kind="evidence", numerator=num, denominator=den)
+                for name, (num, den) in values.items()
+            ),
+            provisional=False,
+        )
+
+    assume(any(den for _, den in counts.values()))
+    baseline = baseline_from(report(counts))
+    assert compare(report(counts), baseline).status == "passed"
+    assume(moved in {metric.name for metric in baseline.metrics})
+    num, den = counts[moved]
+    lowered = {**counts, moved: (max(num + shift, 0), den)}
+    result = compare(report(lowered), baseline)
+    dropped = (num - max(num + shift, 0)) / den
+    assert (moved in result.regressions) == (dropped > 0.005 + 1e-12)

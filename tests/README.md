@@ -25,6 +25,7 @@ The suite is flat and grouped by the boundary under test. All inputs are invente
 | `test_scoring.py` | Score reports, self-reference refusal, move-on inclusion, reference scorers |
 | `test_labeling.py` | Labelers: silver-only admission, import events that replay to the Example, ImportLabeler outcomes |
 | `test_span_scoring.py` | Span scoring: hand-computed strict/lenient P/R/F1, per type and macro, one-to-one maximal matching, fragments, attribute accuracy, tier-gated reference readings, refusals, conformance kit |
+| `test_regression.py` | Regression gate: tolerance boundary, missing and undefined metrics, overrides, low support, direction, changed gold, scorer refusal, baseline validation and round trip, summary, a broken span extractor |
 | `test_evaluation.py` | Binary metric harness: protocol arithmetic, P=0, Q=0, no answers, provisional and label-only gates, Wilson and bootstrap |
 | `test_loupe_reference.py` | loupe export manifests, publication import (adjudicated, single review, unresolved, excluded), tampered publications, the loupe ReviewBackend |
 | `test_loupe_adapter.py` | loupe claim-mode adapter: CaseResults from requests, Unicode and CRLF offsets, repeated quotes, forged offsets, field evidence, outcomes, reproducible rebuilds, tampered results |
@@ -32,7 +33,7 @@ The suite is flat and grouped by the boundary under test. All inputs are invente
 | `test_mlflow_datasets.py` | Examples as MLflow evaluation datasets: lossless records, gating, reload and event verification (needs tracking) |
 | `test_mlflow_evaluation.py` | MLflow validity scorer and gated report logging (needs tracking) |
 | `test_derivations.py` | Derivation records: inputs within the inference, defaults only on rule derivations and empty roles, unset derivations omitted from JSON |
-| `test_properties.py` | Hypothesis properties: canonical hashing, quote offsets, graph/result/bundle round trips, replay prefixes, random support graphs, incremental graph validation equal to full revalidation, maximal span matching against brute force |
+| `test_properties.py` | Hypothesis properties: canonical hashing, quote offsets, graph/result/bundle round trips, replay prefixes, random support graphs, incremental graph validation equal to full revalidation, maximal span matching against brute force, regression gate against its own baseline |
 | `test_agent_hooks.py` | Agent hooks: post-edit Ruff/mypy on the edited file, stop gate (loop guard, change detection, failure summaries), settings wiring |
 | `test_reviewer_agent.py` | Reviewer agents: shared prompt, deny-first OpenCode permissions with read-only commands, Claude Bash allowlist hook |
 | `test_protected_changes.py` | CI and pre-commit guard for pinned contract artifacts, harness files, and existing test assertions; label vs. `ALLOW_ORACLE_CHANGE` approval (uses git) |
