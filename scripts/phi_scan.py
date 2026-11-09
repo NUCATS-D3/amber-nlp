@@ -116,14 +116,18 @@ def findings(
     return list(dict.fromkeys(found))
 
 
+class _Record(list[tuple[str, object]]):
+    """A JSON object's key-value pairs, kept apart from JSON arrays."""
+
+
 def _owner_email(line: str) -> str | None:
     """The top-level ``owner`` of a JSON line when it is exactly one email, else ``None``. With
     duplicate keys or a malformed line there is no exemption."""
     try:
-        pairs = json.loads(line, object_pairs_hook=list)
+        pairs = json.loads(line, object_pairs_hook=_Record)
     except ValueError:
         return None
-    if not isinstance(pairs, list):
+    if not isinstance(pairs, _Record):
         return None
     owners = [value for key, value in pairs if key == "owner"]
     keys = [key for key, _ in pairs]

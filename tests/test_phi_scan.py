@@ -180,7 +180,7 @@ def repo(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def test_the_scan_covers_every_file_but_excluded_lockfiles_and_never_prints_matches(
+def test_the_scan_covers_every_file_and_never_prints_matches(
     repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(repo)
@@ -316,13 +316,15 @@ def _issues(repo: Path, *lines: str) -> None:
             [f'{{"description": "call {PHONE}", "owner": "{EMAIL}", "description": "x"}}'],
             [".beads/issues.jsonl:1: phone", ".beads/issues.jsonl:1: email"],
         ),
+        # An array is not a record: no exemption, and no crash on odd shapes.
+        ([f'[["owner", "{EMAIL}"]]', "[1]", '["text"]'], [".beads/issues.jsonl:1: email"]),
         # Line numbers survive blank lines, malformed lines, and escaped separators.
         (
             ["", "not json", f'{{"title": "a\\u2028b", "owner": "{EMAIL}"}}', f'{{"t": "{SSN}"}}'],
             [".beads/issues.jsonl:4: ssn"],
         ),
     ],
-    ids=["owner-text", "nested-owner", "malformed", "duplicate-keys", "line-numbers"],
+    ids=["owner-text", "nested-owner", "malformed", "duplicate-keys", "arrays", "line-numbers"],
 )
 def test_the_beads_owner_exemption_is_narrow(
     repo: Path,
