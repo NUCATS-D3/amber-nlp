@@ -13,13 +13,14 @@
   `contract-approved` label approves. CI runs it on every pull request. With `--staged` it
   checks the git index as a pre-commit hook, and `ALLOW_ORACLE_CHANGE=1` approves instead of the
   label.
-- `phi_scan.py` scans every tracked and untracked (not ignored) file, except the third-party
-  lockfiles in `EXCLUDED`, for identifier-shaped text (SSN, phone, non-reserved email, MRN-like,
-  birth-date-like) and prints `path:line: pattern`, never the match. In `.beads/issues.jsonl`
-  the `owner` field is skipped; issue text is scanned. A binary file is reported `unscannable`
-  unless `UNSCANNABLE` pins it to the SHA-256 of reviewed content; line exceptions go in
-  `ALLOWED`. Both lists are reviewed by a human (the script is protected). `make phi-scan`,
-  `make check`, pre-commit, and CI run it.
+- `phi_scan.py` scans every tracked and untracked (not ignored) file for identifier-shaped text
+  (SSN, phone, non-reserved email, MRN-like, birth-date-like) and prints `path:line: pattern`,
+  never the match. `SKIPPED_PATTERNS` skips emails in the npm lockfile's third-party metadata;
+  in `.beads/issues.jsonl` only each issue's top-level `owner` email is skipped, and the rest of
+  the line is scanned. A binary file is reported `unscannable` unless `UNSCANNABLE` pins it to
+  the SHA-256 of reviewed content; line exceptions go in `ALLOWED`. All three lists are reviewed
+  by a human (the script is protected). `make phi-scan`, `make check`, pre-commit, and CI run
+  it.
 - `mutation_test.py` runs mutmut over the validation core (`annotations`, `cases`, `examples`,
   `_graph_validation`, `grounding`) weekly in CI
   ([mutation.yml](../.github/workflows/mutation.yml), which uploads the report and summarizes

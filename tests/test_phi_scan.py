@@ -169,7 +169,7 @@ def repo(tmp_path: Path) -> Path:
         "docs/note with spaces.md": f"Reach me at {EMAIL}.\n",
         "examples/clean.json": '{"text": "nothing to see"}\n',
         "src/amber/other.py": f"IN_SCOPE = '{SSN}'\n",
-        "uv.lock": f"# third-party metadata {SSN}\n",
+        "tools/opencode-check/package-lock.json": f'"deprecated": "contact {EMAIL}, {SSN}"\n',
         "docs/image.bin": "",
     }
     for name, text in files.items():
@@ -189,18 +189,20 @@ def test_the_scan_covers_every_file_but_excluded_lockfiles_and_never_prints_matc
     assert "tests/test_a.py:1: ssn" in out
     assert "docs/note with spaces.md:1: email" in out
     assert "src/amber/other.py:1: ssn" in out
-    assert "uv.lock" not in out
+    # The npm lockfile skips only third-party emails; other patterns still apply.
+    assert "tools/opencode-check/package-lock.json:1: ssn" in out
+    assert "package-lock.json:1: email" not in out
     # A binary file in scope cannot be scanned, so it is a finding of its own.
     assert "docs/image.bin: unscannable" in out
     for secret in (SSN, EMAIL, "hospital", "3456"):
         assert secret not in out
 
 
-def test_explicit_paths_are_scanned_unless_excluded(
+def test_explicit_paths_are_scanned(
     repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(repo)
-    assert scan.main(["examples/clean.json", "uv.lock"]) == 0
+    assert scan.main(["examples/clean.json"]) == 0
     assert scan.main(["tests/test_a.py"]) == 1
     assert "tests/test_a.py:1: ssn" in capsys.readouterr().out
 
@@ -288,3 +290,55 @@ def test_root_files_are_scanned(
     (repo / "README.md").write_text(f"Questions to {EMAIL}\n")
     assert scan.main(["README.md"]) == 1
     assert "README.md:1: email" in capsys.readouterr().out
+
+
+def _issues(repo: Path, *lines: str) -> None:
+    issues = repo / ".beads" / "issues.jsonl"
+    issues.parent.mkdir(exist_ok=True)
+    issues.write_text("".join(line + "\n" for line in lines))
+
+
+@pytest.mark.parametrize(
+    ("lines", "expected"),
+    [
+        # Text in owner that is not the creator's email is scanned.
+        ([f'{{"id": "x", "owner": "{SSN}"}}'], [".beads/issues.jsonl:1: ssn"]),
+        # A nested owner is issue text, not the record's creator.
+        (
+            [f'{{"id": "x", "owner": "a@example.invalid", "notes": {{"owner": "{EMAIL}"}}}}'],
+            [".beads/issues.jsonl:1: email"],
+        ),
+        # A malformed line is scanned as written, owner email included: it fails closed.
+        ([f'{{"id": "x", "owner": "{EMAIL}"'], [".beads/issues.jsonl:1: email"]),
+        # Duplicate keys cannot hide a value: the line is scanned as written, and the owner
+        # exemption is withdrawn, so it fails closed.
+        (
+            [f'{{"description": "call {PHONE}", "owner": "{EMAIL}", "description": "x"}}'],
+            [".beads/issues.jsonl:1: phone", ".beads/issues.jsonl:1: email"],
+        ),
+        # Line numbers survive blank lines, malformed lines, and escaped separators.
+        (
+            ["", "not json", f'{{"title": "a\\u2028b", "owner": "{EMAIL}"}}', f'{{"t": "{SSN}"}}'],
+            [".beads/issues.jsonl:4: ssn"],
+        ),
+    ],
+    ids=["owner-text", "nested-owner", "malformed", "duplicate-keys", "line-numbers"],
+)
+def test_the_beads_owner_exemption_is_narrow(
+    repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    lines: list[str],
+    expected: list[str],
+) -> None:
+    monkeypatch.chdir(repo)
+    _issues(repo, *lines)
+    scan.main([".beads/issues.jsonl"])
+    reported = [line for line in capsys.readouterr().out.splitlines() if ": " in line]
+    assert reported == expected
+
+
+def test_raw_unicode_line_separators_do_not_shift_line_numbers() -> None:
+    # U+2028 and NEL are content inside a line; only newlines end one.
+    text = "first \u2028 still first \x85 too\n" + f"second {SSN}\n"
+    assert scan.findings(text) == [(2, "ssn")]

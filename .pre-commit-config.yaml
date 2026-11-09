@@ -1,13 +1,15 @@
 # Install with `make hooks`. Ruff and mypy run from the locked environment (`make sync`).
 # CI runs the same oracle guard on pull requests; --no-verify skips these hooks, not CI.
-# Golden records are byte-pinned; tool state and generated slides are not ours to reformat.
-exclude: ^(src/amber/conformance/golden/|\.omx/|\.beads/|docs/slides/|data/)
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
     hooks:
+      # Golden records are byte-pinned; tool state and generated slides are not ours to reformat.
+      # The exclusion is per fixer, so the identifier scan still sees these files.
       - id: end-of-file-fixer
+        exclude: &not-ours ^(src/amber/conformance/golden/|\.omx/|\.beads/|docs/slides/|data/)
       - id: trailing-whitespace
+        exclude: *not-ours
       - id: check-added-large-files
         args: [--maxkb=500]
   - repo: local
@@ -19,10 +21,9 @@ repos:
         pass_filenames: false
         always_run: true
       - id: phi-scan
-        name: identifier-shaped text in synthetic-only paths
+        name: identifier-shaped text anywhere in the repository
         entry: python3 scripts/phi_scan.py
         language: system
-        # The script applies its own scope to the staged files it is given.
       - id: ruff
         name: ruff check
         entry: uv run --no-sync ruff check --fix
