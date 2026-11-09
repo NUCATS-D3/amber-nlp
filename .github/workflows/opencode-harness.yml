@@ -1,0 +1,36 @@
+name: OpenCode harness
+
+# The OpenCode plugin and the reviewer agent's permissions only work while OpenCode's plugin API and
+# permission schema stay as they were when they were verified (amber-a6d.14). This type-checks the
+# plugin and decodes the agents' permission rules against the pinned SDK in tools/opencode-check.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: OpenCode plugin and agents against the pinned SDK
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: tools/opencode-check
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+      - name: Install the pinned SDK
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Type-check the plugin and decode the agents' permissions
+        run: npm run check

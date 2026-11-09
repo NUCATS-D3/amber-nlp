@@ -33,3 +33,7 @@ notebooks/**/__marimo__/
 # env vars
 .envrc
 /mutation-report.json
+
+# OpenCode SDK check (tools/opencode-check)
+/tools/opencode-check/node_modules/
+/tools/opencode-check/build/

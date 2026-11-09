@@ -6,8 +6,8 @@ Protected:
 
 - ``src/amber/conformance/golden/*.json``, ``catalog.json``, and ``fixtures.py``: any change;
 - the harness: agent hook settings and scripts, agent definitions and the review prompt, the
-  pre-commit config, the Makefile, CI workflows, the identifier scan, and this script: any
-  change;
+  pre-commit config, the Makefile, CI workflows, the identifier scan, the OpenCode SDK check,
+  and this script: any change;
 - ``tests/**/*.py``: any removed line that asserts (``assert``, ``pytest.raises``, or an
   ``_assert*`` helper call), which covers deleted, edited, and moved assertions;
 - moving tests out of ``make check`` (amber-a6d.16): any change to a ``conftest.py``,
@@ -65,6 +65,7 @@ _PROTECTED = (
     re.compile(r"^src/amber/conformance/plugin\.py$"),
     re.compile(r"^(?:.+/)?\.gitattributes$"),
     re.compile(r"^scripts/phi_scan\.py$"),
+    re.compile(r"^tools/opencode-check/"),
 )
 _TESTS = re.compile(r"^tests/.+\.py$")
 _ASSERTION = re.compile(r"^\s*assert\b|\bpytest\.raises\(|\b_assert\w*\(")

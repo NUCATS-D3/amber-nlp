@@ -4,6 +4,9 @@
 // - when a top-level session in this project finishes a turn, stop_gate.py runs, and its failures
 //   are sent back as a prompt so the agent keeps working. The next turn end passes
 //   stop_hook_active, so the gate blocks at most once in a row, as in Claude Code.
+// Types come from @opencode/plugin through a type-only import, which is erased at runtime, so the
+// plugin needs no install; CI type-checks it against a pinned SDK (tools/opencode-check).
+import type { Plugin } from "@opencode/plugin"
 import { spawn } from "node:child_process"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -45,8 +48,8 @@ function editedFile(input: unknown): string | undefined {
 
 export default {
   id: "amber.harness",
-  async setup(ctx: any) {
-    await ctx.tool.hook("execute.after", async (event: any) => {
+  async setup(ctx) {
+    await ctx.tool.hook("execute.after", async (event) => {
       if (event.status !== "completed" || !EDIT_TOOLS.has(event.tool)) return
       const file = editedFile(event.input)
       if (file === undefined) return
@@ -105,4 +108,4 @@ export default {
     })
     return () => controller.abort()
   },
-}
+} satisfies Plugin.Plugin

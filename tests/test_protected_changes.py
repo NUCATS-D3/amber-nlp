@@ -701,3 +701,10 @@ def test_odd_line_breaks_do_not_hide_a_removed_assertion(
         ["python3", str(SCRIPT), str(path)], capture_output=True, text=True, check=False
     )
     assert from_file.returncode == 1 and "tests/test_x.py:" in from_file.stdout
+
+
+def test_the_opencode_sdk_check_is_protected(repo: Path) -> None:
+    path = repo / "tools" / "opencode-check" / "check-agents.mjs"
+    path.parent.mkdir(parents=True)
+    path.write_text("process.exit(0)\n")
+    assert _found(repo) == ["tools/opencode-check/check-agents.mjs"]
