@@ -5,13 +5,14 @@
 - `check_protected_changes.py` reads a unified diff and fails when golden records, the catalog,
   conformance fixtures, harness files (agent hooks, agent definitions, the review prompt,
   pre-commit config, `Makefile`, CI workflows, itself), existing test assertions or test names,
-  any `conftest.py`, pytest configuration (`pyproject.toml`, `pytest.ini`, `tox.ini`,
-  `setup.cfg`), `.gitattributes`, or the conformance pytest plugin change; when a test gains a
-  line that skips, xfails, slow-marks, or stops tests or sets Hypothesis settings; when a test
-  module is renamed out of collection; or when a protected or test file shows up as a binary
-  diff. The `contract-approved` label approves. CI runs it on every pull request. With
-  `--staged` it checks the git index as a pre-commit hook, and `ALLOW_ORACLE_CHANGE=1` approves
-  instead of the label.
+  any `conftest.py`, pytest configuration (`pyproject.toml` settings and entry points,
+  `pytest.ini`, `tox.ini`, `setup.cfg`), `.gitattributes`, or the conformance pytest plugin
+  change; when a test gains a line that skips, xfails, slow-marks, or stops tests or sets
+  Hypothesis settings, or any Python file gains a collection hook; when a test module is renamed
+  out of collection; or when a protected or test file shows up as a binary diff. The
+  `contract-approved` label approves. CI runs it on every pull request. With `--staged` it
+  checks the git index as a pre-commit hook, and `ALLOW_ORACLE_CHANGE=1` approves instead of the
+  label.
 - `mutation_test.py` runs mutmut over the validation core (`annotations`, `cases`,
   `examples`, `_graph_validation`, `grounding`) once per epic, never in CI. It copies the
   working tree to a scratch directory and uses `uv run --with mutmut`, so nothing in the

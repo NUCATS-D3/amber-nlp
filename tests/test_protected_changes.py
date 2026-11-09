@@ -434,7 +434,7 @@ def test_binary_diffs_of_protected_or_test_files_are_found(repo: Path, path: str
     (repo / path).write_text("changed\n")
     _git(repo, "add", "-A")
     diff = _git(repo, "diff", "--cached", "--unified=0", "HEAD")
-    assert "Binary files" in diff or path == "Makefile"
+    assert "Binary files" in diff
     found = guard.violations(diff.splitlines(keepends=True))
     assert ".gitattributes" in found and path in found
 
@@ -469,10 +469,92 @@ def test_a_new_pytest_entry_point_is_found(repo: Path) -> None:
     pyproject.write_text(
         pyproject.read_text() + '\n[project.entry-points.pytest11]\nx = "amber.x"\n'
     )
-    assert _found(repo) == ["pyproject.toml:9"]
+    assert _found(repo) == ["pyproject.toml:9", "pyproject.toml:10"]
 
 
 def test_editing_a_test_signature_is_not_a_rename(repo: Path) -> None:
     test = repo / "tests" / "test_x.py"
     test.write_text(test.read_text().replace("def test_one():", "def test_one() -> None:"))
     assert _found(repo) == []
+
+
+PLUGIN_PYPROJECT = """[project]
+name = "x"
+version = "0.1.0"
+
+[project.entry-points.pytest11]
+amber_conformance = "amber.conformance.plugin"
+"""
+
+
+def _with_plugin(repo: Path) -> Path:
+    (repo / "pyproject.toml").write_text(PLUGIN_PYPROJECT)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "plugin")
+    return repo / "pyproject.toml"
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "flagged"),
+    [
+        (
+            'amber_conformance = "amber.conformance.plugin"\n',
+            'amber_conformance = "amber.conformance.plugin"\nextra = "amber.extra"\n',
+            ["pyproject.toml:7"],
+        ),
+        (
+            '"amber.conformance.plugin"',
+            '"amber.conformance.other"',
+            ["pyproject.toml:6"],
+        ),
+        (
+            '"amber.conformance.plugin"',
+            '"tests.helpers:plugin"',
+            ["pyproject.toml:6"],
+        ),
+    ],
+    ids=["added-entry", "retargeted", "retargeted-with-attr"],
+)
+def test_entry_points_under_an_existing_header_are_found(
+    repo: Path, old: str, new: str, flagged: list[str]
+) -> None:
+    pyproject = _with_plugin(repo)
+    pyproject.write_text(pyproject.read_text().replace(old, new))
+    assert _found(repo) == flagged
+
+
+def test_a_version_bump_is_not_an_entry_point(repo: Path) -> None:
+    pyproject = _with_plugin(repo)
+    pyproject.write_text(pyproject.read_text().replace('"0.1.0"', '"0.2.0"'))
+    assert _found(repo) == []
+
+
+@pytest.mark.parametrize(
+    "added",
+    ["def pytest_collection_modifyitems(items):\n", "pytest_plugins = ['tests.x']\n"],
+    ids=["hook", "plugins"],
+)
+def test_collection_hooks_in_source_are_found(repo: Path, added: str) -> None:
+    (repo / "src" / "amber" / "other.py").write_text(added + "Y = 1\n")
+    assert _found(repo) == ["src/amber/other.py:1"]
+
+
+@pytest.mark.parametrize(
+    "added",
+    [
+        "m = pytest.mark\n",
+        "later = skip\n",
+        "raise Exit('x')\n",
+        "raise pytest.exit.Exception()\n",
+    ],
+    ids=["mark-namespace", "bare-skip", "exit-class", "exit-exception"],
+)
+def test_aliases_of_deselection_are_found(repo: Path, added: str) -> None:
+    test = repo / "tests" / "test_x.py"
+    test.write_text(added + test.read_text())
+    assert _found(repo) == ["tests/test_x.py:1"]
+
+
+def test_an_empty_new_protected_file_is_found(repo: Path) -> None:
+    (repo / "pytest.ini").write_text("")
+    assert _found(repo) == ["pytest.ini"]
