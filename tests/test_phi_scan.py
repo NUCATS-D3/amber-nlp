@@ -142,6 +142,11 @@ def test_values_after_a_literal_escape_are_caught(value: str, pattern: str, esca
     assert scan.findings(f'"text": "Contact{escape}{value} today"') == [(1, pattern)]
 
 
+def test_a_date_with_escaped_slashes_is_caught() -> None:
+    escaped = SLASH_DATE.replace("/", "\\/")
+    assert scan.findings(f'"text": "DOB {escaped}"') == [(1, "dob")]
+
+
 def test_findings_report_lines() -> None:
     text = f"first line\nsecond {SSN}\nthird {EMAIL} and {PHONE}\n"
     assert scan.findings(text) == [(2, "ssn"), (3, "phone"), (3, "email")]

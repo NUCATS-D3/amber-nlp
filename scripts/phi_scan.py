@@ -74,7 +74,8 @@ _PATTERNS = {
     ),
 }
 # JSON and Python string text spell line breaks and characters as escapes ("Contact\\njane..."),
-# which would glue a letter to the value; findings() reads each escape as a space.
+# which would glue a letter to the value; findings() reads each escape as a space, and an escaped
+# slash ("01\\/02\\/1960") as a slash.
 _ESCAPE = re.compile(r"\\(?:[nrt]|u[0-9a-fA-F]{4})")
 _RESERVED_DOMAIN = re.compile(
     r"(?:^|\.)(?:example\.(?:com|org|net)|invalid|test|example|localhost)$", re.IGNORECASE
@@ -85,7 +86,7 @@ def findings(text: str) -> list[tuple[int, str]]:
     """``(line, pattern)`` for each identifier-shaped match, in line and pattern order."""
     found: list[tuple[int, str]] = []
     for number, raw in enumerate(text.splitlines(), 1):
-        line = _ESCAPE.sub(" ", raw)
+        line = _ESCAPE.sub(" ", raw).replace("\\/", "/")
         for name, pattern in _PATTERNS.items():
             for match in pattern.finditer(line):
                 if name == "email" and _RESERVED_DOMAIN.search(match.group(1)):
