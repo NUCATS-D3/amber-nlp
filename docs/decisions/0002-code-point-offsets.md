@@ -7,8 +7,9 @@
 
 ## Context
 
-Every claim about note text is grounded in a span of the note (structured sources, which have no
-text, ground through structured evidence instead), and spans travel between Python,
+Every claim about note text is grounded in a span of the note (structured sources have no text;
+they would ground through `StructuredEvidence`, deferred in amber-bpr.8), and spans travel
+between Python,
 JSON, Parquet, loupe's browser editor, and other languages. Byte offsets, UTF-16 offsets, and
 code-point offsets disagree as soon as text contains astral characters or combining marks, and
 line-ending normalization (CRLF to LF) shifts every later offset. A span that quietly points at

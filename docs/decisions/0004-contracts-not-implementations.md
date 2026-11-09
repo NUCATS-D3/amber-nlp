@@ -10,7 +10,8 @@
 Before the reset, amber-nlp grew pipelines, prompts, rules, and experiment code alongside its data
 models, and changes to one experiment rippled into the contracts. Several consumers now share the
 contracts: lapidary's experiments, loupe's review app, and the MLflow plugins. copal's matchers
-depend on nothing from amber; lapidary maps their output into amber's contracts.
+depend on nothing from amber; a planned copal adapter (contract v0.1 section 2.4) maps their
+output into amber's mentions.
 Each needs the contracts to change slowly and deliberately while the implementations change fast.
 
 ## Decision
