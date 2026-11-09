@@ -29,7 +29,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
         run: |
-          git diff --unified=0 "$BASE_SHA" HEAD > "$RUNNER_TEMP/changes.diff"
+          git diff --unified=0 --text --no-ext-diff --no-textconv "$BASE_SHA" HEAD > "$RUNNER_TEMP/changes.diff"
           python3 scripts/check_protected_changes.py "$RUNNER_TEMP/changes.diff" --labels "$LABELS"
 
   core-install:
@@ -72,22 +72,17 @@ jobs:
           python-version: ${{ matrix.python }}
           enable-cache: false
       - name: Check lockfile consistency
-        run: uv lock --check
+        run: make lock
       - name: Install the locked test and optional interface dependencies
         run: uv sync --locked --no-editable --extra dev --extra tracking --extra bundles
       - name: Require optional plugins before tests can skip them
         run: uv run --no-sync python -c "import mlflow"
-      - name: Run offline CPU tests using synthetic inputs only
-        run: uv run --no-sync pytest --strict-markers -ra -m "not slow"
-      - name: Lint
-        if: matrix.python == '3.12'
-        run: uv run --no-sync ruff check .
-      - name: Check formatting
-        if: matrix.python == '3.12'
-        run: uv run --no-sync ruff format --check .
-      - name: Type check the supported target
-        if: matrix.python == '3.12'
-        run: uv run --no-sync mypy src
-      - name: Check dependency direction
-        if: matrix.python == '3.12'
-        run: uv run --no-sync lint-imports
+      # The rest of make check, minus its editable sync (tests/test_ci_workflow.py keeps them equal).
+      - name: Lint and formatting
+        run: make lint
+      - name: Type check
+        run: make typecheck
+      - name: Dependency direction
+        run: make imports
+      - name: Offline CPU tests on synthetic inputs
+        run: make test-fast

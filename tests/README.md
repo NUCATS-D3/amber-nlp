@@ -36,6 +36,7 @@ The suite is flat and grouped by the boundary under test. All inputs are invente
 | `test_properties.py` | Hypothesis properties: canonical hashing, quote offsets, graph/result/bundle round trips, replay prefixes, random support graphs, incremental graph validation equal to full revalidation, maximal span matching against brute force, regression gate against its own baseline |
 | `test_agent_hooks.py` | Agent hooks: post-edit Ruff/mypy on the edited file, stop gate (loop guard, change detection, failure summaries), settings wiring |
 | `test_reviewer_agent.py` | Reviewer agents: shared prompt, deny-first OpenCode permissions with read-only commands, Claude Bash allowlist hook |
+| `test_ci_workflow.py` | CI runs every `make check` target but the editable sync, the guard on text diffs, and the scheduled mutation workflow |
 | `test_protected_changes.py` | CI and pre-commit guard for pinned contract artifacts, harness files, existing test assertions, and tests moved out of `make check` (conftest, pytest config, skip/xfail/slow marks); label vs. `ALLOW_ORACLE_CHANGE` approval (uses git) |
 | `test_reference_guard.py` | Reference implementations refuse non-synthetic cases, runs, results, and exports |
 | `test_review.py` | Review backends: file round trips (single review, adjudication, unresolved, excluded, unreviewed), export gating, import refusals |
@@ -79,10 +80,15 @@ credentials or external services:
 - **Core install.** A non-editable install with no extras, checked with
   [check_core_install.py](../scripts/check_core_install.py) under `python -I`. This verifies the
   absence of optional stacks, Unicode/CRLF grounding, commits, restore, and case results.
-- **Full suite.** `dev`, `tracking`, and `bundles` are installed; MLflow import is required
-  before tests; then the suite, Ruff, formatting, mypy, and `lint-imports` run.
+- **Full suite.** `dev`, `tracking`, and `bundles` are installed without editable mode; MLflow
+  import is required before tests; then the `make check` targets other than its editable sync
+  run (`lock`, `lint`, `typecheck`, `imports`, `test-fast`). `test_ci_workflow.py` fails if CI
+  stops running one of them.
 - **Protected contract artifacts** (pull requests only): see
-  [check_protected_changes.py](../scripts/check_protected_changes.py).
+  [check_protected_changes.py](../scripts/check_protected_changes.py), run on a text diff.
+- **Mutation testing** (weekly and on demand, [mutation.yml](../.github/workflows/mutation.yml)):
+  `scripts/mutation_test.py` over the validation core; the report is an artifact and the kill
+  rate goes to the run summary. It reports, it does not gate.
 
 Hypothesis profiles live in [conftest.py](conftest.py): `dev` locally, `ci` when `CI` is set
 (derandomized, fixed deadline, failure blob printed, no example database), and `thorough` on

@@ -36,6 +36,7 @@ numbers only, never line contents. Standard library only.
 from __future__ import annotations
 
 import argparse
+import io
 import os
 import re
 import subprocess
@@ -243,6 +244,14 @@ def violations(diff: Iterable[str]) -> list[str]:
     return list(dict.fromkeys(found))
 
 
+def _lines(diff: bytes) -> list[str]:
+    """A diff's lines, split on ``\\n`` only: git ends every diff line with it, while form feeds,
+    lone carriage returns, and Unicode line separators are content (``str.splitlines`` would cut
+    there and hide the rest of the line). ``--text`` puts binary bytes in the diff, which decode
+    with replacement."""
+    return list(io.StringIO(diff.decode("utf-8", errors="replace"), newline="\n"))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("diff", nargs="?", help="unified diff file (default: stdin)")
@@ -253,17 +262,25 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.staged:
         staged = subprocess.run(
-            ["git", "diff", "--cached", "--unified=0", "--no-color", "--no-ext-diff"],
+            [
+                "git",
+                "diff",
+                "--cached",
+                "--unified=0",
+                "--no-color",
+                "--text",
+                "--no-ext-diff",
+                "--no-textconv",
+            ],
             check=True,
             capture_output=True,
-            text=True,
         ).stdout
-        found = violations(staged.splitlines(keepends=True))
+        found = violations(_lines(staged))
     elif args.diff:
-        with open(args.diff, encoding="utf-8") as handle:
-            found = violations(handle)
+        with open(args.diff, "rb") as handle:
+            found = violations(_lines(handle.read()))
     else:
-        found = violations(sys.stdin)
+        found = violations(_lines(sys.stdin.buffer.read()))
     labels = {label.strip() for label in args.labels.split(",") if label.strip()}
     if not found:
         print("No protected artifacts, harness files, or existing test assertions changed.")

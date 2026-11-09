@@ -610,3 +610,94 @@ def test_a_test_class_renamed_out_beside_a_filler_is_found(repo: Path, hidden: s
     renamed = test.read_text().replace("class TestOne:", f"class {hidden}:")
     test.write_text(renamed + "\n\ndef test_filler():\n    assert True\n")
     assert _found(repo) == ["tests/test_x.py:1"]
+
+
+def test_staged_diffs_are_read_as_text(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # A -diff attribute would hide the removed assertion behind "Binary files ... differ".
+    (repo / ".gitattributes").write_text("tests/test_x.py -diff\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "attributes")
+    test = repo / "tests" / "test_x.py"
+    test.write_text(test.read_text().replace("    assert value == 1\n", ""))
+    _git(repo, "add", "-A")
+    monkeypatch.chdir(repo)
+    monkeypatch.delenv("ALLOW_ORACLE_CHANGE", raising=False)
+    staged = subprocess.run(
+        ["python3", str(SCRIPT), "--staged"], capture_output=True, text=True, check=False
+    )
+    assert staged.returncode == 1 and "tests/test_x.py:3" in staged.stdout
+
+
+def test_binary_bytes_in_a_text_diff_do_not_crash_the_guard(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    (repo / "docs").mkdir()
+    (repo / "docs" / "deck.pdf").write_bytes(b"%PDF\xff\xfe\x00\x80 binary\n")
+    _git(repo, "add", "-A")
+    monkeypatch.chdir(repo)
+    monkeypatch.delenv("ALLOW_ORACLE_CHANGE", raising=False)
+    staged = subprocess.run(
+        ["python3", str(SCRIPT), "--staged"], capture_output=True, text=True, check=False
+    )
+    assert staged.returncode == 0 and "Traceback" not in staged.stderr
+    diff = subprocess.run(
+        ["git", "diff", "--cached", "--unified=0", "--text", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        check=True,
+    ).stdout
+    path = tmp_path_factory.mktemp("diff") / "changes.diff"
+    path.write_bytes(diff)
+    from_file = subprocess.run(
+        ["python3", str(SCRIPT), str(path)], capture_output=True, text=True, check=False
+    )
+    assert from_file.returncode == 0 and "Traceback" not in from_file.stderr
+    from_stdin = subprocess.run(
+        ["python3", str(SCRIPT)], input=diff, capture_output=True, check=False
+    )
+    assert from_stdin.returncode == 0 and b"Traceback" not in from_stdin.stderr
+
+
+@pytest.mark.parametrize("prefix", ["\x0c", "\u2028", "\x85", "\r"], ids=["ff", "ls", "nel", "cr"])
+def test_odd_line_breaks_do_not_hide_a_removed_assertion(
+    repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path_factory: pytest.TempPathFactory,
+    prefix: str,
+) -> None:
+    test = repo / "tests" / "test_x.py"
+
+    # newline="" keeps a lone carriage return as written instead of translating it.
+    def read() -> str:
+        with open(test, encoding="utf-8", newline="") as handle:
+            return handle.read()
+
+    def write(text: str) -> None:
+        with open(test, "w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
+
+    write(read() + f"\n\ndef test_three():\n{prefix}    assert value\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "odd")
+    edited = read().replace(f"{prefix}    assert value\n", "    pass\n")
+    assert edited != read()
+    write(edited)
+    _git(repo, "add", "-A")
+    monkeypatch.chdir(repo)
+    monkeypatch.delenv("ALLOW_ORACLE_CHANGE", raising=False)
+    staged = subprocess.run(
+        ["python3", str(SCRIPT), "--staged"], capture_output=True, text=True, check=False
+    )
+    assert staged.returncode == 1 and "tests/test_x.py:" in staged.stdout
+    diff = subprocess.run(
+        ["git", "diff", "--cached", "--unified=0", "--text", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        check=True,
+    ).stdout
+    path = tmp_path_factory.mktemp("diff") / "changes.diff"
+    path.write_bytes(diff)
+    from_file = subprocess.run(
+        ["python3", str(SCRIPT), str(path)], capture_output=True, text=True, check=False
+    )
+    assert from_file.returncode == 1 and "tests/test_x.py:" in from_file.stdout
