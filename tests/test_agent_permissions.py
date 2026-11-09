@@ -27,11 +27,10 @@ SAMPLES = {
     r"^src/amber/conformance/fixtures\.py$": "src/amber/conformance/fixtures.py",
     r"^\.claude/settings\.json$": ".claude/settings.json",
     r"^\.claude/hooks/": ".claude/hooks/stop_gate.py",
-    r"^\.opencode/plugins?/": ".opencode/plugins/amber-harness.ts",
-    r"^\.(?:claude|opencode)/agents/": ".opencode/agents/reviewer.md",
+    r"^\.claude/agents/": ".claude/agents/reviewer.md",
+    r"^(?:.+/)?\.opencode/(?:plugins?|agents?|modes?)/": "src/.opencode/mode/build.md",
     r"^docs/review_prompt\.md$": "docs/review_prompt.md",
-    r"^opencode\.jsonc?$": "opencode.json",
-    r"^\.opencode/opencode\.jsonc?$": ".opencode/opencode.jsonc",
+    r"^(?:.+/)?opencode\.jsonc?$": "src/opencode.json",
     r"^\.pre-commit-config\.yaml$": ".pre-commit-config.yaml",
     r"^\.github/workflows/": ".github/workflows/ci.yml",
     r"^Makefile$": "Makefile",
@@ -43,12 +42,30 @@ SAMPLES = {
     r"^scripts/phi_scan\.py$": "scripts/phi_scan.py",
     r"^tools/opencode-check/": "tools/opencode-check/check-agents.mjs",
 }
-# Config files that could switch the rules off, beyond what the guard sees in a diff.
-EXTRA = [".claude/settings.local.json", "~/.config/opencode/opencode.json"]
+# Places outside the guard's view (a diff of this repository) that could switch the rules off:
+# local and global config, parent directories, agent folders OpenCode also reads, and the system
+# directories. OpenCode's edit resource for a file outside the project is its absolute path (seen
+# live: an edit under ~/.config/opencode raised an "edit" request naming the absolute path).
+EXTRA = [
+    ".claude/settings.local.json",
+    ".opencode/opencode.json",
+    ".opencode/plugins/amber-harness.ts",
+    ".opencode/agents/sub/reviewer.md",
+    ".opencode/agent/build.md",
+    ".opencode/modes/build.md",
+    "opencode.jsonc",
+    "~/.config/opencode/opencode.json",
+    "~/.config/opencode/agents/build.md",
+    f"{Path.home()}/projects/.opencode/opencode.json",
+    f"{Path.home()}/projects/opencode.jsonc",
+    "/etc/opencode/opencode.json",
+    "/Library/Application Support/opencode/agents/build.md",
+]
+CONFIG = ROOT / ".opencode" / "opencode.json"
 
 
 def _opencode_rules() -> list[dict[str, str]]:
-    rules: list[dict[str, str]] = json.loads((ROOT / "opencode.json").read_text())["permissions"]
+    rules: list[dict[str, str]] = json.loads(CONFIG.read_text())["permissions"]
     return rules
 
 
@@ -96,7 +113,7 @@ def test_opencode_asks_before_an_agent_edits_a_protected_path(path: str) -> None
     matched = [rule for rule in rules if _opencode_matches(
         rule["resource"].replace("~", str(Path.home()), 1), resource
     )]  # fmt: skip
-    assert matched, f"no opencode.json edit rule covers {path}"
+    assert matched, f"no .opencode/opencode.json edit rule covers {path}"
     assert matched[-1]["effect"] == "ask"
 
 
@@ -105,9 +122,37 @@ def test_opencode_rules_only_ask() -> None:
     assert rules and all(rule["action"] == "edit" and rule["effect"] == "ask" for rule in rules)
 
 
-@pytest.mark.parametrize("path", [*SAMPLES.values(), ".claude/settings.local.json"])
+CLAUDE_EXTRA = [
+    ".claude/settings.local.json",
+    "docs/.claude/settings.json",
+    "~/.claude/settings.json",
+    "~/.claude/agents/build.md",
+]
+
+
+@pytest.mark.parametrize("path", [*SAMPLES.values(), *CLAUDE_EXTRA])
 def test_claude_code_asks_before_an_agent_edits_a_protected_path(path: str) -> None:
     assert any(_claude_matches(rule, path) for rule in _claude_rules()), path
+
+
+def test_the_rules_live_where_opencode_applies_them_last() -> None:
+    # Every discovered .opencode config overrides every direct opencode.json, and the closest
+    # .opencode config is merged last, so the project rules belong there and nowhere else.
+    assert CONFIG.is_file() and not (ROOT / "opencode.json").exists()
+
+
+def test_no_agent_definition_re_allows_edits_to_a_protected_path() -> None:
+    import yaml
+
+    folders = ("agent", "agents", "mode", "modes")
+    files = [path for folder in folders for path in (ROOT / ".opencode" / folder).rglob("*.md")]
+    assert files, "expected at least the reviewer agent"
+    for file in files:
+        front = yaml.safe_load(file.read_text().split("\n---\n", 1)[0].removeprefix("---\n"))
+        for rule in front.get("permissions") or []:
+            if rule["action"] in ("edit", "*") and rule["effect"] == "allow":
+                hits = [p for p in SAMPLES.values() if _opencode_matches(rule["resource"], p)]
+                assert not hits, f"{file.name} allows edits to {hits}"
 
 
 def test_neighbouring_paths_do_not_ask() -> None:

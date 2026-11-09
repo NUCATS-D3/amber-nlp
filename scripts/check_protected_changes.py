@@ -52,11 +52,12 @@ _PROTECTED = (
     re.compile(r"^src/amber/conformance/fixtures\.py$"),
     re.compile(r"^\.claude/settings\.json$"),
     re.compile(r"^\.claude/hooks/"),
-    re.compile(r"^\.opencode/plugins?/"),
-    re.compile(r"^\.(?:claude|opencode)/agents/"),
+    re.compile(r"^\.claude/agents/"),
+    # OpenCode reads agents from agent(s)/ and mode(s)/ and plugins from plugin(s)/, in any
+    # .opencode directory it discovers, and config from any opencode.json(c) or .opencode one.
+    re.compile(r"^(?:.+/)?\.opencode/(?:plugins?|agents?|modes?)/"),
     re.compile(r"^docs/review_prompt\.md$"),
-    re.compile(r"^opencode\.jsonc?$"),
-    re.compile(r"^\.opencode/opencode\.jsonc?$"),
+    re.compile(r"^(?:.+/)?opencode\.jsonc?$"),
     re.compile(r"^\.pre-commit-config\.yaml$"),
     re.compile(r"^\.github/workflows/"),
     re.compile(r"^Makefile$"),

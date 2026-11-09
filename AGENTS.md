@@ -37,14 +37,19 @@ The authoritative list is `_PROTECTED` in
 paths, work around them, or copy them so an edited duplicate is used instead. If a protected
 test or check looks wrong, stop and explain why in your reply or the bead; a human decides.
 
-OpenCode (`opencode.json`) and Claude Code (`.claude/settings.json`) ask a human before an
-agent's edit or write tool touches a protected path, including the config files that could switch
-those rules off. Approve only with **Allow once**: **Allow always** saves an `edit *` allow rule for
-the project, which overrides every one of these prompts (remove it with `opencode api get
-/api/permission/saved` and the matching `DELETE`). The rules do not see shell commands (`sed -i`,
-`cp`, `>`), so never use the shell to write a protected path; the pre-commit guard and CI's
-protected-artifacts check catch it in any case. `tests/test_agent_permissions.py` keeps both
-configs in step with the guard's list.
+OpenCode (`.opencode/opencode.json`) and Claude Code (`.claude/settings.json`) ask a human before
+an agent's edit or write tool touches a protected file, or a file that could switch these rules
+off: any `opencode.json(c)` or `.opencode/` directory (agents, modes, plugins, config, including in
+parent directories), `.claude/`, `~/.config/opencode/`, `~/.claude/settings.json` and `agents/`,
+and OpenCode's system directories. The OpenCode rules sit in `.opencode/opencode.json` because the
+closest `.opencode` config is merged last. Approve only with **Allow once**: **Allow always** saves
+an `edit *` allow rule for the project, which overrides every one of these prompts (list saved
+rules with `opencode api get /api/permission/saved`). Line-level protection (test assertions,
+pytest lines in `pyproject.toml`) stays with the guard. The rules cannot see shell commands
+(`sed -i`, `cp`, `>`), OpenCode config passed through `OPENCODE_CONFIG*` environment variables, or
+Claude Code runs whose permission mode skips prompts; never use those to change a protected
+path. The pre-commit guard and CI's protected-artifacts check catch any such change in a diff.
+`tests/test_agent_permissions.py` keeps both configs in step with the guard's list.
 
 ### Forbidden shortcuts
 
