@@ -1,0 +1,67 @@
+name: Mutation testing
+
+# Weekly and on demand: mutmut over the validation core (scripts/mutation_test.py). Surviving
+# mutants are reported, not gated; file a bead for each one in invariant code.
+on:
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+    inputs:
+      module:
+        description: "Limit to one core module (blank for all)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  mutation:
+    name: Mutation testing of the validation core
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: "0.12.14"
+          python-version: "3.12"
+          enable-cache: false
+      - name: Install the locked development environment
+        run: uv sync --locked --extra dev --extra tracking --extra bundles
+      - name: Run mutmut over the validation core
+        env:
+          MODULE: ${{ inputs.module }}
+        run: |
+          args=(--max-children 4 --output mutation-report.json)
+          if [ -n "$MODULE" ]; then args+=(--module "$MODULE"); fi
+          uv run --no-sync python scripts/mutation_test.py "${args[@]}"
+      - name: Summarize the surviving-mutant rate
+        if: always()
+        run: |
+          if [ -f mutation-report.json ]; then
+            python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          report = json.load(open("mutation-report.json"))
+          rate = report.get("kill_rate")
+          stats = report.get("stats", {})
+          print("## Mutation testing")
+          print(f"- kill rate: {'n/a' if rate is None else f'{rate:.1%}'}")
+          print(f"- killed {stats.get('killed', 0)}, survived {stats.get('survived', 0)}")
+          for module, names in sorted(report.get("survivors_by_module", {}).items()):
+              print(f"- {module}: {len(names)} survivors")
+          PY
+          fi
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mutation-report
+          path: mutation-report.json
+          if-no-files-found: warn

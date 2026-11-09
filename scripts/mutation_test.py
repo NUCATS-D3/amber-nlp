@@ -1,4 +1,4 @@
-"""Mutation testing of amber's validation core (amber-zun): run once per epic, never in CI.
+"""Mutation testing of amber's validation core (amber-zun): weekly in CI and on demand.
 
 Copies the working tree (tracked and unignored files) to a scratch directory, configures mutmut
 there, and runs it with ``uv run --with mutmut``, so the repository, ``pyproject.toml``, and

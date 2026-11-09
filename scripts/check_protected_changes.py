@@ -253,7 +253,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.staged:
         staged = subprocess.run(
-            ["git", "diff", "--cached", "--unified=0", "--no-color", "--no-ext-diff"],
+            [
+                "git",
+                "diff",
+                "--cached",
+                "--unified=0",
+                "--no-color",
+                "--text",
+                "--no-ext-diff",
+                "--no-textconv",
+            ],
             check=True,
             capture_output=True,
             text=True,
