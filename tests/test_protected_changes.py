@@ -664,10 +664,22 @@ def test_odd_line_breaks_do_not_hide_a_removed_assertion(
     prefix: str,
 ) -> None:
     test = repo / "tests" / "test_x.py"
-    test.write_text(test.read_text() + f"\n\ndef test_three():\n{prefix}    assert value\n")
+
+    # newline="" keeps a lone carriage return as written instead of translating it.
+    def read() -> str:
+        with open(test, encoding="utf-8", newline="") as handle:
+            return handle.read()
+
+    def write(text: str) -> None:
+        with open(test, "w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
+
+    write(read() + f"\n\ndef test_three():\n{prefix}    assert value\n")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "odd")
-    test.write_text(test.read_text().replace(f"{prefix}    assert value\n", "    pass\n"))
+    edited = read().replace(f"{prefix}    assert value\n", "    pass\n")
+    assert edited != read()
+    write(edited)
     _git(repo, "add", "-A")
     monkeypatch.chdir(repo)
     monkeypatch.delenv("ALLOW_ORACLE_CHANGE", raising=False)
