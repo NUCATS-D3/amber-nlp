@@ -38,6 +38,7 @@ The suite is flat and grouped by the boundary under test. All inputs are invente
 | `test_reviewer_agent.py` | Reviewer agents: shared prompt, deny-first OpenCode permissions with read-only commands, Claude Bash allowlist hook |
 | `test_phi_scan.py` | Identifier scan: each pattern caught (also after literal escapes), reserved and look-alike values passed, source-free output, whole-repository scope, emails skipped only in the npm lockfile and for each Beads issue's owner, allowlist, pinned binaries, clean repository |
 | `test_ci_workflow.py` | CI runs every `make check` target but the editable sync, the guard on text diffs, and the scheduled mutation workflow |
+| `test_agent_permissions.py` | Every protected path has an OpenCode and a Claude Code ask rule, kept in step with the guard's list |
 | `test_protected_changes.py` | CI and pre-commit guard for pinned contract artifacts, harness files, existing test assertions, and tests moved out of `make check` (conftest, pytest config, skip/xfail/slow marks); label vs. `ALLOW_ORACLE_CHANGE` approval (uses git) |
 | `test_reference_guard.py` | Reference implementations refuse non-synthetic cases, runs, results, and exports |
 | `test_review.py` | Review backends: file round trips (single review, adjudication, unresolved, excluded, unreviewed), export gating, import refusals |

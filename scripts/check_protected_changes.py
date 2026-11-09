@@ -56,6 +56,7 @@ _PROTECTED = (
     re.compile(r"^\.(?:claude|opencode)/agents/"),
     re.compile(r"^docs/review_prompt\.md$"),
     re.compile(r"^opencode\.jsonc?$"),
+    re.compile(r"^\.opencode/opencode\.jsonc?$"),
     re.compile(r"^\.pre-commit-config\.yaml$"),
     re.compile(r"^\.github/workflows/"),
     re.compile(r"^Makefile$"),

@@ -37,6 +37,15 @@ The authoritative list is `_PROTECTED` in
 paths, work around them, or copy them so an edited duplicate is used instead. If a protected
 test or check looks wrong, stop and explain why in your reply or the bead; a human decides.
 
+OpenCode (`opencode.json`) and Claude Code (`.claude/settings.json`) ask a human before an
+agent's edit or write tool touches a protected path, including the config files that could switch
+those rules off. Approve only with **Allow once**: **Allow always** saves an `edit *` allow rule for
+the project, which overrides every one of these prompts (remove it with `opencode api get
+/api/permission/saved` and the matching `DELETE`). The rules do not see shell commands (`sed -i`,
+`cp`, `>`), so never use the shell to write a protected path; the pre-commit guard and CI's
+protected-artifacts check catch it in any case. `tests/test_agent_permissions.py` keeps both
+configs in step with the guard's list.
+
 ### Forbidden shortcuts
 
 - Adding `skip`, `skipif`, `xfail`, or `importorskip` to make a failure go away.

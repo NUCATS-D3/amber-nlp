@@ -136,6 +136,7 @@ def test_the_label_approves_and_output_names_no_contents(
         ".claude/agents/reviewer.md",
         "docs/review_prompt.md",
         "opencode.json",
+        ".opencode/opencode.json",
         ".pre-commit-config.yaml",
         ".github/workflows/ci.yml",
         "Makefile",
