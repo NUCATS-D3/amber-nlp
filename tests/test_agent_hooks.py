@@ -79,8 +79,9 @@ def test_a_source_file_is_fixed_formatted_and_type_checked(
     runner = FakeRunner()
     assert _run(post_edit.main, _edit(SRC_FILE), runner, capsys) == (0, "", "")
     tools = [command[3:5] for command in runner.commands]
-    assert tools == [("ruff", "check"), ("ruff", "format"), ("mypy", SRC_FILE)]
-    assert "--fix" in runner.commands[0] and runner.commands[0][-1] == SRC_FILE
+    # Format first, so lines the formatter wraps are never reported as lint errors.
+    assert tools == [("ruff", "format"), ("ruff", "check"), ("mypy", SRC_FILE)]
+    assert "--fix" in runner.commands[1] and runner.commands[1][-1] == SRC_FILE
 
 
 def test_a_test_file_is_linted_but_not_type_checked(capsys: pytest.CaptureFixture[str]) -> None:
