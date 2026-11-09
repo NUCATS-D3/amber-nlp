@@ -26,7 +26,8 @@ These are the oracle. They judge your work, so you never change them:
 - golden records, the conformance catalog, and conformance fixtures;
 - the verification harness: Claude Code hooks and settings, the OpenCode plugin and config,
   agent definitions and the review prompt, `.pre-commit-config.yaml`, `Makefile`, CI workflows,
-  the identifier scan, the OpenCode SDK check (`tools/opencode-check/`), and the guard script;
+  the identifier scan, the OpenCode SDK check (`tools/opencode-check/`), the guard script, and the
+  lint and architecture config (`ruff.toml`, `.importlinter`);
 - every existing test assertion and test name, any `conftest.py`, pytest configuration
   (`pyproject.toml`, `pytest.ini`, `tox.ini`, `setup.cfg`), `.gitattributes`, and the
   conformance pytest plugin; added lines that skip, xfail, slow-mark, or stop tests, Hypothesis
@@ -158,7 +159,7 @@ scripts/                  core-install check and local MLflow launcher
   python-ulid, and the standard library.
 - Plugins import the core, never the reverse.
 - `import amber` must not load MLflow or any optional stack. `lint-imports` enforces the core,
-  framework, and plugin direction declared in `pyproject.toml`. Optional imports happen at the
+  framework, and plugin direction declared in `.importlinter`. Optional imports happen at the
   plugin boundary and raise an actionable install message when the dependency is missing.
 
 ## Commands
@@ -171,7 +172,7 @@ uv sync --extra dev --extra tracking --extra bundles   # full development enviro
 uv run pytest
 uv run ruff check . && uv run ruff format --check .
 uv run mypy src
-uv run lint-imports                       # dependency direction (pyproject [tool.importlinter])
+uv run lint-imports                       # dependency direction (.importlinter)
 uv lock --check
 bash scripts/mlflow_local.sh              # local MLflow server in .mlflow/
 ```
@@ -189,7 +190,7 @@ For the core-only installation check, see [tests/README.md](tests/README.md#ci).
   - outcome consistency;
   - disallowed policy combinations.
 - When adding an optional plugin, extend the fresh-process core import test, the core-only
-  install check, and the import-linter contracts in `pyproject.toml`.
+  install check, and the import-linter contracts in `.importlinter`.
 
 ## Data safety
 

@@ -1,0 +1,107 @@
+# Architecture contracts for import-linter (`make imports`; amber-7q0.1). Protected: change
+# only through a human-approved pull request. Dependency direction: AGENTS.md.
+[importlinter]
+root_package = amber
+include_external_packages = True
+
+[importlinter:contract:core]
+name = The core imports only pydantic, python-ulid, and the standard library
+type = forbidden
+source_modules =
+    amber.schemas
+    amber.ids
+    amber.grounding
+    amber.graph
+    amber.graph_errors
+    amber._graph_validation
+    amber.cases
+    amber.tools
+forbidden_modules =
+    mlflow
+    pyarrow
+    pytest
+    hypothesis
+    amber.annotations
+    amber.examples
+    amber.labels
+    amber.interfaces
+    amber.policy
+    amber.providers
+    amber.extraction
+    amber.scoring
+    amber.span_scoring
+    amber.regression
+    amber.evaluation
+    amber.labeling
+    amber.review
+    amber.rules
+    amber.wire
+    amber.bundles
+    amber.mlflow_ext
+    amber.conformance
+    amber.reference
+    amber.loupe
+broken_contract_guidance = Move the dependency out of the core, or into a plugin that imports the core.
+
+[importlinter:contract:framework]
+name = The framework never imports a plugin or an optional stack, even indirectly
+type = forbidden
+source_modules =
+    amber.schemas
+    amber.ids
+    amber.grounding
+    amber.graph
+    amber.graph_errors
+    amber._graph_validation
+    amber.cases
+    amber.tools
+    amber.annotations
+    amber.examples
+    amber.labels
+    amber.interfaces
+    amber.policy
+    amber.providers
+    amber.extraction
+    amber.scoring
+    amber.span_scoring
+    amber.regression
+    amber.evaluation
+    amber.labeling
+    amber.review
+    amber.rules
+    amber.wire
+    amber.bundles.core
+    amber.bundles.schema
+forbidden_modules =
+    mlflow
+    pyarrow
+    pytest
+    hypothesis
+    amber.mlflow_ext
+    amber.bundles.parquet
+    amber.conformance
+    amber.reference
+    amber.loupe
+broken_contract_guidance = Plugins import the framework, never the reverse; load optional stacks only at a plugin boundary.
+
+[importlinter:contract:unloaded-plugins]
+name = import amber and import amber.bundles load no plugin or optional stack
+type = forbidden
+as_packages = False
+source_modules =
+    amber
+    amber.bundles
+forbidden_modules =
+    mlflow.**
+    pyarrow.**
+    pytest
+    hypothesis
+    amber.mlflow_ext
+    amber.mlflow_ext.**
+    amber.bundles.parquet
+    amber.conformance
+    amber.conformance.**
+    amber.reference
+    amber.reference.**
+    amber.loupe
+    amber.loupe.**

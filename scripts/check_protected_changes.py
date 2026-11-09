@@ -7,7 +7,8 @@ Protected:
 - ``src/amber/conformance/golden/*.json``, ``catalog.json``, and ``fixtures.py``: any change;
 - the harness: agent hook settings and scripts, agent definitions and the review prompt, the
   pre-commit config, the Makefile, CI workflows, the identifier scan, the OpenCode SDK check,
-  and this script: any change;
+  this script, and the lint and architecture config (``ruff.toml`` or ``.ruff.toml`` at any
+  depth, ``.importlinter``, and ``[tool.ruff`` lines in any ``pyproject.toml``): any change;
 - ``tests/**/*.py``: any removed line that asserts (``assert``, ``pytest.raises``, or an
   ``_assert*`` helper call), which covers deleted, edited, and moved assertions;
 - moving tests out of ``make check`` (amber-a6d.16): any change to a ``conftest.py``,
@@ -68,6 +69,9 @@ _PROTECTED = (
     re.compile(r"^(?:.+/)?\.gitattributes$"),
     re.compile(r"^scripts/phi_scan\.py$"),
     re.compile(r"^tools/opencode-check/"),
+    # Ruff uses the closest config to each file, and .ruff.toml beats ruff.toml.
+    re.compile(r"^(?:.+/)?\.?ruff\.toml$"),
+    re.compile(r"^\.importlinter$"),
 )
 _TESTS = re.compile(r"^tests/.+\.py$")
 _ASSERTION = re.compile(r"^\s*assert\b|\bpytest\.raises\(|\b_assert\w*\(")
@@ -87,6 +91,8 @@ _PYTEST_CONFIG = re.compile(
     r"^\s*(?:\[tool\.pytest|\[project\.entry-points\.pytest11|addopts|testpaths|markers"
     r"|python_files|python_classes|python_functions|norecursedirs|filterwarnings"
     r"|required_plugins|xfail_strict|minversion)\b"
+    # Ruff reads [tool.ruff] from the closest pyproject.toml (amber-7q0.1).
+    r"|^\s*\[\[?tool\.ruff"
     # A hunk does not say which TOML section it is in, so any line shaped like an entry point
     # (a module:attr target, or an amber module) counts: pytest11 entries load plugins.
     r"""|^\s*[\w.-]+\s*=\s*(["'])(?:[\w.]+:[\w.]+|amber(?:\.\w+)+)\1\s*$"""
@@ -116,17 +122,21 @@ def _removed_is_protected(path: str, body: str) -> bool:
     """A removed assertion in a test, or removed pytest configuration."""
     if _TESTS.match(path):
         return bool(_ASSERTION.search(body))
-    return path == "pyproject.toml" and bool(_PYTEST_CONFIG.search(body))
+    return _is_pyproject(path) and bool(_PYTEST_CONFIG.search(body))
 
 
 def _added_is_protected(path: str, body: str) -> bool:
     """An added line whose code deselects or stops tests, an added collection hook, or added
-    pytest configuration."""
+    pytest or Ruff configuration."""
     if _TESTS.match(path):
         return bool(_DESELECTION.search(_code(body)))
     if path.endswith(".py"):
         return bool(_COLLECTION_HOOK.search(_code(body)))
-    return path == "pyproject.toml" and bool(_PYTEST_CONFIG.search(body))
+    return _is_pyproject(path) and bool(_PYTEST_CONFIG.search(body))
+
+
+def _is_pyproject(path: str) -> bool:
+    return path == "pyproject.toml" or path.endswith("/pyproject.toml")
 
 
 def _renamed_is_protected(old: str, new: str) -> bool:

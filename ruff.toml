@@ -1,0 +1,10 @@
+# Ruff configuration (amber-7q0.1), kept out of pyproject.toml so it can be protected without
+# locking dependency changes. Change only through a human-approved pull request.
+extend-exclude = ["docs", "examples"]
+line-length = 100
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RET", "PIE", "ERA"]
+# Keep explicit TypeAlias Literals; PEP 695 aliases change runtime introspection of Pydantic fields.
+ignore = ["UP040"]

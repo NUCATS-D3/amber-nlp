@@ -27,6 +27,8 @@
     { "action": "edit", "resource": ".pytest.ini", "effect": "ask" },
     { "action": "edit", "resource": "tox.ini", "effect": "ask" },
     { "action": "edit", "resource": "setup.cfg", "effect": "ask" },
-    { "action": "edit", "resource": "*.gitattributes", "effect": "ask" }
+    { "action": "edit", "resource": "*.gitattributes", "effect": "ask" },
+    { "action": "edit", "resource": "*ruff.toml", "effect": "ask" },
+    { "action": "edit", "resource": ".importlinter", "effect": "ask" }
   ]
 }
