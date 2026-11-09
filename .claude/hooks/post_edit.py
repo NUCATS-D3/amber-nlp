@@ -1,7 +1,7 @@
 """PostToolUse hook (amber-a6d.4): lint, format, and type-check a Python file an agent just edited.
 
 Reads the hook event from stdin. For a ``.py`` file under ``src/`` or ``tests/`` it runs Ruff
-with fixes and Ruff format, and mypy for files under ``src/`` (the tests are not type-checked in
+format and Ruff with fixes, and mypy for files under ``src/`` (the tests are not type-checked in
 CI). Any failure goes to stderr with exit code 2, which shows it to the agent; otherwise it exits
 0 silently. Anything else, including unreadable input, is ignored. Standard library only.
 """
@@ -64,8 +64,8 @@ def main(stdin: TextIO = sys.stdin, run: Runner = _run) -> int:
     if target is None:
         return 0
     checks: list[tuple[str, list[str]]] = [
-        ("ruff check", ["ruff", "check", "--fix", "--quiet", target]),
         ("ruff format", ["ruff", "format", "--quiet", target]),
+        ("ruff check", ["ruff", "check", "--fix", "--quiet", target]),
     ]
     if target.startswith("src/"):
         checks.append(("mypy", ["mypy", target]))
