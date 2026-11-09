@@ -425,3 +425,54 @@ def test_marks_in_a_new_test_file_are_found_at_their_line(repo: Path) -> None:
         "import pytest\n\n\n@pytest.mark.slow\ndef test_new():\n    assert True\n"
     )
     assert _found(repo) == ["tests/test_new.py:4"]
+
+
+@pytest.mark.parametrize("path", ["Makefile", "tests/conftest.py", "tests/test_x.py"])
+def test_binary_diffs_of_protected_or_test_files_are_found(repo: Path, path: str) -> None:
+    (repo / ".gitattributes").write_text(f"{path} -diff\n")
+    (repo / path).parent.mkdir(parents=True, exist_ok=True)
+    (repo / path).write_text("changed\n")
+    _git(repo, "add", "-A")
+    diff = _git(repo, "diff", "--cached", "--unified=0", "HEAD")
+    assert "Binary files" in diff or path == "Makefile"
+    found = guard.violations(diff.splitlines(keepends=True))
+    assert ".gitattributes" in found and path in found
+
+
+def test_a_nul_byte_does_not_hide_a_new_pytest_ini(repo: Path) -> None:
+    (repo / "pytest.ini").write_bytes(b"[pytest]\naddopts = --ignore=tests\n#\x00\n")
+    assert _found(repo) == ["pytest.ini"]
+
+
+@pytest.mark.parametrize(
+    "added",
+    [
+        "pytest.exit('done', returncode=0)\n",
+        "sys.exit(0)\n",
+        "raise pytest.skip.Exception('x')\n",
+        "settings.load_profile('quick')\n",
+        "settings.register_profile('quick', phases=[Phase.explicit])\n",
+        "pytest_plugins = ['amber.x']\n",
+        "def pytest_collection_modifyitems(items):\n",
+    ],
+    ids=["pytest-exit", "sys-exit", "skip-exception", "load-profile", "phases", "plugins", "hook"],
+)
+def test_ways_to_end_or_empty_the_suite_are_found(repo: Path, added: str) -> None:
+    test = repo / "tests" / "test_x.py"
+    test.write_text(added + test.read_text())
+    assert _found(repo) == ["tests/test_x.py:1"]
+
+
+def test_a_new_pytest_entry_point_is_found(repo: Path) -> None:
+    _with_pyproject(repo)
+    pyproject = repo / "pyproject.toml"
+    pyproject.write_text(
+        pyproject.read_text() + '\n[project.entry-points.pytest11]\nx = "amber.x"\n'
+    )
+    assert _found(repo) == ["pyproject.toml:9"]
+
+
+def test_editing_a_test_signature_is_not_a_rename(repo: Path) -> None:
+    test = repo / "tests" / "test_x.py"
+    test.write_text(test.read_text().replace("def test_one():", "def test_one() -> None:"))
+    assert _found(repo) == []

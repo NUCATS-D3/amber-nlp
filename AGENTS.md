@@ -28,9 +28,9 @@ These are the oracle. They judge your work, so you never change them:
   agent definitions and the review prompt, `.pre-commit-config.yaml`, `Makefile`, CI workflows,
   and the guard script;
 - every existing test assertion and test name, any `conftest.py`, pytest configuration
-  (`pyproject.toml`, `pytest.ini`, `tox.ini`, `setup.cfg`), and the conformance pytest plugin;
-  added skip, xfail, or `slow` marks, `importorskip`, `__test__`, Hypothesis settings, and
-  renaming a test module out of collection are flagged too.
+  (`pyproject.toml`, `pytest.ini`, `tox.ini`, `setup.cfg`), `.gitattributes`, and the
+  conformance pytest plugin; added lines that skip, xfail, slow-mark, or stop tests, Hypothesis
+  settings, and renaming a test module out of collection are flagged too.
 
 The authoritative list is `_PROTECTED` in
 [scripts/check_protected_changes.py](scripts/check_protected_changes.py). Do not modify these
