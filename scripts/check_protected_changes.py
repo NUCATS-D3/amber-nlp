@@ -243,6 +243,11 @@ def violations(diff: Iterable[str]) -> list[str]:
     return list(dict.fromkeys(found))
 
 
+def _lines(diff: bytes) -> list[str]:
+    """A diff's lines; ``--text`` puts binary bytes in it, which decode with replacement."""
+    return diff.decode("utf-8", errors="replace").splitlines(keepends=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("diff", nargs="?", help="unified diff file (default: stdin)")
@@ -265,14 +270,13 @@ def main(argv: list[str] | None = None) -> int:
             ],
             check=True,
             capture_output=True,
-            text=True,
         ).stdout
-        found = violations(staged.splitlines(keepends=True))
+        found = violations(_lines(staged))
     elif args.diff:
-        with open(args.diff, encoding="utf-8") as handle:
-            found = violations(handle)
+        with open(args.diff, "rb") as handle:
+            found = violations(_lines(handle.read()))
     else:
-        found = violations(sys.stdin)
+        found = violations(_lines(sys.stdin.buffer.read()))
     labels = {label.strip() for label in args.labels.split(",") if label.strip()}
     if not found:
         print("No protected artifacts, harness files, or existing test assertions changed.")

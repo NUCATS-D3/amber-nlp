@@ -54,8 +54,8 @@ jobs:
           print("## Mutation testing")
           print(f"- kill rate: {'n/a' if rate is None else f'{rate:.1%}'}")
           print(f"- killed {stats.get('killed', 0)}, survived {stats.get('survived', 0)}")
-          for module, names in sorted(report.get("survivors_by_module", {}).items()):
-              print(f"- {module}: {len(names)} survivors")
+          for module, count in sorted(report.get("survivors_by_module", {}).items()):
+              print(f"- {module}: {count} survivors")
           PY
           fi
       - name: Upload the report

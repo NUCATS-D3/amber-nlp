@@ -18,11 +18,19 @@ def _check_prerequisites() -> list[str]:
     return match.group(1).split()
 
 
-def _make_targets(workflow: str) -> set[str]:
+def _tests_job() -> str:
+    start = CI.index("\n  tests:\n")
+    following = re.search(r"\n  [\w-]+:\n", CI[start + 1 :])
+    return CI[start : start + 1 + following.start()] if following else CI[start:]
+
+
+def _make_targets(job: str) -> set[str]:
+    """Targets run unconditionally as plain ``make`` commands in one job."""
     targets: set[str] = set()
-    for line in workflow.splitlines():
+    for line in job.splitlines():
         command = line.strip().removeprefix("run:").strip()
         if command.startswith("make "):
+            assert not re.search(r"[|;&]", command), f"make command is not plain: {command}"
             targets.update(command.split()[1:])
     return targets
 
@@ -30,13 +38,18 @@ def _make_targets(workflow: str) -> set[str]:
 def test_ci_runs_every_check_target_except_the_editable_sync() -> None:
     prerequisites = _check_prerequisites()
     assert "sync" in prerequisites and "test-fast" in prerequisites
-    missing = set(prerequisites) - {"sync"} - _make_targets(CI)
-    assert not missing, f"CI skips make check targets: {sorted(missing)}"
+    job = _tests_job()
+    assert "continue-on-error" not in job and "\n        if:" not in job
+    missing = set(prerequisites) - {"sync"} - _make_targets(job)
+    assert not missing, f"the tests job skips make check targets: {sorted(missing)}"
 
 
-def test_ci_no_longer_duplicates_the_commands_make_runs() -> None:
-    for command in ("uv run --no-sync pytest", "uv run --no-sync ruff", "uv run --no-sync mypy"):
-        assert command not in CI
+def test_ci_installs_without_editable_mode_and_requires_mlflow() -> None:
+    job = _tests_job()
+    assert "uv sync --locked --no-editable --extra dev --extra tracking --extra bundles" in job
+    assert 'python -c "import mlflow"' in job
+    # make must not re-sync over the non-editable install.
+    assert "RUN := uv run --no-sync" in (ROOT / "Makefile").read_text()
 
 
 def test_the_guard_reads_text_diffs() -> None:
@@ -53,3 +66,25 @@ def test_mutation_testing_runs_on_a_schedule_and_on_demand() -> None:
     assert "scripts/mutation_test.py" in workflow
     assert "mutation-report.json" in workflow and "upload-artifact" in workflow
     assert "GITHUB_STEP_SUMMARY" in workflow
+
+
+def test_the_mutation_summary_reads_the_report_the_script_writes(tmp_path: Path) -> None:
+    import json
+    import subprocess
+
+    workflow = MUTATION.read_text()
+    start = workflow.index("\n", workflow.index("<<'PY'")) + 1
+    body = workflow[start : workflow.index("          PY", start)]
+    summary = "\n".join(line.removeprefix("          ") for line in body.strip("\n").splitlines())
+    report = {
+        "stats": {"killed": 90, "survived": 10},
+        "kill_rate": 0.9,
+        "survivors_by_module": {"grounding": 4, "cases": 6},
+        "survivors": ["amber.grounding.x__mutmut_1"],
+    }
+    (tmp_path / "mutation-report.json").write_text(json.dumps(report))
+    run = subprocess.run(
+        ["python3", "-c", summary], cwd=tmp_path, capture_output=True, text=True, check=False
+    )
+    assert run.returncode == 0, run.stderr
+    assert "90.0%" in run.stdout and "grounding: 4 survivors" in run.stdout

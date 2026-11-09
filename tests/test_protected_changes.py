@@ -624,3 +624,33 @@ def test_staged_diffs_are_read_as_text(repo: Path, monkeypatch: pytest.MonkeyPat
         ["python3", str(SCRIPT), "--staged"], capture_output=True, text=True, check=False
     )
     assert staged.returncode == 1 and "tests/test_x.py:3" in staged.stdout
+
+
+def test_binary_bytes_in_a_text_diff_do_not_crash_the_guard(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    (repo / "docs").mkdir()
+    (repo / "docs" / "deck.pdf").write_bytes(b"%PDF\xff\xfe\x00\x80 binary\n")
+    _git(repo, "add", "-A")
+    monkeypatch.chdir(repo)
+    monkeypatch.delenv("ALLOW_ORACLE_CHANGE", raising=False)
+    staged = subprocess.run(
+        ["python3", str(SCRIPT), "--staged"], capture_output=True, text=True, check=False
+    )
+    assert staged.returncode == 0 and "Traceback" not in staged.stderr
+    diff = subprocess.run(
+        ["git", "diff", "--cached", "--unified=0", "--text", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        check=True,
+    ).stdout
+    path = tmp_path_factory.mktemp("diff") / "changes.diff"
+    path.write_bytes(diff)
+    from_file = subprocess.run(
+        ["python3", str(SCRIPT), str(path)], capture_output=True, text=True, check=False
+    )
+    assert from_file.returncode == 0 and "Traceback" not in from_file.stderr
+    from_stdin = subprocess.run(
+        ["python3", str(SCRIPT)], input=diff, capture_output=True, check=False
+    )
+    assert from_stdin.returncode == 0 and b"Traceback" not in from_stdin.stderr
