@@ -11,25 +11,32 @@ writes one. ``compare`` checks a new report against it, metric by metric:
   never passes;
 - ``passed``: anything else, including improvements.
 
+Metrics are keyed by name and variable (``label_accuracy[finding]``); a report with a key twice
+is refused (``duplicate_metric``).
+
 A metric's tolerance is its own override if set, else the low-support tolerance when its
 baseline denominator is below the threshold, else the default (0.005). The overall status is
-``regressed`` if any metric regressed or is missing, else ``inconclusive`` if any metric is, or
-if the report was scored against other references than the baseline (``reference_changed``),
-else ``passed``. Reports from another scorer are refused. Results carry names and numbers only.
+``regressed`` if any metric regressed or is missing, else ``inconclusive`` if any metric is, if
+the report's ``example_id``s or tier mix differ from the baseline's (``reference_changed``), or
+if the baseline names no ``example_id``s, as with label records, so a change of references
+cannot be seen (``references_unpinned``), else ``passed``. Reports from another scorer are
+refused. Results carry names and numbers only.
 """
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping
+import math
+from collections.abc import Collection, Mapping, Sequence
 from typing import Annotated, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from amber.scoring import ScoreReport
+from amber.schemas import ReferenceTier
+from amber.scoring import Metric, ScoreReport
 
 BASELINE_VERSION: Literal["amber-baseline/0.1"] = "amber-baseline/0.1"
 DEFAULT_TOLERANCE = 0.005
-_EPSILON = 1e-12
+_ROUNDING_ULPS = 8
 _FROZEN = ConfigDict(extra="forbid", frozen=True)
 _Tolerance = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 MetricStatus: TypeAlias = Literal["passed", "regressed", "missing", "inconclusive"]
@@ -49,11 +56,32 @@ class BaselineMetric(BaseModel):
     model_config = _FROZEN
 
     name: str = Field(min_length=1)
-    value: float = Field(allow_inf_nan=False)
+    variable: str | None = None
     numerator: float = Field(ge=0, allow_inf_nan=False)
     denominator: int = Field(strict=True, gt=0)
     lower_is_better: bool = False
     tolerance: _Tolerance | None = None
+
+    @property
+    def key(self) -> str:
+        return _key(self)
+
+    @property
+    def value(self) -> float:
+        return self.numerator / self.denominator
+
+
+def _key(metric: Metric | BaselineMetric) -> str:
+    return metric.name if metric.variable is None else f"{metric.name}[{metric.variable}]"
+
+
+def _by_key(metrics: Sequence[Metric]) -> dict[str, Metric]:
+    found: dict[str, Metric] = {}
+    for metric in metrics:
+        if _key(metric) in found:
+            raise ValueError(f"duplicate_metric: {_key(metric)}")
+        found[_key(metric)] = metric
+    return found
 
 
 class Baseline(BaseModel):
@@ -64,15 +92,16 @@ class Baseline(BaseModel):
     schema_version: Literal["amber-baseline/0.1"] = BASELINE_VERSION
     scorer: str = Field(min_length=1)
     example_ids: tuple[str, ...]
+    tier_mix: Mapping[ReferenceTier, int] = Field(default_factory=dict)
     metrics: tuple[BaselineMetric, ...] = Field(min_length=1)
     default_tolerance: _Tolerance = DEFAULT_TOLERANCE
     low_support: LowSupport | None = None
 
     @model_validator(mode="after")
     def require_distinct_metrics(self) -> Baseline:
-        names = [metric.name for metric in self.metrics]
-        if len(names) != len(set(names)):
-            raise ValueError("baseline metric names must be distinct")
+        keys = [metric.key for metric in self.metrics]
+        if len(keys) != len(set(keys)):
+            raise ValueError("baseline metric keys must be distinct")
         return self
 
     def tolerance(self, metric: BaselineMetric) -> float:
@@ -92,35 +121,39 @@ def baseline_from(
     default_tolerance: float = DEFAULT_TOLERANCE,
     low_support: LowSupport | None = None,
 ) -> Baseline:
-    """A baseline tracking ``metrics`` (default: every defined metric in the report)."""
-    found = {metric.name: metric for metric in report.metrics}
+    """A baseline tracking ``metrics`` by key (default: every defined metric in the report).
+
+    Options naming a metric the report lacks raise ``unknown_metric``; options for a metric the
+    baseline does not track raise ``untracked_metric``.
+    """
+    found = _by_key(report.metrics)
     tolerances = dict(tolerances or {})
     named = set(metrics or ()) | set(lower_is_better) | set(tolerances)
     if unknown := sorted(named - found.keys()):
         raise ValueError(f"unknown_metric: {', '.join(unknown)}")
     if metrics is None:
-        tracked = [name for name, metric in found.items() if metric.value is not None]
+        tracked = [key for key, metric in found.items() if metric.value is not None]
     else:
         tracked = list(dict.fromkeys(metrics))
-        if undefined := [name for name in tracked if found[name].value is None]:
+        if undefined := [key for key in tracked if found[key].value is None]:
             raise ValueError(f"undefined_metric: {', '.join(undefined)}")
-    entries = []
-    for name in tracked:
-        metric = found[name]
-        assert metric.value is not None
-        entries.append(
-            BaselineMetric(
-                name=name,
-                value=metric.value,
-                numerator=metric.numerator,
-                denominator=metric.denominator,
-                lower_is_better=name in lower_is_better,
-                tolerance=tolerances.get(name),
-            )
+    if untracked := sorted((set(lower_is_better) | set(tolerances)) - set(tracked)):
+        raise ValueError(f"untracked_metric: {', '.join(untracked)}")
+    entries = [
+        BaselineMetric(
+            name=found[key].name,
+            variable=found[key].variable,
+            numerator=found[key].numerator,
+            denominator=found[key].denominator,
+            lower_is_better=key in lower_is_better,
+            tolerance=tolerances.get(key),
         )
+        for key in tracked
+    ]
     return Baseline(
         scorer=report.scorer,
         example_ids=report.example_ids,
+        tier_mix=dict(report.tier_mix),
         metrics=tuple(entries),
         default_tolerance=default_tolerance,
         low_support=low_support,
@@ -136,6 +169,8 @@ class MetricComparison(BaseModel):
     current: float | None
     tolerance: float
     lower_is_better: bool
+    baseline_support: int
+    current_support: int | None
 
     @property
     def delta(self) -> float | None:
@@ -183,34 +218,36 @@ class RegressionResult(BaseModel):
         lines = [
             f"{row[0]:<{width}}  " + "  ".join(f"{cell:>9}" for cell in row[1:]) for row in rows
         ]
+        undefined = [m.name for m in self.metrics if m.status == "inconclusive"]
+        parts = []
         if self.regressions:
-            lines.append(f"regressed: {', '.join(self.regressions)}")
-        elif self.status == "inconclusive":
-            names = [m.name for m in self.metrics if m.status == "inconclusive"]
-            lines.append(f"inconclusive: {', '.join([*self.reasons, *names])}")
-        else:
-            lines.append(f"passed: {len(self.metrics)} metrics")
+            parts.append(f"regressed: {', '.join(self.regressions)}")
+        if self.reasons or undefined:
+            parts.append(f"inconclusive: {', '.join([*self.reasons, *undefined])}")
+        lines.append("; ".join(parts) or f"passed: {len(self.metrics)} metrics")
         return "\n".join(lines)
 
 
 def _regressed(current: float, metric: BaselineMetric, tolerance: float) -> bool:
+    """Past the boundary, allowing rounding relative to the values' size."""
+    slack = _ROUNDING_ULPS * math.ulp(max(1.0, abs(metric.value), abs(current)))
     if metric.lower_is_better:
-        return current > metric.value + tolerance + _EPSILON
-    return current < metric.value - tolerance - _EPSILON
+        return current > metric.value + tolerance + slack
+    return current < metric.value - tolerance - slack
 
 
 def compare(report: ScoreReport, baseline: Baseline) -> RegressionResult:
     """Compare ``report`` to ``baseline``; never writes or changes the baseline."""
     if report.scorer != baseline.scorer:
         raise ValueError("scorer_mismatch")
-    found = {metric.name: metric for metric in report.metrics}
+    found = _by_key(report.metrics)
     rows = []
     for metric in baseline.metrics:
         tolerance = baseline.tolerance(metric)
-        reported = found.get(metric.name)
+        reported = found.get(metric.key)
         current = None if reported is None else reported.value
         status: MetricStatus
-        if metric.name in report.inconclusive or (reported is not None and current is None):
+        if metric.key in report.inconclusive or (reported is not None and current is None):
             status = "inconclusive"
         elif current is None:
             status = "missing"
@@ -220,15 +257,23 @@ def compare(report: ScoreReport, baseline: Baseline) -> RegressionResult:
             status = "passed"
         rows.append(
             MetricComparison(
-                name=metric.name,
+                name=metric.key,
                 status=status,
                 baseline=metric.value,
                 current=current,
                 tolerance=tolerance,
                 lower_is_better=metric.lower_is_better,
+                baseline_support=metric.denominator,
+                current_support=None if reported is None else reported.denominator,
             )
         )
-    reasons = () if set(report.example_ids) == set(baseline.example_ids) else ("reference_changed",)
+    reasons: list[str] = []
+    if set(report.example_ids) != set(baseline.example_ids) or dict(report.tier_mix) != dict(
+        baseline.tier_mix
+    ):
+        reasons.append("reference_changed")
+    if not baseline.example_ids:
+        reasons.append("references_unpinned")
     statuses = {row.status for row in rows}
     outcome: RegressionOutcome
     if statuses & {"regressed", "missing"}:
@@ -237,11 +282,11 @@ def compare(report: ScoreReport, baseline: Baseline) -> RegressionResult:
         outcome = "inconclusive"
     else:
         outcome = "passed"
-    tracked = {metric.name for metric in baseline.metrics}
+    tracked = {metric.key for metric in baseline.metrics}
     return RegressionResult(
         status=outcome,
         metrics=tuple(rows),
-        reasons=reasons,
+        reasons=tuple(reasons),
         untracked=tuple(sorted(found.keys() - tracked)),
         provisional=report.provisional,
     )

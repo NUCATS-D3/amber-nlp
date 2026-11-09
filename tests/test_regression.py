@@ -161,7 +161,7 @@ def test_untracked_metrics_are_listed_not_gated() -> None:
 def test_the_baseline_tracks_every_defined_metric_by_default() -> None:
     report = _report({"strict_f1": (160, 200), "strict_f1:site": (0, 0)})
     baseline = baseline_from(report)
-    assert [metric.name for metric in baseline.metrics] == ["strict_f1"]
+    assert [metric.key for metric in baseline.metrics] == ["strict_f1"]
     assert baseline.example_ids == ("e1", "e2") and baseline.scorer == "amber-mention-spans"
     with pytest.raises(ValueError, match="undefined_metric"):
         baseline_from(report, metrics=("strict_f1:site",))
@@ -237,3 +237,102 @@ def test_a_broken_extractor_fails_a_span_baseline() -> None:
     broken = compare(report([(0, 5), (10, 15), (20, 24)]), baseline)
     assert broken.exit_code == 2
     assert "strict_f1" in broken.regressions and "lenient_f1" not in broken.regressions
+
+
+def _variable_report(
+    per_variable: dict[str | None, tuple[float, int]], **kwargs: Any
+) -> ScoreReport:
+    return ScoreReport(
+        scorer="amber-label-correct",
+        metrics=tuple(
+            Metric(
+                name="label_accuracy", kind="label", numerator=num, denominator=den, variable=var
+            )
+            for var, (num, den) in per_variable.items()
+        ),
+        example_ids=("e1",),
+        provisional=False,
+        **kwargs,
+    )
+
+
+def test_per_variable_metrics_are_tracked_separately() -> None:
+    base = _variable_report({None: (90, 100), "finding": (45, 50), "summary": (45, 50)})
+    baseline = baseline_from(base)
+    assert [metric.key for metric in baseline.metrics] == [
+        "label_accuracy",
+        "label_accuracy[finding]",
+        "label_accuracy[summary]",
+    ]
+    # The overall value collapses while the last variable holds steady: still a regression.
+    worse = _variable_report({None: (50, 100), "finding": (5, 50), "summary": (45, 50)})
+    assert compare(worse, baseline).regressions == (
+        "label_accuracy",
+        "label_accuracy[finding]",
+    )
+    pick = baseline_from(base, metrics=("label_accuracy[finding]",))
+    assert [metric.key for metric in pick.metrics] == ["label_accuracy[finding]"]
+
+
+def test_duplicate_metric_keys_are_refused() -> None:
+    twice = _variable_report({None: (1, 2)})
+    report = twice.model_copy(update={"metrics": twice.metrics * 2})
+    with pytest.raises(ValueError, match="duplicate_metric"):
+        baseline_from(report)
+    with pytest.raises(ValueError, match="duplicate_metric"):
+        compare(report, baseline_from(twice))
+
+
+def test_unpinned_references_never_pass() -> None:
+    # Reports scored only on label records list no example_ids, so a change of gold cannot be
+    # detected; the gate is at best inconclusive.
+    unpinned = BASE.model_copy(update={"example_ids": ()})
+    result = compare(unpinned, baseline_from(unpinned))
+    assert result.status == "inconclusive" and "references_unpinned" in result.reasons
+    worse = unpinned.model_copy(
+        update={"metrics": (BASE.metrics[0].model_copy(update={"numerator": 100}),)}
+    )
+    assert compare(worse, baseline_from(unpinned)).status == "regressed"
+
+
+def test_a_changed_tier_mix_is_a_reference_change() -> None:
+    silver = BASE.model_copy(update={"tier_mix": {"silver": 2}, "provisional": True})
+    adjudicated = BASE.model_copy(update={"tier_mix": {"adjudicated": 2}})
+    result = compare(silver, baseline_from(adjudicated))
+    assert result.status == "inconclusive" and "reference_changed" in result.reasons
+
+
+def test_options_for_untracked_metrics_are_refused() -> None:
+    with pytest.raises(ValueError, match="untracked_metric"):
+        baseline_from(BASE, metrics=("strict_f1",), lower_is_better=("tokens_per_case",))
+    with pytest.raises(ValueError, match="untracked_metric"):
+        baseline_from(BASE, metrics=("strict_f1",), tolerances={"strict_f1:site": 0.1})
+
+
+def test_the_baseline_value_comes_from_its_counts() -> None:
+    data = _baseline().model_dump(mode="json")
+    assert all("value" not in metric for metric in data["metrics"])
+    assert _baseline().metrics[0].value == 0.8
+
+
+def test_the_summary_keeps_reasons_alongside_regressions() -> None:
+    report = _report({"strict_f1": (100, 200), "strict_f1:site": (0, 0)}, example_ids=("e9",))
+    result = compare(report, _baseline(metrics=("strict_f1", "strict_f1:site")))
+    last = result.summary().splitlines()[-1]
+    assert "strict_f1" in last and "reference_changed" in last and "strict_f1:site" in last
+
+
+def test_the_boundary_holds_for_large_values() -> None:
+    # 1e9 tokens with tolerance 0.1: exactly baseline + tolerance passes despite float rounding.
+    base = _report({"tokens_per_case": (1e10 + 0.0, 10)})
+    baseline = baseline_from(
+        base, lower_is_better=("tokens_per_case",), tolerances={"tokens_per_case": 0.1}
+    )
+    assert compare(_report({"tokens_per_case": (1e10 + 1.0, 10)}), baseline).status == "passed"
+    assert compare(_report({"tokens_per_case": (1e10 + 2.0, 10)}), baseline).status == "regressed"
+
+
+def test_a_drop_of_exactly_the_tolerance_survives_float_rounding() -> None:
+    # 4/5 - 0.2 is 0.6000000000000001 in floating point, but 3/5 is exactly that far below.
+    baseline = baseline_from(_report({"recall": (4, 5)}), tolerances={"recall": 0.2})
+    assert compare(_report({"recall": (3, 5)}), baseline).status == "passed"

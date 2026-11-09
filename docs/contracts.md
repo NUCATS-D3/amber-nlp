@@ -472,15 +472,19 @@ sensitivity. They ship with the core; `amber[reference]` installs what all of th
   only. `span_metrics` and `spans_of` expose the pure core.
 - **Regression gate** (`amber.regression`, experimental): `baseline_from(report, *, metrics,
   lower_is_better, tolerances, default_tolerance=0.005, low_support)` returns a `Baseline`
-  (`amber-baseline/0.1`: scorer, the `example_id`s, and per tracked metric its value, counts,
-  direction, and optional tolerance); amber never writes one. `compare(report, baseline)`
-  refuses another scorer (`scorer_mismatch`) and rates each tracked metric `regressed` (past its
-  tolerance in the wrong direction; the boundary passes), `missing` (counts as regressed),
-  `inconclusive` (undefined or reported inconclusive; never passes), or `passed`. A metric's
-  tolerance is its override, else the low-support tolerance when its baseline denominator is
-  below the threshold, else the default. Overall: `regressed`, else `inconclusive` (also when
-  the `example_id`s differ: `reference_changed`), else `passed`; `exit_code` is 0, 2, or 3, and
-  `summary()` is a table of names and numbers only.
+  (`amber-baseline/0.1`: scorer, the `example_id`s and tier mix, and per tracked metric its
+  name, variable, counts, direction, and optional tolerance; the value is derived from the
+  counts); amber never writes one. Metrics are keyed by name and variable
+  (`label_accuracy[finding]`); a duplicate key is refused (`duplicate_metric`), as are options
+  for unknown or untracked metrics. `compare(report, baseline)` refuses another scorer
+  (`scorer_mismatch`) and rates each tracked metric `regressed` (past its tolerance in the
+  wrong direction; the boundary passes, allowing float rounding), `missing` (counts as
+  regressed), `inconclusive` (undefined or reported inconclusive; never passes), or `passed`. A
+  metric's tolerance is its override, else the low-support tolerance when its baseline
+  denominator is below the threshold, else the default. Overall: `regressed`, else
+  `inconclusive` (also when the `example_id`s or tier mix differ, `reference_changed`, or the
+  baseline names no `example_id`s, `references_unpinned`), else `passed`; `exit_code` is 0, 2,
+  or 3, and `summary()` is a table of names and numbers only.
 - **`Labeler`**: `name`, `version`, `tier`, and `label(case, source, variables, *, gate,
   context)` returning `(events, Example)`, a `LabelRecord`, or a source-free `LabelerFailure`
   (`amber.labeling`). Models, rules, and importers are `silver`; `admit_labeler` rejects a

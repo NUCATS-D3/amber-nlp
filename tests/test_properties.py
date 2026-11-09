@@ -11,6 +11,7 @@ import itertools
 import json
 import re
 from datetime import UTC, datetime
+from fractions import Fraction
 from typing import Any
 from unittest.mock import patch
 
@@ -592,12 +593,13 @@ def test_predicting_the_reference_scores_perfectly(gold: list[Span]) -> None:
 
 _METRICS = st.dictionaries(
     st.sampled_from(("a", "b", "c:x", "d:y")),
-    st.integers(0, 50).flatmap(lambda den: st.tuples(st.integers(0, den), st.just(den))),
+    st.integers(0, 400).flatmap(lambda den: st.tuples(st.integers(0, den), st.just(den))),
     min_size=1,
 )
 
 
 @given(_METRICS, st.integers(-3, 3), st.sampled_from(("a", "b", "c:x", "d:y")))
+@example({"a": (100, 200)}, -1, "a")  # a drop of exactly the tolerance passes
 def test_a_report_passes_its_own_baseline_and_a_large_drop_regresses(
     counts: dict[str, tuple[int, int]], shift: int, moved: str
 ) -> None:
@@ -608,6 +610,7 @@ def test_a_report_passes_its_own_baseline_and_a_large_drop_regresses(
                 Metric(name=name, kind="evidence", numerator=num, denominator=den)
                 for name, (num, den) in values.items()
             ),
+            example_ids=("e",),
             provisional=False,
         )
 
@@ -618,5 +621,5 @@ def test_a_report_passes_its_own_baseline_and_a_large_drop_regresses(
     num, den = counts[moved]
     lowered = {**counts, moved: (max(num + shift, 0), den)}
     result = compare(report(lowered), baseline)
-    dropped = (num - max(num + shift, 0)) / den
-    assert (moved in result.regressions) == (dropped > 0.005 + 1e-12)
+    dropped = Fraction(num - max(num + shift, 0), den)
+    assert (moved in result.regressions) == (dropped > Fraction(5, 1000))
