@@ -41,7 +41,7 @@ SAMPLES = {
     r"^(?:.+/)?\.gitattributes$": "docs/.gitattributes",
     r"^scripts/phi_scan\.py$": "scripts/phi_scan.py",
     r"^tools/opencode-check/": "tools/opencode-check/check-agents.mjs",
-    r"^ruff\.toml$": "ruff.toml",
+    r"^(?:.+/)?\.?ruff\.toml$": "src/.ruff.toml",
     r"^\.importlinter$": ".importlinter",
 }
 # Places outside the guard's view (a diff of this repository) that could switch the rules off:

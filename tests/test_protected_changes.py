@@ -711,3 +711,19 @@ def test_the_opencode_sdk_check_is_protected(repo: Path) -> None:
     path.parent.mkdir(parents=True)
     path.write_text("process.exit(0)\n")
     assert _found(repo) == ["tools/opencode-check/check-agents.mjs"]
+
+
+@pytest.mark.parametrize("path", [".ruff.toml", "src/ruff.toml", "tests/.ruff.toml"])
+def test_every_ruff_config_file_is_protected(repo: Path, path: str) -> None:
+    (repo / path).parent.mkdir(parents=True, exist_ok=True)
+    (repo / path).write_text("[lint]\nignore = ['F']\n")
+    assert _found(repo) == [path]
+
+
+def test_ruff_config_in_any_pyproject_is_found(repo: Path) -> None:
+    nested = repo / "src" / "amber" / "pyproject.toml"
+    nested.write_text("[project]\nname = 'x'\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "nested")
+    nested.write_text(nested.read_text() + "\n[tool.ruff]\nextend-exclude = ['.']\n")
+    assert _found(repo) == ["src/amber/pyproject.toml:4"]
