@@ -591,3 +591,11 @@ def test_renaming_a_test_to_another_test_name_is_not_flagged(repo: Path) -> None
     test = repo / "tests" / "test_x.py"
     test.write_text(test.read_text().replace("def test_one():", "def test_first():"))
     assert _found(repo) == []
+
+
+@pytest.mark.parametrize("hidden", ["_test_one", "one", "disabled_one"])
+def test_a_test_renamed_out_beside_a_filler_test_is_found(repo: Path, hidden: str) -> None:
+    test = repo / "tests" / "test_x.py"
+    renamed = test.read_text().replace("def test_one():", f"def {hidden}():")
+    test.write_text(renamed + "\n\ndef test_filler():\n    assert True\n")
+    assert _found(repo) == ["tests/test_x.py:1"]

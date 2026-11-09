@@ -16,7 +16,8 @@ Protected:
   point (a ``module:attr`` or ``amber.*`` target), since pytest11 entries load plugins; an added
   ``pytest_plugins`` or ``pytest_collection*`` line in any Python file; in ``tests/**/*.py``,
   test names (``def test_``, ``class Test``) removed from a file that still exists when the file
-  loses more test names than it gains, or an added line whose code (string literals and comments
+  loses more test names than it gains or the name reappears as a non-test definition
+  (``_test_one``, ``disabled_one``), or an added line whose code (string literals and comments
   removed) skips, xfails, slow-marks, stops, or re-plugs the suite in common spellings and
   aliases (marks, the ``pytest.mark`` namespace, ``skip``, ``importorskip``, ``SkipTest``,
   ``__test__``, ``exit(``, ``Exit``, Hypothesis ``settings(``, ``max_examples``, profiles, or
@@ -66,6 +67,7 @@ _TESTS = re.compile(r"^tests/.+\.py$")
 _ASSERTION = re.compile(r"^\s*assert\b|\bpytest\.raises\(|\b_assert\w*\(")
 _TEST_MODULE = re.compile(r"^tests/(?:.+/)?(?:test_[^/]*|[^/]*_test)\.py$")
 _TEST_NAME = re.compile(r"^\s*(?:async\s+)?def (test_\w*)|^\s*class (Test\w*)")
+_DEFINITION = re.compile(r"^\s*(?:async\s+)?def (\w+)|^\s*class (\w+)")
 # Common spellings and aliases in any line position (review still catches the rest), matched
 # against code only: string literals and comments are removed first (see _code).
 _DESELECTION = re.compile(
@@ -133,6 +135,19 @@ def _test_name(body: str) -> str | None:
     return None if match is None else match.group(1) or match.group(2)
 
 
+def _definition(body: str) -> str | None:
+    match = _DEFINITION.match(body)
+    return None if match is None else match.group(1) or match.group(2)
+
+
+def _hides(test: str, other: str) -> bool:
+    """Whether ``other`` reads as ``test`` renamed out of collection: ``test_one`` as
+    ``_test_one``, ``one``, or ``disabled_one``; ``TestOne`` as ``_TestOne`` or ``One``."""
+    stem = test.removeprefix("test_").removeprefix("Test").lower()
+    name = other.lstrip("_").lower()
+    return bool(stem) and (name in (stem, test.lower()) or name.endswith("_" + stem))
+
+
 class _File:
     """What one file's section of a diff changed."""
 
@@ -142,6 +157,7 @@ class _File:
         self.renamed_from: str | None = None
         self.removed_names: dict[str, int] = {}
         self.added_names: set[str] = set()
+        self.added_other: set[str] = set()
 
     def paths(self) -> list[str]:
         return [path for path in dict.fromkeys((self.old, self.new)) if path is not None]
@@ -154,7 +170,8 @@ class _File:
             return []
         missing = [name for name in self.removed_names if name not in self.added_names]
         if len(missing) <= len(self.added_names - self.removed_names.keys()):
-            return []
+            # Net count kept: still flag a test whose stem reappears as a non-test definition.
+            missing = [name for name in missing if any(_hides(name, o) for o in self.added_other)]
         return [f"{self.old}:{self.removed_names[name]}" for name in missing]
 
 
@@ -216,6 +233,8 @@ def violations(diff: Iterable[str]) -> list[str]:
                 found.append(f"{current.new}:{new_line}")
             if (name := _test_name(text[1:])) is not None:
                 current.added_names.add(name)
+            elif (other := _definition(text[1:])) is not None:
+                current.added_other.add(other)
             new_line += 1
         elif text.startswith(" "):
             line += 1
