@@ -5,6 +5,10 @@ amber-nlp is the framework: contracts, validation, interfaces, a conformance kit
 plugins. It contains no experiments, datasets, extractors, prompts, rules, UI, or CLI. Those
 belong in lapidary, copal, and loupe. Track work in Beads (`bd ready`); see AGENTS.md.
 
+Done means `make check` passes and its summary is quoted, the bead's acceptance criteria are
+met, and the `reviewer` agent has reviewed the branch. Never change a protected path or take a
+forbidden shortcut; both are listed in [AGENTS.md](AGENTS.md#definition-of-done).
+
 ## Invariants (enforce in code and tests, not in comments)
 
 1. **Grounding by construction.** An `Inclusion` is minted only by the grounding path or an

@@ -8,6 +8,49 @@
 
 `docs/history/` is pre-reset design input, not current plans.
 
+## Definition of done
+
+A task is done when all of these hold:
+
+1. `make check` passes on the final tree. Quote its last two lines (the pytest summary and
+   `check ok`) in your final message. Without that output, do not say the work passes.
+2. The bead's acceptance criteria are met, each with the evidence: a test, a command and its
+   output, or a review.
+3. The `reviewer` agent has reviewed the branch (see [Review](#review)).
+
+### Protected paths
+
+These are the oracle. They judge your work, so you never change them:
+
+- golden records, the conformance catalog, and conformance fixtures;
+- the verification harness: agent hooks and settings, agent definitions and the review prompt,
+  `.pre-commit-config.yaml`, `Makefile`, CI workflows, and the guard script;
+- every existing test assertion.
+
+The authoritative list is `_PROTECTED` in
+[scripts/check_protected_changes.py](scripts/check_protected_changes.py). Do not modify these
+paths, work around them, or copy them so an edited duplicate is used instead. If a protected
+test or check looks wrong, stop and explain why in your reply or the bead; a human decides.
+
+### Forbidden shortcuts
+
+- Adding `skip`, `skipif`, `xfail`, or `importorskip` to make a failure go away.
+- Loosening an assertion, tolerance, exception match, or Hypothesis strategy.
+- Special-casing a test input, fixture value, ID, or file name, or behaving differently under
+  pytest or CI.
+- Catching and suppressing an exception so a test passes.
+- Adding `# type: ignore`, `# noqa`, or configuration that silences a real error.
+- Regenerating golden records or a baseline to match new output, outside the contract-change
+  skill and a human's approval.
+- Setting `ALLOW_ORACLE_CHANGE`, committing with `--no-verify`, or adding the
+  `contract-approved` label.
+
+### Workflow
+
+Work from the bead: `bd show <id>` gives the scope and acceptance criteria. Keep each change
+small enough to review, commit whenever `make check` is green, and file anything outside the
+bead as a new bead instead of doing it.
+
 ## Task tracking
 
 Project tasks, blockers, and decisions live in Beads (`.beads/`, prefix `amber-`).
@@ -137,11 +180,8 @@ Imperative subject, with a body explaining why for non-trivial changes. Call out
 dependency, or wire-format changes, and their migrations.
 
 Work lands on `main` through pull requests. CI's "Protected contract artifacts" check fails a
-pull request that changes golden records, the catalog, conformance fixtures, the verification
-harness (agent hook settings and scripts, agent definitions and the review prompt,
-`.pre-commit-config.yaml`, `Makefile`, CI workflows, the guard script), or existing test
-assertions until a human adds the `contract-approved` label;
-agents never add it. The same guard runs as a pre-commit hook (`make hooks`), where only a human
-sets `ALLOW_ORACLE_CHANGE=1`; agents never set it or commit with `--no-verify`. An agent may
-merge its own pull request once every check passes and the protected-artifacts check passed
-without that label; anything that needs the label waits for a human.
+pull request that changes a [protected path](#protected-paths) until a human adds the
+`contract-approved` label. The same guard runs as a pre-commit hook (`make hooks`), where only a
+human sets `ALLOW_ORACLE_CHANGE=1`. An agent may merge its own pull request once every check
+passes and the protected-artifacts check passed without that label; anything that needs the
+label waits for a human.
