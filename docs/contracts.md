@@ -470,6 +470,24 @@ sensitivity. They ship with the core; `amber[reference]` installs what all of th
   macro metrics are a sum of ratios over a count of types and cannot be pooled across reports.
   Only cases with an Example are scored; every metric is `inconclusive` against label records
   only. `span_metrics` and `spans_of` expose the pure core.
+- **Regression gate** (`amber.regression`, experimental): `baseline_from(report, *, references,
+  metrics, lower_is_better, tolerances, default_tolerance=0.005, low_support)` returns a
+  `Baseline` (`amber-baseline/0.1`: scorer, a SHA-256 pinning the references, and per tracked
+  metric its name, variable, counts, direction, and optional tolerance; the value is derived
+  from the counts); amber never writes one. References are pinned by Example content IDs and a
+  canonical hash of each label record, since no report carries label-record content; the
+  report's `example_id`s must be exactly the Examples given, and its tier mix that of the
+  references (`references_mismatch`); callers pass the references the report was scored on. Metrics are
+  keyed by name and variable (`label_accuracy[finding]`); a duplicate key is refused
+  (`duplicate_metric`), as are options for unknown or untracked metrics. `compare(report,
+  baseline, *, references)` refuses another scorer (`scorer_mismatch`) and rates each tracked
+  metric `regressed` (past its tolerance in the wrong direction; the boundary passes, allowing
+  float rounding), `missing` (counts as regressed), `inconclusive` (undefined, or its name or
+  key reported inconclusive; never passes), or `passed`. A metric's tolerance is its override,
+  else the low-support tolerance when its baseline denominator is below the threshold, else the
+  default. Overall: `regressed`, else `inconclusive` (also when the references differ,
+  `reference_changed`), else `passed`; `exit_code` is 0, 2, or 3, and `summary()` is a table of
+  names and numbers only.
 - **`Labeler`**: `name`, `version`, `tier`, and `label(case, source, variables, *, gate,
   context)` returning `(events, Example)`, a `LabelRecord`, or a source-free `LabelerFailure`
   (`amber.labeling`). Models, rules, and importers are `silver`; `admit_labeler` rejects a
