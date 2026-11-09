@@ -2,9 +2,10 @@
 // "@opencode/plugin" from the pinned version.
 import { cpSync, mkdirSync, readdirSync, rmSync } from "node:fs"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 
-const source = new URL("../../.opencode/plugins/", import.meta.url).pathname
-const build = new URL("./build/", import.meta.url).pathname
+const source = fileURLToPath(new URL("../../.opencode/plugins/", import.meta.url))
+const build = fileURLToPath(new URL("./build/", import.meta.url))
 rmSync(build, { recursive: true, force: true })
 mkdirSync(build)
 const plugins = readdirSync(source).filter((name) => name.endsWith(".ts"))

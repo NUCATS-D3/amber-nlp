@@ -4,11 +4,12 @@
 // everything first; whether later rules override as intended is verified live after upgrades.
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { Schema } from "effect"
 import { ConfigAgent } from "@opencode/schema/config/agent"
 import { parse } from "yaml"
 
-const agents = new URL("../../.opencode/agents/", import.meta.url).pathname
+const agents = fileURLToPath(new URL("../../.opencode/agents/", import.meta.url))
 const decode = Schema.decodeUnknownSync(ConfigAgent.Info, { onExcessProperty: "error" })
 const files = readdirSync(agents).filter((file) => file.endsWith(".md"))
 let failures = 0
