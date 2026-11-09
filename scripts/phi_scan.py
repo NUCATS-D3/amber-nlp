@@ -1,16 +1,16 @@
-"""Scan synthetic-only paths for identifier-shaped text (amber-a6d.3).
+"""Scan the repository for identifier-shaped text (amber-a6d.3).
 
-Looks in tracked and untracked (not ignored) files under ``tests/``, ``examples/``,
-``src/amber/conformance/``, and ``docs/`` (or the given paths, when they are in that scope) for
-SSNs, phone numbers, emails, MRN-like numbers next to a record keyword, and dates next to a
-birth keyword. Emails at reserved test domains (RFC 2606/6761:
-``example.com``/``.org``/``.net``, ``.invalid``, ``.test``, ``.example``, ``localhost``) pass.
-Text that is not UTF-8 is still scanned; a binary file (one with a NUL byte) cannot be, so it is
-a finding of its own (``unscannable``) unless ``UNSCANNABLE`` lists it with the SHA-256 of its
-reviewed content. Prints ``path:line: pattern`` (or ``path: unscannable``) and never the matched
-text, and exits 1 on any finding. ``ALLOWED`` lists reviewed exceptions by path, line, and
-pattern; this script is a protected path, so only a human extends either list. Standard library
-only.
+Looks in every tracked and untracked (not ignored) file, or the given paths, except the
+third-party lockfiles in ``EXCLUDED``, for SSNs, phone numbers, emails, MRN-like numbers next to
+a record keyword, and dates next to a birth keyword. Emails at reserved test domains (RFC
+2606/6761: ``example.com``/``.org``/``.net``, ``.invalid``, ``.test``, ``.example``,
+``localhost``) pass. Text that is not UTF-8 is still scanned; a binary file (one with a NUL
+byte) cannot be, so it is a finding of its own (``unscannable``) unless ``UNSCANNABLE`` lists it
+with the SHA-256 of its reviewed content. Prints ``path:line: pattern`` (or ``path:
+unscannable``) and never the matched text, and exits 1 on any finding. In
+``.beads/issues.jsonl`` the ``owner`` field, which names the person who created an issue, is not
+scanned; issue text is. ``ALLOWED`` lists reviewed exceptions by path, line, and pattern; this
+script is a protected path, so only a human extends either list. Standard library only.
 
     python3 scripts/phi_scan.py              # the whole scope
     python3 scripts/phi_scan.py FILE...      # files in scope only (pre-commit)
@@ -19,12 +19,17 @@ only.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import subprocess
 import sys
 from pathlib import Path
 
-SCOPE = ("tests/", "examples/", "src/amber/conformance/", "docs/")
+# Machine-generated third-party metadata (package authors' contact details), not our text.
+EXCLUDED = frozenset({"uv.lock", "tools/opencode-check/package-lock.json"})
+# Fields that name the people who use a tool rather than data in it: Beads records who created
+# each issue. The rest of each record, such as titles and descriptions, is scanned.
+IGNORED_FIELDS = {".beads/issues.jsonl": ("owner",)}
 ALLOWED: frozenset[tuple[str, int, str]] = frozenset()
 # Reviewed binaries in scope (slides and images), pinned to the SHA-256 of the reviewed bytes;
 # regexes cannot inspect them, and any other content ends the exemption.
@@ -95,9 +100,24 @@ def findings(text: str) -> list[tuple[int, str]]:
     return list(dict.fromkeys(found))
 
 
+def _without_fields(text: str, fields: tuple[str, ...]) -> str:
+    """JSON lines with the named top-level fields removed, one output line per input line."""
+    lines = []
+    for line in text.splitlines():
+        try:
+            record = json.loads(line)
+        except ValueError:
+            lines.append(line)
+            continue
+        if isinstance(record, dict):
+            record = {key: value for key, value in record.items() if key not in fields}
+        lines.append(json.dumps(record, ensure_ascii=False))
+    return "\n".join(lines)
+
+
 def _in_scope() -> list[str]:
     listed = subprocess.run(
-        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", *SCOPE],
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
         check=True,
         capture_output=True,
     ).stdout
@@ -106,7 +126,7 @@ def _in_scope() -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
-    paths = [path for path in args if path.startswith(SCOPE)] if args else _in_scope()
+    paths = [path for path in (args or _in_scope()) if path not in EXCLUDED]
     reported = 0
     for path in dict.fromkeys(paths):
         file = Path(path)
@@ -118,7 +138,10 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{path}: unscannable")
                 reported += 1
             continue
-        for line, name in findings(data.decode("utf-8", errors="replace")):
+        text = data.decode("utf-8", errors="replace")
+        if path in IGNORED_FIELDS:
+            text = _without_fields(text, IGNORED_FIELDS[path])
+        for line, name in findings(text):
             if (path, line, name) not in ALLOWED:
                 print(f"{path}:{line}: {name}")
                 reported += 1

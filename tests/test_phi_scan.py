@@ -168,7 +168,8 @@ def repo(tmp_path: Path) -> Path:
         "tests/test_a.py": f"VALUE = '{SSN}'\n",
         "docs/note with spaces.md": f"Reach me at {EMAIL}.\n",
         "examples/clean.json": '{"text": "nothing to see"}\n',
-        "src/amber/other.py": f"OUT_OF_SCOPE = '{SSN}'\n",
+        "src/amber/other.py": f"IN_SCOPE = '{SSN}'\n",
+        "uv.lock": f"# third-party metadata {SSN}\n",
         "docs/image.bin": "",
     }
     for name, text in files.items():
@@ -179,7 +180,7 @@ def repo(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def test_the_scan_covers_tracked_files_in_scope_and_never_prints_matches(
+def test_the_scan_covers_every_file_but_excluded_lockfiles_and_never_prints_matches(
     repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(repo)
@@ -187,18 +188,19 @@ def test_the_scan_covers_tracked_files_in_scope_and_never_prints_matches(
     out = capsys.readouterr().out
     assert "tests/test_a.py:1: ssn" in out
     assert "docs/note with spaces.md:1: email" in out
-    assert "src/amber/other.py" not in out
+    assert "src/amber/other.py:1: ssn" in out
+    assert "uv.lock" not in out
     # A binary file in scope cannot be scanned, so it is a finding of its own.
     assert "docs/image.bin: unscannable" in out
     for secret in (SSN, EMAIL, "hospital", "3456"):
         assert secret not in out
 
 
-def test_explicit_paths_are_scanned_when_in_scope(
+def test_explicit_paths_are_scanned_unless_excluded(
     repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(repo)
-    assert scan.main(["examples/clean.json", "src/amber/other.py"]) == 0
+    assert scan.main(["examples/clean.json", "uv.lock"]) == 0
     assert scan.main(["tests/test_a.py"]) == 1
     assert "tests/test_a.py:1: ssn" in capsys.readouterr().out
 
@@ -260,3 +262,29 @@ def test_untracked_files_in_scope_are_scanned(
     (repo / "tests" / "test_new.py").write_text(f"VALUE = '{EMAIL}'\n")
     assert scan.main([]) == 1
     assert "tests/test_new.py:1: email" in capsys.readouterr().out
+
+
+def test_beads_owner_fields_are_not_scanned_but_issue_text_is(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import json
+
+    monkeypatch.chdir(repo)
+    issues = repo / ".beads" / "issues.jsonl"
+    issues.parent.mkdir()
+    clean = {"id": "x-1", "title": "Invented task", "owner": EMAIL}
+    leaky = {"id": "x-2", "title": "Invented task", "owner": EMAIL, "description": f"call {PHONE}"}
+    issues.write_text(json.dumps(clean) + "\n" + json.dumps(leaky) + "\n")
+    assert scan.main([".beads/issues.jsonl"]) == 1
+    out = capsys.readouterr().out
+    assert out.splitlines()[0] == ".beads/issues.jsonl:2: phone"
+    assert "email" not in out
+
+
+def test_root_files_are_scanned(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(repo)
+    (repo / "README.md").write_text(f"Questions to {EMAIL}\n")
+    assert scan.main(["README.md"]) == 1
+    assert "README.md:1: email" in capsys.readouterr().out
