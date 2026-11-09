@@ -40,8 +40,8 @@ test or check looks wrong, stop and explain why in your reply or the bead; a hum
 OpenCode (`.opencode/opencode.json`) and Claude Code (`.claude/settings.json`) ask a human before
 an agent's edit or write tool touches a protected file, or a file that could switch these rules
 off: any `opencode.json(c)` or `.opencode/` directory (agents, modes, plugins, config, including in
-parent directories), `.claude/`, `~/.config/opencode/`, `~/.claude/settings.json` and `agents/`,
-and OpenCode's system directories. The OpenCode rules sit in `.opencode/opencode.json` because the
+parent directories), `.claude/`, and both tools' home config (`~/.config/opencode/`, `~/.claude/`),
+in both harnesses; OpenCode also asks for its system directories. The OpenCode rules sit in `.opencode/opencode.json` because the
 closest `.opencode` config is merged last. Approve only with **Allow once**: **Allow always** saves
 an `edit *` allow rule for the project, which overrides every one of these prompts (list saved
 rules with `opencode api get /api/permission/saved`). Line-level protection (test assertions,

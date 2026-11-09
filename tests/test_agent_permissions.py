@@ -60,6 +60,9 @@ EXTRA = [
     f"{Path.home()}/projects/opencode.jsonc",
     "/etc/opencode/opencode.json",
     "/Library/Application Support/opencode/agents/build.md",
+    # The other harness's home config, which OpenCode agents could otherwise rewrite.
+    "~/.claude/settings.json",
+    "~/.claude/agents/build.md",
 ]
 CONFIG = ROOT / ".opencode" / "opencode.json"
 
@@ -127,6 +130,10 @@ CLAUDE_EXTRA = [
     "docs/.claude/settings.json",
     "~/.claude/settings.json",
     "~/.claude/agents/build.md",
+    # OpenCode's global and parent-directory config, which Claude agents could otherwise rewrite.
+    "~/.config/opencode/agents/build.md",
+    "~/.config/opencode/opencode.json",
+    "../.opencode/mode/build.md",
 ]
 
 
@@ -141,18 +148,50 @@ def test_the_rules_live_where_opencode_applies_them_last() -> None:
     assert CONFIG.is_file() and not (ROOT / "opencode.json").exists()
 
 
-def test_no_agent_definition_re_allows_edits_to_a_protected_path() -> None:
-    import yaml
+def _agent_rules(file: Path) -> list[dict[str, str]]:
+    """An agent's permission rules, which this repository writes one JSON object per line."""
+    front = file.read_text().split("\n---\n", 1)[0]
+    assert not re.search(r"^permission:", front, re.MULTILINE), f"{file}: legacy permission key"
+    return [
+        json.loads(line.strip()[2:]) for line in front.splitlines() if line.strip()[:3] == "- {"
+    ]
 
+
+def test_no_agent_definition_re_allows_edits_to_a_protected_path() -> None:
     folders = ("agent", "agents", "mode", "modes")
     files = [path for folder in folders for path in (ROOT / ".opencode" / folder).rglob("*.md")]
     assert files, "expected at least the reviewer agent"
+    paths = [*SAMPLES.values(), *(p for p in EXTRA if not p.startswith(("~", "/")))]
     for file in files:
-        front = yaml.safe_load(file.read_text().split("\n---\n", 1)[0].removeprefix("---\n"))
-        for rule in front.get("permissions") or []:
-            if rule["action"] in ("edit", "*") and rule["effect"] == "allow":
-                hits = [p for p in SAMPLES.values() if _opencode_matches(rule["resource"], p)]
-                assert not hits, f"{file.name} allows edits to {hits}"
+        for rule in _agent_rules(file):
+            if rule["effect"] != "allow" or not _opencode_matches(rule["action"], "edit"):
+                continue
+            hits = [path for path in paths if _opencode_matches(rule["resource"], path)]
+            assert not hits, f"{file.name} allows edits to {hits}"
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        {"action": "edit", "resource": ".opencode/*", "effect": "allow"},
+        {"action": "e*", "resource": "*", "effect": "allow"},
+    ],
+)
+def test_the_re_allow_check_catches_a_reopening_rule(rule: dict[str, str]) -> None:
+    paths = [*SAMPLES.values(), *(p for p in EXTRA if not p.startswith(("~", "/")))]
+    assert _opencode_matches(rule["action"], "edit")
+    assert [path for path in paths if _opencode_matches(rule["resource"], path)]
+
+
+def test_agent_rules_parse_and_refuse_the_legacy_key(tmp_path: Path) -> None:
+    agent = tmp_path / "x.md"
+    agent.write_text(
+        '---\npermissions:\n  - {"action": "read", "resource": "*", "effect": "allow"}\n---\n'
+    )
+    assert _agent_rules(agent) == [{"action": "read", "resource": "*", "effect": "allow"}]
+    agent.write_text("---\npermission:\n  edit: allow\n---\n")
+    with pytest.raises(AssertionError, match="legacy permission key"):
+        _agent_rules(agent)
 
 
 def test_neighbouring_paths_do_not_ask() -> None:

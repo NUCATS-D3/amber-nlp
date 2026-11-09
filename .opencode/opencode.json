@@ -12,6 +12,7 @@
     { "action": "edit", "resource": "*opencode.json", "effect": "ask" },
     { "action": "edit", "resource": "*opencode.jsonc", "effect": "ask" },
     { "action": "edit", "resource": "~/.config/opencode/*", "effect": "ask" },
+    { "action": "edit", "resource": "~/.claude/*", "effect": "ask" },
     { "action": "edit", "resource": "/etc/opencode/*", "effect": "ask" },
     { "action": "edit", "resource": "/Library/Application Support/opencode/*", "effect": "ask" },
     { "action": "edit", "resource": "docs/review_prompt.md", "effect": "ask" },

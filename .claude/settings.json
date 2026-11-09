@@ -15,6 +15,7 @@
       "Edit(**/opencode.jsonc)",
       "Edit(~/.claude/settings.json)",
       "Edit(~/.claude/agents/**)",
+      "Edit(~/.config/opencode/**)",
       "Edit(/docs/review_prompt.md)",
       "Edit(/.pre-commit-config.yaml)",
       "Edit(/.github/workflows/**)",
