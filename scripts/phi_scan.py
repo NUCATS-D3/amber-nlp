@@ -3,13 +3,14 @@
 Looks in tracked and untracked (not ignored) files under ``tests/``, ``examples/``,
 ``src/amber/conformance/``, and ``docs/`` (or the given paths, when they are in that scope) for
 SSNs, phone numbers, emails, MRN-like numbers next to a record keyword, and dates next to a
-birth keyword. Emails at reserved test domains (RFC 2606/6761: ``example.com``/``.org``/
-``.net``, ``.invalid``, ``.test``, ``.example``, ``localhost``) pass. Text that is not UTF-8 is
-still scanned; a binary file (one with a NUL byte) cannot be, so it is a finding of its own
-(``unscannable``) unless ``UNSCANNABLE`` lists it. Prints ``path:line: pattern`` (or
-``path: unscannable``) and never the matched text, and exits 1 on any finding. ``ALLOWED``
-lists reviewed exceptions by path, line, and pattern; this script is a protected path, so only a
-human extends either list. Standard library only.
+birth keyword. Emails at reserved test domains (RFC 2606/6761:
+``example.com``/``.org``/``.net``, ``.invalid``, ``.test``, ``.example``, ``localhost``) pass.
+Text that is not UTF-8 is still scanned; a binary file (one with a NUL byte) cannot be, so it is
+a finding of its own (``unscannable``) unless ``UNSCANNABLE`` lists it with the SHA-256 of its
+reviewed content. Prints ``path:line: pattern`` (or ``path: unscannable``) and never the matched
+text, and exits 1 on any finding. ``ALLOWED`` lists reviewed exceptions by path, line, and
+pattern; this script is a protected path, so only a human extends either list. Standard library
+only.
 
     python3 scripts/phi_scan.py              # the whole scope
     python3 scripts/phi_scan.py FILE...      # files in scope only (pre-commit)
@@ -17,6 +18,7 @@ human extends either list. Standard library only.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import subprocess
 import sys
@@ -24,20 +26,31 @@ from pathlib import Path
 
 SCOPE = ("tests/", "examples/", "src/amber/conformance/", "docs/")
 ALLOWED: frozenset[tuple[str, int, str]] = frozenset()
-# Reviewed binaries in scope (slides and images); regexes cannot inspect them.
-UNSCANNABLE: frozenset[str] = frozenset(
-    {
-        "docs/slides/NUCATS-D3 update (Sept 26).pdf",
-        "docs/slides/amber-ecosystem/deck.pdf",
-        "docs/slides/nlp-abstractor/assets/nucats-logo.png",
-        "docs/slides/nlp-abstractor/deck.pdf",
-    }
-)
+# Reviewed binaries in scope (slides and images), pinned to the SHA-256 of the reviewed bytes;
+# regexes cannot inspect them, and any other content ends the exemption.
+UNSCANNABLE: dict[str, str] = {
+    "docs/slides/NUCATS-D3 update (Sept 26).pdf": (
+        "477e8ba68d1a5168cb9dcb5a3950924eb20ed0759c293fb66aef23a22693baf1"
+    ),
+    "docs/slides/amber-ecosystem/deck.pdf": (
+        "0e27e7deb39082add727e3fdd5b22ce57f0f589f4175ec18ed529864ad70a599"
+    ),
+    "docs/slides/nlp-abstractor/assets/nucats-logo.png": (
+        "efbaf817c3b7e97deefad449f175521cff916e8864cdabe65faf0bb2e9345730"
+    ),
+    "docs/slides/nlp-abstractor/deck.pdf": (
+        "e96e22d513854b2ab3f1e274150b0be26edbd786a490cdeca954dcd9d48ca419"
+    ),
+}
 
-_MONTH = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?"
+_MONTH = (
+    r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?"
+    r"|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\.?"
+)
+# A whole date with a two- or four-digit year: not a version string, hash, or timestamp.
 _DATE = (
-    r"(?:\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}|\d{8}"
-    rf"|{_MONTH}\s+\d{{1,2}},?\s+\d{{4}}|\d{{1,2}}\s+{_MONTH}\s+\d{{4}})"
+    r"(?<![\w.])(?:\d{1,2}[-/.]\d{1,2}[-/.](?:\d{4}|\d{2})|\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{8}"
+    rf"|{_MONTH}\s+\d{{1,2}},?\s+\d{{4}}|\d{{1,2}}\s+{_MONTH}\s+\d{{4}})(?![\w.-]|\.\d)"
 )
 _PATTERNS = {
     "ssn": re.compile(
@@ -96,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
             continue
         data = file.read_bytes()
         if b"\0" in data:
-            if path not in UNSCANNABLE:
+            if UNSCANNABLE.get(path) != hashlib.sha256(data).hexdigest():
                 print(f"{path}: unscannable")
                 reported += 1
             continue

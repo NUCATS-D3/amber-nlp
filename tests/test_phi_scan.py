@@ -93,6 +93,12 @@ def test_each_pattern_is_caught(text: str, pattern: str) -> None:
         "a date 01/02/1960 with no birth keyword",
         "MRN-like 1234 is too short",
         "born at home; seen in clinic on 01/02/1960",
+        "born in release 1.2.3 of the tool",
+        "the DOB field since 1.4.0",
+        "DOB parser at commit 12345678abcdef90",
+        "DOB column added 2026-11-08T09:00:00Z",
+        "born of a decision 3 2026 review",
+        "DOB lookup key ab12345678",
     ],
     ids=[
         "reserved-email",
@@ -104,6 +110,12 @@ def test_each_pattern_is_caught(text: str, pattern: str) -> None:
         "bare-date",
         "short-mrn",
         "keyword-far-from-date",
+        "version-after-born",
+        "version-after-dob",
+        "hash-after-dob",
+        "timestamp-after-dob",
+        "month-like-word",
+        "digits-inside-an-id",
     ],
 )
 def test_reserved_and_look_alike_values_are_not_caught(text: str) -> None:
@@ -193,12 +205,27 @@ def test_text_that_is_not_utf8_is_still_scanned(
     assert "tests/latin1.py:1: ssn" in capsys.readouterr().out
 
 
-def test_reviewed_binaries_are_listed_by_path(
+def test_reviewed_binaries_are_pinned_by_content(
     repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    import hashlib
+
     monkeypatch.chdir(repo)
-    monkeypatch.setattr(scan, "UNSCANNABLE", frozenset({"docs/image.bin"}))
+    digest = hashlib.sha256((repo / "docs" / "image.bin").read_bytes()).hexdigest()
+    monkeypatch.setattr(scan, "UNSCANNABLE", {"docs/image.bin": digest})
     assert scan.main(["docs/image.bin"]) == 0
+    # Replacing the reviewed bytes, even with another binary, ends the exemption.
+    (repo / "docs" / "image.bin").write_bytes(b"\x00" + SSN.encode())
+    assert scan.main(["docs/image.bin"]) == 1
+    assert "docs/image.bin: unscannable" in capsys.readouterr().out
+
+
+def test_the_listed_binaries_match_their_pins() -> None:
+    import hashlib
+
+    root = Path(__file__).parents[1]
+    for path, digest in scan.UNSCANNABLE.items():
+        assert hashlib.sha256((root / path).read_bytes()).hexdigest() == digest, path
 
 
 def test_untracked_files_in_scope_are_scanned(
