@@ -1,13 +1,14 @@
 # ADR 0002: Offsets are end-exclusive code points into immutable source text
 
-- Status: proposed
+- Status: accepted (Will Thompson, 2026-11-09)
 - Date: 2026-11-09
 - Related: [CLAUDE.md invariant 2](../../CLAUDE.md), [contract v0.1](../design/contract-v0.1.md),
   amber-7q0.2
 
 ## Context
 
-Every claim in amber is grounded in a span of a source note, and spans travel between Python,
+Every claim about note text is grounded in a span of the note (structured sources, which have no
+text, ground through structured evidence instead), and spans travel between Python,
 JSON, Parquet, loupe's browser editor, and other languages. Byte offsets, UTF-16 offsets, and
 code-point offsets disagree as soon as text contains astral characters or combining marks, and
 line-ending normalization (CRLF to LF) shifts every later offset. A span that quietly points at
@@ -32,7 +33,8 @@ different text is worse than no span.
   `tests/test_invariants.py::test_exact_quote_preserves_unicode_and_crlf_offsets`,
   `tests/test_mentions.py::test_mention_preserves_unicode_and_crlf_code_point_offsets`,
   `tests/test_loupe_adapter.py::test_unicode_and_crlf_offsets_are_code_points`, and the
-  Hypothesis property `test_a_quote_is_exactly_the_text_at_its_code_point_offsets`.
+  Hypothesis property
+  `tests/test_properties.py::test_a_quote_is_exactly_the_text_at_its_code_point_offsets`.
 - Consumers in other languages must convert at their boundary (for example, JavaScript's UTF-16
   indices); the contract does not.
 
