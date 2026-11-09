@@ -27,8 +27,10 @@ These are the oracle. They judge your work, so you never change them:
 - the verification harness: Claude Code hooks and settings, the OpenCode plugin and config,
   agent definitions and the review prompt, `.pre-commit-config.yaml`, `Makefile`, CI workflows,
   and the guard script;
-- every existing test assertion, `tests/**/conftest.py`, and the pytest configuration; added
-  skip, xfail, or `slow` marks and Hypothesis settings in tests are flagged too.
+- every existing test assertion and test name, any `conftest.py`, pytest configuration
+  (`pyproject.toml`, `pytest.ini`, `tox.ini`, `setup.cfg`), and the conformance pytest plugin;
+  added skip, xfail, or `slow` marks, `importorskip`, `__test__`, Hypothesis settings, and
+  renaming a test module out of collection are flagged too.
 
 The authoritative list is `_PROTECTED` in
 [scripts/check_protected_changes.py](scripts/check_protected_changes.py). Do not modify these

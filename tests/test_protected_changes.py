@@ -326,7 +326,7 @@ def test_module_and_param_marks_are_found(repo: Path, added: str) -> None:
 def test_mark_names_inside_strings_and_comments_are_not_flagged(repo: Path) -> None:
     test = repo / "tests" / "test_x.py"
     added = (
-        'EXAMPLES = ["@pytest.mark.slow\\n", "pytest.skip(\'x\')"]\n'
+        'EXAMPLES = [\n    "@pytest.mark.slow",\n    "pytest.skip(\'x\')",\n]\n'
         "# pytest.mark.xfail is described here\n"
     )
     test.write_text(added + test.read_text())
@@ -345,3 +345,83 @@ def test_quoted_test_data_is_not_flagged(repo: Path) -> None:
     added = 'CASES = [\n    "x = [pytest.param(1, marks=pytest.mark.xfail)]",\n]\n'
     test.write_text(added + test.read_text())
     assert _found(repo) == []
+
+
+# Bypass routes found in review (amber-a6d.16) ---------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "conftest.py",
+        "pytest.ini",
+        ".pytest.ini",
+        "tox.ini",
+        "setup.cfg",
+        "src/amber/conformance/plugin.py",
+    ],
+)
+def test_other_pytest_configuration_files_are_protected(repo: Path, path: str) -> None:
+    (repo / path).parent.mkdir(parents=True, exist_ok=True)
+    (repo / path).write_text("[pytest]\naddopts = --ignore=tests\n")
+    assert _found(repo) == [path]
+
+
+@pytest.mark.parametrize(
+    "added",
+    [
+        "@mark.skip\n",
+        "@hypothesis.settings(max_examples=1)\n",
+        "__test__ = False\n",
+        "    pytest.mark.slow,\n",
+        "SKIP = unittest.SkipTest\n",
+    ],
+    ids=["aliased-mark", "qualified-settings", "dunder-test", "multiline-mark", "skiptest"],
+)
+def test_other_spellings_of_deselection_are_found(repo: Path, added: str) -> None:
+    test = repo / "tests" / "test_x.py"
+    test.write_text(added + test.read_text())
+    assert _found(repo) == ["tests/test_x.py:1"]
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [("def test_one():", "def _test_one():"), ("def test_two():", "def check_two():")],
+    ids=["underscore", "renamed"],
+)
+def test_renaming_a_test_function_is_found(repo: Path, old: str, new: str) -> None:
+    test = repo / "tests" / "test_x.py"
+    test.write_text(test.read_text().replace(old, new))
+    assert [item.split(":")[0] for item in _found(repo)] == ["tests/test_x.py"]
+
+
+@pytest.mark.parametrize(
+    ("source", "target", "flagged"),
+    [
+        ("tests/test_x.py", "tests/x_cases.py", ["tests/test_x.py"]),
+        ("src/amber/conformance/catalog.json", "src/amber/conformance/old.json", None),
+        ("tests/test_x.py", "tests/test_renamed.py", []),
+    ],
+    ids=["out-of-collection", "protected", "still-collected"],
+)
+def test_pure_renames_are_seen(
+    repo: Path, source: str, target: str, flagged: list[str] | None
+) -> None:
+    _git(repo, "mv", source, target)
+    diff = _git(repo, "diff", "--cached", "--unified=0", "HEAD")
+    assert "rename from" in diff
+    expected = [source] if flagged is None else flagged
+    assert guard.violations(diff.splitlines(keepends=True)) == expected
+
+
+def test_lines_that_look_like_headers_inside_hunks_are_content(repo: Path) -> None:
+    test = repo / "tests" / "test_x.py"
+    test.write_text('TEXT = """\n++ not a header\n"""\n@pytest.mark.skip\n' + test.read_text())
+    assert _found(repo) == ["tests/test_x.py:4"]
+
+
+def test_marks_in_a_new_test_file_are_found_at_their_line(repo: Path) -> None:
+    (repo / "tests" / "test_new.py").write_text(
+        "import pytest\n\n\n@pytest.mark.slow\ndef test_new():\n    assert True\n"
+    )
+    assert _found(repo) == ["tests/test_new.py:4"]

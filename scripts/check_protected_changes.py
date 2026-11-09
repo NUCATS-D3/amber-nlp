@@ -9,12 +9,16 @@ Protected:
   pre-commit config, the Makefile, CI workflows, and this script: any change;
 - ``tests/**/*.py``: any removed line that asserts (``assert``, ``pytest.raises``, or an
   ``_assert*`` helper call), which covers deleted, edited, and moved assertions;
-- moving tests out of ``make check`` (amber-a6d.16): any change to ``tests/**/conftest.py``; an
-  added or removed line of pytest configuration in ``pyproject.toml``; an added line in
-  ``tests/**/*.py`` that skips, deselects, or marks a test (``pytest.mark.skip``, ``skipif``,
-  ``xfail``, ``slow``; ``pytest.skip``, ``xfail``, ``importorskip``) or sets Hypothesis
-  ``settings``. Otherwise added tests are unrestricted. Dropped parametrized cases cannot be
-  told from refactors in a diff and are left to review.
+- moving tests out of ``make check`` (amber-a6d.16): any change to a ``conftest.py``,
+  ``pytest.ini``, ``.pytest.ini``, ``tox.ini``, ``setup.cfg``, or the conformance pytest plugin;
+  an added or removed line of pytest configuration in ``pyproject.toml``; in ``tests/**/*.py``,
+  a removed ``def test_``/``class Test`` line in a file that still exists, or an added line (not
+  a comment or a line that starts with a string) naming a skip, xfail, or ``slow`` mark,
+  ``skip(``, ``importorskip``, ``SkipTest``, ``__test__``, or Hypothesis
+  ``settings(``/``max_examples``; and a rename that takes a test module out of collection. So a
+  new test file that skips without an optional extra (``importorskip``) needs approval too: a
+  skipped plugin test proves nothing. Otherwise added tests are unrestricted. Dropped
+  parametrized cases cannot be told from refactors in a diff and are left to review.
 
 Pull requests: ``git diff --unified=0 BASE HEAD | python3 scripts/check_protected_changes.py
 --labels "a,b"``; the ``contract-approved`` label approves. Commits (pre-commit): ``--staged``
@@ -47,17 +51,19 @@ _PROTECTED = (
     re.compile(r"^\.github/workflows/"),
     re.compile(r"^Makefile$"),
     re.compile(r"^scripts/check_protected_changes\.py$"),
-    re.compile(r"^tests/(?:.+/)?conftest\.py$"),
+    re.compile(r"^(?:.+/)?conftest\.py$"),
+    re.compile(r"^(?:\.?pytest\.ini|tox\.ini|setup\.cfg)$"),
+    re.compile(r"^src/amber/conformance/plugin\.py$"),
 )
 _TESTS = re.compile(r"^tests/.+\.py$")
 _ASSERTION = re.compile(r"^\s*assert\b|\bpytest\.raises\(|\b_assert\w*\(")
-# Code positions only (decorators, module marks, param marks, statement-level calls), so the
-# same words inside strings or comments are not flagged.
-_MARK = r"pytest\.mark\.(?:skip|skipif|xfail|slow)\b"
+_TEST_MODULE = re.compile(r"^tests/(?:.+/)?(?:test_[^/]*|[^/]*_test)\.py$")
+_TEST_DEFINITION = re.compile(r"^\s*(?:async\s+)?def test_|^\s*class Test")
+# Any spelling, alias, or line position; lines that are comments or start with a string are
+# test data, not code.
 _DESELECTION = re.compile(
-    rf"^\s*@{_MARK}|^\s*pytestmark\s*=.*{_MARK}|\bmarks\s*=.*{_MARK}"
-    r"|^\s*(?:\w+\s*=\s*)?pytest\.(?:skip|xfail|importorskip)\("
-    r"|^\s*@settings\(|^\s*settings\.register_profile\("
+    r"mark\.(?:skip|skipif|xfail|slow)\b|\b(?:skip|xfail)\(|importorskip|SkipTest|__test__"
+    r"|\bsettings\(|max_examples"
 )
 _PYTEST_CONFIG = re.compile(
     r"^\s*(?:\[tool\.pytest|addopts|testpaths|markers|python_files|python_classes"
@@ -66,10 +72,12 @@ _PYTEST_CONFIG = re.compile(
 _HUNK = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 
 
-def _removed_is_protected(path: str, body: str) -> bool:
-    """A removed assertion in a test, or removed pytest configuration."""
+def _removed_is_protected(path: str, body: str, *, deleted: bool) -> bool:
+    """A removed assertion in a test, a removed test definition in a test file that still exists
+    (a deleted file is already flagged by its assertions), or removed pytest configuration."""
     if _TESTS.match(path):
-        return bool(_ASSERTION.search(body))
+        renamed_test = not deleted and _TEST_DEFINITION.search(body)
+        return bool(_ASSERTION.search(body) or renamed_test)
     return path == "pyproject.toml" and bool(_PYTEST_CONFIG.search(body))
 
 
@@ -82,22 +90,40 @@ def _added_is_protected(path: str, body: str) -> bool:
     return path == "pyproject.toml" and bool(_PYTEST_CONFIG.search(body))
 
 
+def _renamed_is_protected(old: str, new: str) -> bool:
+    """A protected file moved, or a test module renamed out of collection."""
+    if any(pattern.match(path) for pattern in _PROTECTED for path in (old, new)):
+        return True
+    return bool(_TEST_MODULE.match(old)) and not _TEST_MODULE.match(new)
+
+
 def violations(diff: Iterable[str]) -> list[str]:
     """``path`` for changed protected artifacts and ``path:line`` for flagged lines: removed
-    lines by their base line number, added lines by their new line number."""
+    lines by their base line number, added lines by their new line number. File headers are
+    read only before a file's first hunk, so content that looks like a header is content."""
     found: list[str] = []
     old_path: str | None = None
     new_path: str | None = None
+    renamed_from: str | None = None
+    in_hunk = False
     line = new_line = 0
     for raw in diff:
         text = raw.rstrip("\n")
         if text.startswith("diff --git "):
-            old_path = new_path = None
+            old_path = new_path = renamed_from = None
+            in_hunk = False
             continue
-        if text.startswith("--- "):
+        if not in_hunk and text.startswith("rename from "):
+            renamed_from = text.removeprefix("rename from ")
+            continue
+        if not in_hunk and text.startswith("rename to ") and renamed_from is not None:
+            if _renamed_is_protected(renamed_from, text.removeprefix("rename to ")):
+                found.append(renamed_from)
+            continue
+        if not in_hunk and text.startswith("--- "):
             old_path = None if text == "--- /dev/null" else text[4:].removeprefix("a/")
             continue
-        if text.startswith("+++ "):
+        if not in_hunk and text.startswith("+++ "):
             new_path = None if text == "+++ /dev/null" else text[4:].removeprefix("b/")
             for path in {old_path, new_path} - {None}:
                 assert path is not None
@@ -106,10 +132,11 @@ def violations(diff: Iterable[str]) -> list[str]:
             continue
         hunk = _HUNK.match(text)
         if hunk:
+            in_hunk = True
             line, new_line = int(hunk.group(1)), int(hunk.group(2))
             continue
         if text.startswith("-") and old_path is not None:
-            if _removed_is_protected(old_path, text[1:]):
+            if _removed_is_protected(old_path, text[1:], deleted=new_path is None):
                 found.append(f"{old_path}:{line}")
             line += 1
         elif text.startswith("+") and new_path is not None:
