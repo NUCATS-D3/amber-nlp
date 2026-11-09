@@ -37,6 +37,21 @@ The authoritative list is `_PROTECTED` in
 paths, work around them, or copy them so an edited duplicate is used instead. If a protected
 test or check looks wrong, stop and explain why in your reply or the bead; a human decides.
 
+OpenCode (`.opencode/opencode.json`) and Claude Code (`.claude/settings.json`) ask a human
+before an agent's edit or write tool touches a protected file, or a file that could switch these
+rules off: any `opencode.json(c)` or `.opencode/` directory (agents, modes, plugins, config,
+including in parent directories), `.claude/`, and both tools' home config
+(`~/.config/opencode/`, `~/.claude/`), in both harnesses; OpenCode also asks for its system
+directories. The OpenCode rules sit in `.opencode/opencode.json` because the closest `.opencode`
+config is merged last. Approve only with **Allow once**: **Allow always** saves an `edit *`
+allow rule for the project, which overrides every one of these prompts (list saved rules with
+`opencode api get /api/permission/saved`). Line-level protection (test assertions, pytest lines
+in `pyproject.toml`) stays with the guard. The rules cannot see shell commands (`sed -i`, `cp`,
+`>`), OpenCode config passed through `OPENCODE_CONFIG*` environment variables, or Claude Code
+runs whose permission mode skips prompts; never use those to change a protected path. The
+pre-commit guard and CI's protected-artifacts check catch any such change in a diff.
+`tests/test_agent_permissions.py` keeps both configs in step with the guard's list.
+
 ### Forbidden shortcuts
 
 - Adding `skip`, `skipif`, `xfail`, or `importorskip` to make a failure go away.

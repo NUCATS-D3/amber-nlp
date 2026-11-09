@@ -7,6 +7,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { Schema } from "effect"
 import { ConfigAgent } from "@opencode/schema/config/agent"
+import { Ruleset } from "@opencode/schema/permission"
 import { parse } from "yaml"
 
 const agents = fileURLToPath(new URL("../../.opencode/agents/", import.meta.url))
@@ -32,5 +33,19 @@ for (const name of files) {
     failures += 1
     console.error(`${name}: ${error.message}`)
   }
+}
+// The project config's rules ask before an agent edits a protected path (amber-a6d.9). They live in
+// .opencode/opencode.json, the closest .opencode config, which OpenCode merges last.
+try {
+  const configPath = fileURLToPath(new URL("../../.opencode/opencode.json", import.meta.url))
+  const config = JSON.parse(readFileSync(configPath, "utf8"))
+  const rules = Schema.decodeUnknownSync(Ruleset, { onExcessProperty: "error" })(config.permissions)
+  if (rules.length === 0 || rules.some((rule) => rule.action !== "edit" || rule.effect !== "ask")) {
+    throw new Error("expected only edit rules that ask")
+  }
+  console.log(`opencode.json: ${rules.length} ask rules`)
+} catch (error) {
+  failures += 1
+  console.error(`opencode.json: ${error.message}`)
 }
 process.exit(failures ? 1 : 0)

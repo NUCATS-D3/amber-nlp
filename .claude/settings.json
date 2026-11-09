@@ -1,5 +1,36 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "ask": [
+      "Edit(/src/amber/conformance/golden/**)",
+      "Edit(/src/amber/conformance/catalog.json)",
+      "Edit(/src/amber/conformance/fixtures.py)",
+      "Edit(/src/amber/conformance/plugin.py)",
+      "Edit(/.claude/**)",
+      "Edit(**/.claude/settings*.json)",
+      "Edit(**/.claude/agents/**)",
+      "Edit(/.opencode/**)",
+      "Edit(**/.opencode/**)",
+      "Edit(**/opencode.json)",
+      "Edit(**/opencode.jsonc)",
+      "Edit(~/.claude/settings.json)",
+      "Edit(~/.claude/agents/**)",
+      "Edit(~/.config/opencode/**)",
+      "Edit(/docs/review_prompt.md)",
+      "Edit(/.pre-commit-config.yaml)",
+      "Edit(/.github/workflows/**)",
+      "Edit(/Makefile)",
+      "Edit(/scripts/check_protected_changes.py)",
+      "Edit(/scripts/phi_scan.py)",
+      "Edit(/tools/opencode-check/**)",
+      "Edit(**/conftest.py)",
+      "Edit(/pytest.ini)",
+      "Edit(/.pytest.ini)",
+      "Edit(/tox.ini)",
+      "Edit(/setup.cfg)",
+      "Edit(**/.gitattributes)"
+    ]
+  },
   "hooks": {
     "PostToolUse": [
       {

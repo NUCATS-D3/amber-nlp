@@ -1,0 +1,32 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permissions": [
+    { "action": "edit", "resource": "src/amber/conformance/golden/*", "effect": "ask" },
+    { "action": "edit", "resource": "src/amber/conformance/catalog.json", "effect": "ask" },
+    { "action": "edit", "resource": "src/amber/conformance/fixtures.py", "effect": "ask" },
+    { "action": "edit", "resource": "src/amber/conformance/plugin.py", "effect": "ask" },
+    { "action": "edit", "resource": ".claude/*", "effect": "ask" },
+    { "action": "edit", "resource": "*/.claude/settings*.json", "effect": "ask" },
+    { "action": "edit", "resource": ".opencode/*", "effect": "ask" },
+    { "action": "edit", "resource": "*/.opencode/*", "effect": "ask" },
+    { "action": "edit", "resource": "*opencode.json", "effect": "ask" },
+    { "action": "edit", "resource": "*opencode.jsonc", "effect": "ask" },
+    { "action": "edit", "resource": "~/.config/opencode/*", "effect": "ask" },
+    { "action": "edit", "resource": "~/.claude/*", "effect": "ask" },
+    { "action": "edit", "resource": "/etc/opencode/*", "effect": "ask" },
+    { "action": "edit", "resource": "/Library/Application Support/opencode/*", "effect": "ask" },
+    { "action": "edit", "resource": "docs/review_prompt.md", "effect": "ask" },
+    { "action": "edit", "resource": ".pre-commit-config.yaml", "effect": "ask" },
+    { "action": "edit", "resource": ".github/workflows/*", "effect": "ask" },
+    { "action": "edit", "resource": "Makefile", "effect": "ask" },
+    { "action": "edit", "resource": "scripts/check_protected_changes.py", "effect": "ask" },
+    { "action": "edit", "resource": "scripts/phi_scan.py", "effect": "ask" },
+    { "action": "edit", "resource": "tools/opencode-check/*", "effect": "ask" },
+    { "action": "edit", "resource": "*conftest.py", "effect": "ask" },
+    { "action": "edit", "resource": "pytest.ini", "effect": "ask" },
+    { "action": "edit", "resource": ".pytest.ini", "effect": "ask" },
+    { "action": "edit", "resource": "tox.ini", "effect": "ask" },
+    { "action": "edit", "resource": "setup.cfg", "effect": "ask" },
+    { "action": "edit", "resource": "*.gitattributes", "effect": "ask" }
+  ]
+}
