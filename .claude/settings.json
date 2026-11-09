@@ -28,7 +28,9 @@
       "Edit(/.pytest.ini)",
       "Edit(/tox.ini)",
       "Edit(/setup.cfg)",
-      "Edit(**/.gitattributes)"
+      "Edit(**/.gitattributes)",
+      "Edit(/ruff.toml)",
+      "Edit(/.importlinter)"
     ]
   },
   "hooks": {

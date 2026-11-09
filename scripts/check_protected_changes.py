@@ -68,6 +68,8 @@ _PROTECTED = (
     re.compile(r"^(?:.+/)?\.gitattributes$"),
     re.compile(r"^scripts/phi_scan\.py$"),
     re.compile(r"^tools/opencode-check/"),
+    re.compile(r"^ruff\.toml$"),
+    re.compile(r"^\.importlinter$"),
 )
 _TESTS = re.compile(r"^tests/.+\.py$")
 _ASSERTION = re.compile(r"^\s*assert\b|\bpytest\.raises\(|\b_assert\w*\(")
