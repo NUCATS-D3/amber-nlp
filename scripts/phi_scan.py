@@ -60,8 +60,7 @@ _PATTERNS = {
     "phone": re.compile(
         r"(?<![\w.-])(?:\+?1[-.\s]?)?(?:\(\d{3}\)[-.\s]?|\d{3}[-.\s])\d{3}[-.\s]\d{4}(?![\w-])"
     ),
-    # The local part may not follow a backslash: "\n@pytest.mark" in a string is an escape.
-    "email": re.compile(r"(?<![\\\w.+-])[\w.+-]+@((?:[\w-]+\.)+[A-Za-z]{2,})\b"),
+    "email": re.compile(r"(?<![\w.+-])[\w.+-]+@((?:[\w-]+\.)+[A-Za-z]{2,})\b"),
     "mrn": re.compile(
         r"(?:\bMRN|\bMR\s*#|\bmed(?:ical)?\.?\s*rec(?:ord)?\.?)"
         r"(?:\s*(?:number|num\.?|no\.?|#))?\W{0,4}[A-Z]{0,2}\d[\d-]{4,}",
@@ -74,6 +73,9 @@ _PATTERNS = {
         re.IGNORECASE,
     ),
 }
+# JSON and Python string text spell line breaks and characters as escapes ("Contact\\njane..."),
+# which would glue a letter to the value; findings() reads each escape as a space.
+_ESCAPE = re.compile(r"\\(?:[nrt]|u[0-9a-fA-F]{4})")
 _RESERVED_DOMAIN = re.compile(
     r"(?:^|\.)(?:example\.(?:com|org|net)|invalid|test|example|localhost)$", re.IGNORECASE
 )
@@ -82,7 +84,8 @@ _RESERVED_DOMAIN = re.compile(
 def findings(text: str) -> list[tuple[int, str]]:
     """``(line, pattern)`` for each identifier-shaped match, in line and pattern order."""
     found: list[tuple[int, str]] = []
-    for number, line in enumerate(text.splitlines(), 1):
+    for number, raw in enumerate(text.splitlines(), 1):
+        line = _ESCAPE.sub(" ", raw)
         for name, pattern in _PATTERNS.items():
             for match in pattern.finditer(line):
                 if name == "email" and _RESERVED_DOMAIN.search(match.group(1)):

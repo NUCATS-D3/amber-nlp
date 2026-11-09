@@ -132,6 +132,16 @@ def test_reserved_and_look_alike_values_are_not_caught(text: str) -> None:
     assert scan.findings(text) == []
 
 
+@pytest.mark.parametrize(
+    ("value", "pattern"),
+    [(EMAIL, "email"), (SSN, "ssn"), (PHONE, "phone"), (MRN, "mrn"), (DOB, "dob")],
+)
+@pytest.mark.parametrize("escape", ["\\n", "\\t", "\\r", "\\u00e9"])
+def test_values_after_a_literal_escape_are_caught(value: str, pattern: str, escape: str) -> None:
+    # JSON and Python string text spell a line break as a backslash and a letter.
+    assert scan.findings(f'"text": "Contact{escape}{value} today"') == [(1, pattern)]
+
+
 def test_findings_report_lines() -> None:
     text = f"first line\nsecond {SSN}\nthird {EMAIL} and {PHONE}\n"
     assert scan.findings(text) == [(2, "ssn"), (3, "phone"), (3, "email")]
