@@ -60,7 +60,8 @@ _PATTERNS = {
     "phone": re.compile(
         r"(?<![\w.-])(?:\+?1[-.\s]?)?(?:\(\d{3}\)[-.\s]?|\d{3}[-.\s])\d{3}[-.\s]\d{4}(?![\w-])"
     ),
-    "email": re.compile(r"\b[\w.+-]+@((?:[\w-]+\.)+[A-Za-z]{2,})\b"),
+    # The local part may not follow a backslash: "\n@pytest.mark" in a string is an escape.
+    "email": re.compile(r"(?<![\\\w.+-])[\w.+-]+@((?:[\w-]+\.)+[A-Za-z]{2,})\b"),
     "mrn": re.compile(
         r"(?:\bMRN|\bMR\s*#|\bmed(?:ical)?\.?\s*rec(?:ord)?\.?)"
         r"(?:\s*(?:number|num\.?|no\.?|#))?\W{0,4}[A-Z]{0,2}\d[\d-]{4,}",

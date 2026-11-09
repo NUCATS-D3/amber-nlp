@@ -105,6 +105,7 @@ def test_each_pattern_is_caught(text: str, pattern: str) -> None:
         "DOB column added 2026-11-08T09:00:00Z",
         "born of a decision 3 2026 review",
         "DOB lookup key ab12345678",
+        'source = "import pytest\\n\\n\\n@pytest.mark.slow\\n"',
         "born in 1.2.30.4",
     ],
     ids=[
@@ -123,6 +124,7 @@ def test_each_pattern_is_caught(text: str, pattern: str) -> None:
         "timestamp-after-dob",
         "month-like-word",
         "digits-inside-an-id",
+        "escaped-newline-before-decorator",
         "long-version",
     ],
 )
