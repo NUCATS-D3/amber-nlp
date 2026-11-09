@@ -22,7 +22,7 @@ repos:
         name: identifier-shaped text in synthetic-only paths
         entry: python3 scripts/phi_scan.py
         language: system
-        files: ^(tests|examples|src/amber/conformance|docs)/
+        # The script applies its own scope to the staged files it is given.
       - id: ruff
         name: ruff check
         entry: uv run --no-sync ruff check --fix

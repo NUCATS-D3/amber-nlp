@@ -38,8 +38,44 @@ DOB = "DOB" + " " + SLASH_DATE
         (f"patient {DOB}", "dob"),
         ("date of birth: " + "-".join(["1960", "01", "02"]), "dob"),
         ("Born " + ".".join(["2", "1", "1960"]), "dob"),
+        ("SSN: " + "".join(["000", "12", "3456"]), "ssn"),
+        ("SSN " + " ".join(["000", "12", "3456"]), "ssn"),
+        ("call (" + "555)" + "010-0199", "phone"),
+        ("MRN #: " + "1234567", "mrn"),
+        ("MRN No. " + "1234567", "mrn"),
+        ("MR# " + "A1234567", "mrn"),
+        ("Med Rec No. " + "12-345-678", "mrn"),
+        ("born on " + SLASH_DATE, "dob"),
+        ("DOB: Jan " + "2, 1960", "dob"),
+        ("DOB " + " ".join(["2", "January", "1960"]), "dob"),
+        ("DOB " + "".join(["01", "02", "1960"]), "dob"),
+        ("Date of birth (MM/DD/YYYY): " + SLASH_DATE, "dob"),
+        ("birthday " + SLASH_DATE, "dob"),
     ],
-    ids=["ssn", "phone", "phone-dotted", "email", "mrn", "mrn-words", "dob", "dob-words", "born"],
+    ids=[
+        "ssn",
+        "phone",
+        "phone-dotted",
+        "email",
+        "mrn",
+        "mrn-words",
+        "dob",
+        "dob-words",
+        "born",
+        "ssn-plain",
+        "ssn-spaced",
+        "phone-tight",
+        "mrn-hash",
+        "mrn-no",
+        "mr-hash",
+        "med-rec",
+        "born-on",
+        "dob-month-first",
+        "dob-day-first",
+        "dob-digits",
+        "dob-format-hint",
+        "birthday",
+    ],
 )
 def test_each_pattern_is_caught(text: str, pattern: str) -> None:
     assert scan.findings(text) == [(1, pattern)]
@@ -114,7 +150,9 @@ def test_the_scan_covers_tracked_files_in_scope_and_never_prints_matches(
     out = capsys.readouterr().out
     assert "tests/test_a.py:1: ssn" in out
     assert "docs/note with spaces.md:1: email" in out
-    assert "src/amber/other.py" not in out and "image.bin" not in out
+    assert "src/amber/other.py" not in out
+    # A binary file in scope cannot be scanned, so it is a finding of its own.
+    assert "docs/image.bin: unscannable" in out
     for secret in (SSN, EMAIL, "hospital", "3456"):
         assert secret not in out
 
@@ -144,3 +182,29 @@ def test_the_repository_is_clean() -> None:
         ["python3", str(SCRIPT)], cwd=root, capture_output=True, text=True, check=False
     )
     assert result.returncode == 0, result.stdout
+
+
+def test_text_that_is_not_utf8_is_still_scanned(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(repo)
+    (repo / "tests" / "latin1.py").write_bytes(("x = 'caf\xe9 " + SSN + "'\n").encode("latin-1"))
+    assert scan.main(["tests/latin1.py"]) == 1
+    assert "tests/latin1.py:1: ssn" in capsys.readouterr().out
+
+
+def test_reviewed_binaries_are_listed_by_path(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(scan, "UNSCANNABLE", frozenset({"docs/image.bin"}))
+    assert scan.main(["docs/image.bin"]) == 0
+
+
+def test_untracked_files_in_scope_are_scanned(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(repo)
+    (repo / "tests" / "test_new.py").write_text(f"VALUE = '{EMAIL}'\n")
+    assert scan.main([]) == 1
+    assert "tests/test_new.py:1: email" in capsys.readouterr().out
