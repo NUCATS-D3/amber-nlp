@@ -610,16 +610,15 @@ def test_a_report_passes_its_own_baseline_and_a_large_drop_regresses(
                 Metric(name=name, kind="evidence", numerator=num, denominator=den)
                 for name, (num, den) in values.items()
             ),
-            example_ids=("e",),
             provisional=False,
         )
 
     assume(any(den for _, den in counts.values()))
-    baseline = baseline_from(report(counts))
-    assert compare(report(counts), baseline).status == "passed"
+    baseline = baseline_from(report(counts), references=())
+    assert compare(report(counts), baseline, references=()).status == "passed"
     assume(moved in {metric.name for metric in baseline.metrics})
     num, den = counts[moved]
     lowered = {**counts, moved: (max(num + shift, 0), den)}
-    result = compare(report(lowered), baseline)
+    result = compare(report(lowered), baseline, references=())
     dropped = Fraction(num - max(num + shift, 0), den)
     assert (moved in result.regressions) == (dropped > Fraction(5, 1000))

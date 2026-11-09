@@ -16,11 +16,14 @@ is refused (``duplicate_metric``).
 
 A metric's tolerance is its own override if set, else the low-support tolerance when its
 baseline denominator is below the threshold, else the default (0.005). The overall status is
-``regressed`` if any metric regressed or is missing, else ``inconclusive`` if any metric is, if
-the report's ``example_id``s or tier mix differ from the baseline's (``reference_changed``), or
-if the baseline names no ``example_id``s, as with label records, so a change of references
-cannot be seen (``references_unpinned``), else ``passed``. Reports from another scorer are
-refused. Results carry names and numbers only.
+``regressed`` if any metric regressed or is missing, else ``inconclusive`` if any metric is or
+if the references differ from the baseline's (``reference_changed``), else ``passed``. Reports
+from another scorer are refused. Results carry names and numbers only.
+
+Both functions take the references the report was scored against. A report names only its
+Examples, so the baseline pins the references themselves: Examples by their content IDs and label
+records by a canonical hash of their content, which no report carries. The report's
+``example_id``s must be exactly the Examples given (``references_mismatch``).
 """
 
 from __future__ import annotations
@@ -31,7 +34,8 @@ from typing import Annotated, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from amber.schemas import ReferenceTier
+from amber.ids import canonical_sha256
+from amber.schemas import Example, LabelRecord
 from amber.scoring import Metric, ScoreReport
 
 BASELINE_VERSION: Literal["amber-baseline/0.1"] = "amber-baseline/0.1"
@@ -91,8 +95,7 @@ class Baseline(BaseModel):
 
     schema_version: Literal["amber-baseline/0.1"] = BASELINE_VERSION
     scorer: str = Field(min_length=1)
-    example_ids: tuple[str, ...]
-    tier_mix: Mapping[ReferenceTier, int] = Field(default_factory=dict)
+    references: str = Field(min_length=64, max_length=64)
     metrics: tuple[BaselineMetric, ...] = Field(min_length=1)
     default_tolerance: _Tolerance = DEFAULT_TOLERANCE
     low_support: LowSupport | None = None
@@ -112,9 +115,23 @@ class Baseline(BaseModel):
         return self.default_tolerance
 
 
+def _references(report: ScoreReport, references: Sequence[Example | LabelRecord]) -> str:
+    """SHA-256 of the references, after checking they are the ones the report scored."""
+    examples = sorted(record.example_id for record in references if isinstance(record, Example))
+    if examples != sorted(report.example_ids):
+        raise ValueError("references_mismatch")
+    labels = sorted(
+        canonical_sha256(record.model_dump(mode="json"))
+        for record in references
+        if isinstance(record, LabelRecord)
+    )
+    return canonical_sha256({"examples": examples, "label_records": labels})
+
+
 def baseline_from(
     report: ScoreReport,
     *,
+    references: Sequence[Example | LabelRecord],
     metrics: Collection[str] | None = None,
     lower_is_better: Collection[str] = (),
     tolerances: Mapping[str, float] | None = None,
@@ -126,6 +143,7 @@ def baseline_from(
     Options naming a metric the report lacks raise ``unknown_metric``; options for a metric the
     baseline does not track raise ``untracked_metric``.
     """
+    pinned = _references(report, references)
     found = _by_key(report.metrics)
     tolerances = dict(tolerances or {})
     named = set(metrics or ()) | set(lower_is_better) | set(tolerances)
@@ -152,8 +170,7 @@ def baseline_from(
     ]
     return Baseline(
         scorer=report.scorer,
-        example_ids=report.example_ids,
-        tier_mix=dict(report.tier_mix),
+        references=pinned,
         metrics=tuple(entries),
         default_tolerance=default_tolerance,
         low_support=low_support,
@@ -236,10 +253,16 @@ def _regressed(current: float, metric: BaselineMetric, tolerance: float) -> bool
     return current < metric.value - tolerance - slack
 
 
-def compare(report: ScoreReport, baseline: Baseline) -> RegressionResult:
+def compare(
+    report: ScoreReport,
+    baseline: Baseline,
+    *,
+    references: Sequence[Example | LabelRecord],
+) -> RegressionResult:
     """Compare ``report`` to ``baseline``; never writes or changes the baseline."""
     if report.scorer != baseline.scorer:
         raise ValueError("scorer_mismatch")
+    pinned = _references(report, references)
     found = _by_key(report.metrics)
     rows = []
     for metric in baseline.metrics:
@@ -247,7 +270,8 @@ def compare(report: ScoreReport, baseline: Baseline) -> RegressionResult:
         reported = found.get(metric.key)
         current = None if reported is None else reported.value
         status: MetricStatus
-        if metric.key in report.inconclusive or (reported is not None and current is None):
+        undefined = {metric.key, metric.name} & set(report.inconclusive)
+        if undefined or (reported is not None and current is None):
             status = "inconclusive"
         elif current is None:
             status = "missing"
@@ -267,13 +291,7 @@ def compare(report: ScoreReport, baseline: Baseline) -> RegressionResult:
                 current_support=None if reported is None else reported.denominator,
             )
         )
-    reasons: list[str] = []
-    if set(report.example_ids) != set(baseline.example_ids) or dict(report.tier_mix) != dict(
-        baseline.tier_mix
-    ):
-        reasons.append("reference_changed")
-    if not baseline.example_ids:
-        reasons.append("references_unpinned")
+    reasons = ("reference_changed",) if pinned != baseline.references else ()
     statuses = {row.status for row in rows}
     outcome: RegressionOutcome
     if statuses & {"regressed", "missing"}:
@@ -286,7 +304,7 @@ def compare(report: ScoreReport, baseline: Baseline) -> RegressionResult:
     return RegressionResult(
         status=outcome,
         metrics=tuple(rows),
-        reasons=tuple(reasons),
+        reasons=reasons,
         untracked=tuple(sorted(found.keys() - tracked)),
         provisional=report.provisional,
     )
