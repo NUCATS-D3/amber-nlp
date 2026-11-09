@@ -26,7 +26,7 @@ These are the oracle. They judge your work, so you never change them:
 - golden records, the conformance catalog, and conformance fixtures;
 - the verification harness: Claude Code hooks and settings, the OpenCode plugin and config,
   agent definitions and the review prompt, `.pre-commit-config.yaml`, `Makefile`, CI workflows,
-  and the guard script;
+  the identifier scan, and the guard script;
 - every existing test assertion and test name, any `conftest.py`, pytest configuration
   (`pyproject.toml`, `pytest.ini`, `tox.ini`, `setup.cfg`), `.gitattributes`, and the
   conformance pytest plugin; added lines that skip, xfail, slow-mark, or stop tests, Hypothesis
@@ -145,8 +145,8 @@ scripts/                  core-install check and local MLflow launcher
 
 ## Commands
 
-`make check` runs sync, lint, mypy, lint-imports, the lock check, and the fast test suite; `make
-help` lists the other targets. The underlying commands:
+`make check` runs sync, lint, mypy, lint-imports, the lock check, the identifier scan, and the
+fast test suite; `make help` lists the other targets. The underlying commands:
 
 ```sh
 uv sync --extra dev --extra tracking --extra bundles   # full development environment
@@ -179,7 +179,10 @@ For the core-only installation check, see [tests/README.md](tests/README.md#ci).
   databases, MLflow artifacts, or model weights.
 - Datasets live outside repositories and are registered in lapidary; `data/` and
   `experiments/` stay ignored here as a safety net.
-- `examples/` is synthetic only.
+- `examples/` is synthetic only. `make phi-scan` (part of `make check` and pre-commit) fails on
+  identifier-shaped text (SSNs, phone numbers, emails outside reserved test domains, MRN- or
+  birth-date-like values) in `tests/`, `examples/`, `src/amber/conformance/`, and `docs/`. Use
+  invented values that do not look like identifiers, or `example.invalid` addresses.
 - The worktree may contain user changes: check `git status` first and preserve unrelated work.
 
 ## Commits

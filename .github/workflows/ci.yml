@@ -84,5 +84,7 @@ jobs:
         run: make typecheck
       - name: Dependency direction
         run: make imports
+      - name: Identifier-shaped text in synthetic-only paths
+        run: make phi-scan
       - name: Offline CPU tests on synthetic inputs
         run: make test-fast
