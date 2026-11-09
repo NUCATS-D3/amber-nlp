@@ -599,3 +599,14 @@ def test_a_test_renamed_out_beside_a_filler_test_is_found(repo: Path, hidden: st
     renamed = test.read_text().replace("def test_one():", f"def {hidden}():")
     test.write_text(renamed + "\n\ndef test_filler():\n    assert True\n")
     assert _found(repo) == ["tests/test_x.py:1"]
+
+
+@pytest.mark.parametrize("hidden", ["_TestOne", "One"])
+def test_a_test_class_renamed_out_beside_a_filler_is_found(repo: Path, hidden: str) -> None:
+    test = repo / "tests" / "test_x.py"
+    test.write_text("class TestOne:\n    def test_a(self):\n        assert True\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "class")
+    renamed = test.read_text().replace("class TestOne:", f"class {hidden}:")
+    test.write_text(renamed + "\n\ndef test_filler():\n    assert True\n")
+    assert _found(repo) == ["tests/test_x.py:1"]
