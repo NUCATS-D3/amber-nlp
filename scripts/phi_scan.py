@@ -50,7 +50,7 @@ _MONTH = (
 # A whole date with a two- or four-digit year: not a version string, hash, or timestamp.
 _DATE = (
     r"(?<![\w.])(?:\d{1,2}[-/.]\d{1,2}[-/.](?:\d{4}|\d{2})|\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{8}"
-    rf"|{_MONTH}\s+\d{{1,2}},?\s+\d{{4}}|\d{{1,2}}\s+{_MONTH}\s+\d{{4}})(?![\w.-]|\.\d)"
+    rf"|{_MONTH}\s+\d{{1,2}},?\s+\d{{4}}|\d{{1,2}}\s+{_MONTH}\s+\d{{4}})(?![\w-]|\.\d)"
 )
 _PATTERNS = {
     "ssn": re.compile(

@@ -51,6 +51,9 @@ DOB = "DOB" + " " + SLASH_DATE
         ("DOB " + "".join(["01", "02", "1960"]), "dob"),
         ("Date of birth (MM/DD/YYYY): " + SLASH_DATE, "dob"),
         ("birthday " + SLASH_DATE, "dob"),
+        ("The DOB was " + SLASH_DATE + ".", "dob"),
+        ("DOB: Jan " + "2, 1960.", "dob"),
+        ("DOB " + "".join(["01", "02", "1960"]) + ".", "dob"),
     ],
     ids=[
         "ssn",
@@ -75,6 +78,9 @@ DOB = "DOB" + " " + SLASH_DATE
         "dob-digits",
         "dob-format-hint",
         "birthday",
+        "sentence-final",
+        "sentence-final-month",
+        "sentence-final-digits",
     ],
 )
 def test_each_pattern_is_caught(text: str, pattern: str) -> None:
@@ -99,6 +105,7 @@ def test_each_pattern_is_caught(text: str, pattern: str) -> None:
         "DOB column added 2026-11-08T09:00:00Z",
         "born of a decision 3 2026 review",
         "DOB lookup key ab12345678",
+        "born in 1.2.30.4",
     ],
     ids=[
         "reserved-email",
@@ -116,6 +123,7 @@ def test_each_pattern_is_caught(text: str, pattern: str) -> None:
         "timestamp-after-dob",
         "month-like-word",
         "digits-inside-an-id",
+        "long-version",
     ],
 )
 def test_reserved_and_look_alike_values_are_not_caught(text: str) -> None:
