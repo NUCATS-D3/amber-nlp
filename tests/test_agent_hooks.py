@@ -243,3 +243,16 @@ def test_settings_wire_both_hooks() -> None:
     assert post["hooks"][0]["args"] == ["${CLAUDE_PROJECT_DIR}/.claude/hooks/post_edit.py"]
     (stop,) = hooks["Stop"]
     assert stop["hooks"][0]["args"] == ["${CLAUDE_PROJECT_DIR}/.claude/hooks/stop_gate.py"]
+
+
+def test_the_opencode_check_pins_exact_versions_and_runs_in_ci() -> None:
+    package = json.loads((ROOT / "tools" / "opencode-check" / "package.json").read_text())
+    versions = package["devDependencies"]
+    assert {"@opencode/plugin", "@opencode/schema", "typescript"} <= set(versions)
+    assert all(version[0].isdigit() for version in versions.values()), "pins must be exact"
+    assert (ROOT / "tools" / "opencode-check" / "package-lock.json").is_file()
+    workflow = (ROOT / ".github" / "workflows" / "opencode-harness.yml").read_text()
+    assert "npm ci" in workflow and "npm run check" in workflow
+    plugin = (ROOT / ".opencode" / "plugins" / "amber-harness.ts").read_text()
+    assert 'import type { Plugin } from "@opencode/plugin"' in plugin
+    assert "satisfies Plugin.Plugin" in plugin and ": any" not in plugin

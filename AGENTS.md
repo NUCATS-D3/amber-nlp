@@ -26,7 +26,7 @@ These are the oracle. They judge your work, so you never change them:
 - golden records, the conformance catalog, and conformance fixtures;
 - the verification harness: Claude Code hooks and settings, the OpenCode plugin and config,
   agent definitions and the review prompt, `.pre-commit-config.yaml`, `Makefile`, CI workflows,
-  the identifier scan, and the guard script;
+  the identifier scan, the OpenCode SDK check (`tools/opencode-check/`), and the guard script;
 - every existing test assertion and test name, any `conftest.py`, pytest configuration
   (`pyproject.toml`, `pytest.ini`, `tox.ini`, `setup.cfg`), `.gitattributes`, and the
   conformance pytest plugin; added lines that skip, xfail, slow-mark, or stop tests, Hypothesis
@@ -83,7 +83,10 @@ Two hooks in `.claude/hooks/` check agent work. OpenCode runs them through
   `make lint typecheck test-fast` (about 45 s). Failures come back as a "Stop gate" message, at
   most once in a row.
 
-Fix what they report; never work around them.
+Fix what they report; never work around them. The plugin and the `reviewer` agent's permissions
+were verified with OpenCode 2.2.5; CI (`opencode-harness.yml`) type-checks the plugin and decodes
+the agents' permission rules against that pinned SDK (`tools/opencode-check/`). When OpenCode
+is upgraded, bump the pins there and re-verify the hooks live.
 
 ## Development skills
 

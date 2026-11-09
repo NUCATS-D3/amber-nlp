@@ -1,0 +1,16 @@
+{
+  "name": "amber-opencode-check",
+  "private": true,
+  "type": "module",
+  "description": "Checks the OpenCode harness against a pinned SDK (amber-a6d.14). Not shipped.",
+  "scripts": {
+    "check": "node prepare.mjs && tsc -p tsconfig.json && node check-agents.mjs"
+  },
+  "devDependencies": {
+    "@opencode/plugin": "2.2.5",
+    "@opencode/schema": "2.2.5",
+    "@types/node": "22.20.5",
+    "effect": "4.0.6",
+    "typescript": "5.9.3"
+  }
+}
