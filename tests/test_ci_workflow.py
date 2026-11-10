@@ -104,3 +104,11 @@ def test_the_fast_suite_runs_on_parallel_workers_and_deselects_only_slow_tests()
     assert recipe is not None
     # Four workers run as fast as eighteen here (about 40 s) with a quarter of the memory.
     assert recipe.group(1).split() == ["$(PYTEST)", "-n", "4", "-m", '"not', 'slow"']
+
+
+def test_ci_refuses_dependency_changes_without_the_label() -> None:
+    """amber-7q0.7: the required pull-request job runs the dependency gate with its labels."""
+    start = CI.index("\n  protected-artifacts:\n")
+    job = CI[start : CI.index("\n  core-install:\n")]
+    assert "fetch-depth: 0" in job
+    assert 'python3 quality/dep_gate.py --base "$BASE_SHA" --labels "$LABELS" --enforce' in job

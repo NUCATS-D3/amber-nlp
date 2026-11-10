@@ -71,7 +71,7 @@ pre-commit guard and CI's protected-artifacts check catch any such change in a d
   human's approval. (Regression baselines live with consumers such as lapidary, which protect
   their own.)
 - Setting `ALLOW_ORACLE_CHANGE`, committing with `--no-verify`, or adding the
-  `contract-approved` label.
+  `contract-approved` or `dependency-change` label.
 
 ### Workflow
 
@@ -179,9 +179,9 @@ scripts/                  core-install check and local MLflow launcher
 ## Commands
 
 `make check` runs sync, lint, mypy, lint-imports, the lock check, the identifier scan, the
-fast test suite, and `make quality` (Ruff, the import contracts, and the ratchet; pass
-`RATCHET_BASE=<ref>` to `make ratchet` without an `origin/main`); `make help` lists the other
-targets. The underlying commands:
+fast test suite, and `make quality` (Ruff, the import contracts, the ratchet, deptry, and the
+dependency diff; pass `RATCHET_BASE=<ref>` without an `origin/main`); `make help` lists the
+other targets. The underlying commands:
 
 ```sh
 uv sync --extra dev --extra tracking --extra bundles   # full development environment
@@ -268,6 +268,8 @@ dependency, or wire-format changes, and their migrations.
 Work lands on `main` through pull requests. CI's "Protected contract artifacts" check fails a
 pull request that changes a [protected path](#protected-paths) until a human adds the
 `contract-approved` label. The same guard runs as a pre-commit hook (`make hooks`), where only a
-human sets `ALLOW_ORACLE_CHANGE=1`. An agent may merge its own pull request once every check
-passes and the protected-artifacts check passed without that label; anything that needs the
-label waits for a human.
+human sets `ALLOW_ORACLE_CHANGE=1`. The same check fails on any change to declared or locked
+dependencies (`quality/dep_gate.py`; `make deps` prints the diff) until a human adds the
+`dependency-change` label. An agent may merge its own pull request once every check passes and
+the protected-artifacts check passed without either label; anything that needs a label waits
+for a human.

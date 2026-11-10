@@ -5,7 +5,7 @@ RUN := uv run --no-sync
 PYTEST := $(RUN) pytest --strict-markers -ra
 
 .DEFAULT_GOAL := help
-.PHONY: help sync hooks lint format typecheck imports lock phi-scan test-fast test check ratchet quality-fast quality quality-rebaseline mutation
+.PHONY: help sync hooks lint format typecheck imports lock phi-scan test-fast test check ratchet quality-fast deps quality quality-rebaseline mutation
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -53,7 +53,13 @@ ratchet: ## Violation counts against quality/baseline.json; new code must be cle
 
 quality-fast: lint imports ratchet ## Ruff, import contracts, and the ratchet (seconds)
 
-quality: quality-fast ## Every cleanliness check; slower ones join here (amber-7q0.6-.9)
+# deptry scans src/ only (scripts/ and quality/ are dev tooling); DEP002=amber ignores the
+# reference extra's self-reference, amber[bundles].
+deps: ## Declared dependencies match src imports (deptry); print dependency changes
+	$(RUN) deptry src --optional-dependencies-dev-groups dev --known-first-party amber --per-rule-ignores DEP002=amber
+	$(RUN) python quality/dep_gate.py --base $(RATCHET_BASE)
+
+quality: quality-fast deps ## Every cleanliness check; slower ones join here (amber-7q0.8-.9)
 
 quality-rebaseline: ## HUMAN ONLY: rewrite quality/baseline.json (ALLOW_ORACLE_CHANGE=1; only tightens)
 	$(RUN) python quality/ratchet.py --write-baseline

@@ -46,6 +46,8 @@ dev = [
     # The quality ratchet counts dead code and duplicated blocks (amber-7q0.6).
     "vulture>=2.16",
     "pylint>=4.1",
+    # Declared dependencies match what src/ imports (amber-7q0.7).
+    "deptry>=0.25",
 ]
 
 # MLflow discovers run-context providers through this entry-point group.

@@ -743,3 +743,34 @@ def test_mypy_config_in_any_pyproject_is_found(repo: Path) -> None:
     _git(repo, "commit", "-q", "-m", "nested")
     nested.write_text(nested.read_text() + "\n[[tool.mypy.overrides]]\nignore_errors = true\n")
     assert _found(repo) == ["src/amber/pyproject.toml:4"]
+
+
+def test_deptry_config_in_any_pyproject_is_found(repo: Path) -> None:
+    nested = repo / "src" / "amber" / "pyproject.toml"
+    nested.write_text("[project]\nname = 'x'\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "nested")
+    nested.write_text(nested.read_text() + "\n[tool.deptry]\nexclude = ['src']\n")
+    assert _found(repo) == ["src/amber/pyproject.toml:4"]
+
+
+@pytest.mark.parametrize(
+    ("lines", "line"),
+    [
+        ("[tool]\nruff.lint.ignore = ['F']\n", 2),
+        ("[tool]\nmypy.ignore_errors = true\n", 2),
+        ("[tool]\ndeptry.exclude = ['src']\n", 2),
+        ("tool.ruff.lint.ignore = ['F']\n", 1),
+        ("[tool]\nruff = { lint = { ignore = ['F'] } }\n", 2),
+        ("tool = { deptry = { exclude = ['src'] } }\n", 1),
+    ],
+)
+def test_tool_config_as_dotted_keys_or_inline_tables_is_found(
+    repo: Path, lines: str, line: int
+) -> None:
+    nested = repo / "src" / "amber" / "pyproject.toml"
+    nested.write_text("[project]\nname = 'x'\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "nested")
+    nested.write_text(lines + nested.read_text())
+    assert _found(repo) == [f"src/amber/pyproject.toml:{line}"]
