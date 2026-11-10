@@ -121,8 +121,16 @@ def test_changed_lines_must_be_covered() -> None:
     recipe = re.search(r"^diff-coverage:.*\n((?:\t.*\n)+)", makefile, re.MULTILINE)
     assert recipe is not None
     commands = recipe.group(1)
-    assert '-n 4 -m "not slow" --cov=amber --cov-config=quality/pinned-config.toml' in commands
+    # The conformance plugin (a pytest11 entry point) would import amber modules before
+    # coverage starts, so their top-level lines would count as missed; pytester still loads it.
+    assert '-n 4 -m "not slow" -p no:amber_conformance --cov=amber' in commands
+    assert "--cov-config=quality/pinned-config.toml" in commands
     assert "--compare-branch=$(RATCHET_BASE)" in commands
     assert "--fail-under=90" in commands and "--include-untracked" in commands
+    # CI installs amber non-editable; coverage must still measure src/amber, or diff-cover finds
+    # no data for the diff and passes. The recipe also refuses a report without src/amber.
+    assert "PYTHONPATH=src COVERAGE_CORE=sysmon" in commands
+    assert """grep -q 'filename="src/amber/' $(COVERAGE)/coverage.xml""" in commands
+    assert "set -o pipefail" in commands
     assert "diff-coverage" in _check_prerequisites()
     assert "diff-coverage" in _make_targets(_tests_job())

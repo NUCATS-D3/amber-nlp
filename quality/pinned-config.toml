@@ -1,3 +1,4 @@
-# Deliberately empty (amber-7q0.6). quality/ratchet.py passes this file to vulture (--config) and
-# pylint (--rcfile), so no pyproject.toml, pylintrc, setup.cfg, or home configuration can change
-# what they report. Their settings are command-line flags in quality/ratchet.py. Protected.
+# Deliberately empty (amber-7q0.6, .8). quality/ratchet.py passes this file to vulture (--config)
+# and pylint (--rcfile), and make diff-coverage to coverage (--cov-config, --rcfile), so no
+# pyproject.toml, pylintrc, .coveragerc, setup.cfg, or home configuration can change what they
+# report. Their settings are command-line flags in quality/ratchet.py and the Makefile. Protected.
