@@ -5,7 +5,7 @@ RUN := uv run --no-sync
 PYTEST := $(RUN) pytest --strict-markers -ra
 
 .DEFAULT_GOAL := help
-.PHONY: help sync hooks lint format typecheck imports lock phi-scan test-fast test check mutation
+.PHONY: help sync hooks lint format typecheck imports lock phi-scan test-fast test check ratchet quality-rebaseline mutation
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -44,6 +44,12 @@ test: ## Every test, including slow ones
 
 check: sync lint typecheck imports lock phi-scan test-fast ## Definition of done
 	@echo "check ok"
+
+ratchet: ## Violation counts against quality/baseline.json; new code must be clean
+	$(RUN) python quality/ratchet.py
+
+quality-rebaseline: ## HUMAN ONLY: rewrite quality/baseline.json (ALLOW_ORACLE_CHANGE=1; only tightens)
+	$(RUN) python quality/ratchet.py --write-baseline
 
 mutation: ## Mutation testing of the validation core (about 25 min); ARGS="--module grounding"
 	$(RUN) python scripts/mutation_test.py $(ARGS)

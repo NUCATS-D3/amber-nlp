@@ -139,6 +139,10 @@ def test_the_label_approves_and_output_names_no_contents(
         ".opencode/opencode.json",
         "ruff.toml",
         ".importlinter",
+        "mypy.ini",
+        ".mypy.ini",
+        "quality/ratchet.py",
+        "quality/baseline.json",
         ".pre-commit-config.yaml",
         ".github/workflows/ci.yml",
         "Makefile",
@@ -726,4 +730,13 @@ def test_ruff_config_in_any_pyproject_is_found(repo: Path) -> None:
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "nested")
     nested.write_text(nested.read_text() + "\n[tool.ruff]\nextend-exclude = ['.']\n")
+    assert _found(repo) == ["src/amber/pyproject.toml:4"]
+
+
+def test_mypy_config_in_any_pyproject_is_found(repo: Path) -> None:
+    nested = repo / "src" / "amber" / "pyproject.toml"
+    nested.write_text("[project]\nname = 'x'\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "nested")
+    nested.write_text(nested.read_text() + "\n[[tool.mypy.overrides]]\nignore_errors = true\n")
     assert _found(repo) == ["src/amber/pyproject.toml:4"]

@@ -7,8 +7,10 @@ Protected:
 - ``src/amber/conformance/golden/*.json``, ``catalog.json``, and ``fixtures.py``: any change;
 - the harness: agent hook settings and scripts, agent definitions and the review prompt, the
   pre-commit config, the Makefile, CI workflows, the identifier scan, the OpenCode SDK check,
-  this script, and the lint and architecture config (``ruff.toml`` or ``.ruff.toml`` at any
-  depth, ``.importlinter``, and ``[tool.ruff`` lines in any ``pyproject.toml``): any change;
+  this script, the lint, type, and architecture config (``ruff.toml`` or ``.ruff.toml`` at any
+  depth, ``mypy.ini`` or ``.mypy.ini``, ``.importlinter``, and ``[tool.ruff`` or ``[tool.mypy``
+  lines in any ``pyproject.toml``), and the quality ratchet and baseline (``quality/``): any
+  change;
 - ``tests/**/*.py``: any removed line that asserts (``assert``, ``pytest.raises``, or an
   ``_assert*`` helper call), which covers deleted, edited, and moved assertions;
 - moving tests out of ``make check`` (amber-a6d.16): any change to a ``conftest.py``,
@@ -72,6 +74,8 @@ _PROTECTED = (
     # Ruff uses the closest config to each file, and .ruff.toml beats ruff.toml.
     re.compile(r"^(?:.+/)?\.?ruff\.toml$"),
     re.compile(r"^\.importlinter$"),
+    re.compile(r"^\.?mypy\.ini$"),
+    re.compile(r"^quality/"),
 )
 _TESTS = re.compile(r"^tests/.+\.py$")
 _ASSERTION = re.compile(r"^\s*assert\b|\bpytest\.raises\(|\b_assert\w*\(")
@@ -91,8 +95,9 @@ _PYTEST_CONFIG = re.compile(
     r"^\s*(?:\[tool\.pytest|\[project\.entry-points\.pytest11|addopts|testpaths|markers"
     r"|python_files|python_classes|python_functions|norecursedirs|filterwarnings"
     r"|required_plugins|xfail_strict|minversion)\b"
-    # Ruff reads [tool.ruff] from the closest pyproject.toml (amber-7q0.1).
-    r"|^\s*\[\[?tool\.ruff"
+    # Ruff reads [tool.ruff] from the closest pyproject.toml (amber-7q0.1); mypy falls back to
+    # [tool.mypy] when mypy.ini is missing (amber-7q0.14).
+    r"|^\s*\[\[?tool\.(?:ruff|mypy)"
     # A hunk does not say which TOML section it is in, so any line shaped like an entry point
     # (a module:attr target, or an amber module) counts: pytest11 entries load plugins.
     r"""|^\s*[\w.-]+\s*=\s*(["'])(?:[\w.]+:[\w.]+|amber(?:\.\w+)+)\1\s*$"""

@@ -29,6 +29,8 @@
     { "action": "edit", "resource": "setup.cfg", "effect": "ask" },
     { "action": "edit", "resource": "*.gitattributes", "effect": "ask" },
     { "action": "edit", "resource": "*ruff.toml", "effect": "ask" },
-    { "action": "edit", "resource": ".importlinter", "effect": "ask" }
+    { "action": "edit", "resource": ".importlinter", "effect": "ask" },
+    { "action": "edit", "resource": "*mypy.ini", "effect": "ask" },
+    { "action": "edit", "resource": "quality/*", "effect": "ask" }
   ]
 }
