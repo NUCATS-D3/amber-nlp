@@ -5,7 +5,7 @@ RUN := uv run --no-sync
 PYTEST := $(RUN) pytest --strict-markers -ra
 
 .DEFAULT_GOAL := help
-.PHONY: help sync hooks lint format typecheck imports lock phi-scan test-fast test check ratchet quality-rebaseline mutation
+.PHONY: help sync hooks lint format typecheck imports lock phi-scan test-fast test check ratchet quality-fast quality quality-rebaseline mutation
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -42,11 +42,15 @@ test-fast: ## Offline suite without slow tests (about 40 s)
 test: ## Every test, including slow ones
 	$(PYTEST)
 
-check: sync lint typecheck imports lock phi-scan test-fast ## Definition of done
+check: sync lint typecheck imports lock phi-scan test-fast quality ## Definition of done
 	@echo "check ok"
 
 ratchet: ## Violation counts against quality/baseline.json; new code must be clean
 	$(RUN) python quality/ratchet.py
+
+quality-fast: lint imports ratchet ## Ruff, import contracts, and the ratchet (seconds)
+
+quality: quality-fast ## Every cleanliness check; slower ones join here (amber-7q0.6-.9)
 
 quality-rebaseline: ## HUMAN ONLY: rewrite quality/baseline.json (ALLOW_ORACLE_CHANGE=1; only tightens)
 	$(RUN) python quality/ratchet.py --write-baseline

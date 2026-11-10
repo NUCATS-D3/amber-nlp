@@ -3,9 +3,10 @@
 Reads the hook event from stdin. Exits 0 at once when ``stop_hook_active`` is set (the agent is
 already continuing because of this hook, so blocking again could loop) or when nothing under
 ``src/`` or ``tests/`` differs from HEAD, untracked files included. Otherwise runs ``make lint``,
-``make typecheck``, and ``make test-fast``; prints a one-line summary and exits 0 when all pass,
-or prints the failures to stderr and exits 2, which keeps the agent going. ``make check`` is
-still the definition of done. Standard library only.
+``make typecheck``, ``make test-fast``, and then the fast quality checks, ``make imports`` and
+``make ratchet`` (amber-7q0.10); prints a one-line summary and exits 0 when all pass, or prints
+the failures to stderr and exits 2, which keeps the agent going. ``make check`` is still the
+definition of done. Standard library only.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from pathlib import Path
 from typing import TextIO
 
 ROOT = Path(__file__).resolve().parents[2]
-TARGETS = ("lint", "typecheck", "test-fast")
+TARGETS = ("lint", "typecheck", "test-fast", "imports", "ratchet")
 MAX_LINES = 30
 Runner = Callable[[Sequence[str], Path], "subprocess.CompletedProcess[str]"]
 
@@ -89,7 +90,7 @@ def main(stdin: TextIO = sys.stdin, run: Runner = _run) -> int:
         print("Not done: fix these before stopping.\n", file=sys.stderr)
         print("\n\n".join(failures), file=sys.stderr)
         return 2
-    print(f"check ok: {passed} passed (lint, mypy, fast tests)")
+    print(f"check ok: {passed} passed (lint, mypy, fast tests, imports, ratchet)")
     return 0
 
 

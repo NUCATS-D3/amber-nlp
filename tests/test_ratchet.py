@@ -613,3 +613,17 @@ def test_loosen_refuses_a_new_module_over_the_complexity_limit(
     (repo / "src" / "pkg" / "fresh.py").write_text(_complex("fresh", 12))
     assert _run(repo, "--write-baseline", "--loosen", env=HUMAN) == ratchet.REGRESSION
     assert "complexity:src/pkg/fresh.py 10 -> 13" in capsys.readouterr().out
+
+
+def test_ci_gets_the_report_in_its_job_summary(
+    repo: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    summary = tmp_path / "summary.md"
+    summary.write_text("earlier step\n")
+    legacy = repo / "src" / "pkg" / "legacy.py"
+    legacy.write_text("import sys\n" + legacy.read_text())
+    assert _run(repo, env={"GITHUB_STEP_SUMMARY": str(summary)}) == ratchet.REGRESSION
+    out = capsys.readouterr().out
+    report = summary.read_text()
+    assert report.startswith("earlier step\n### Quality ratchet\n")
+    assert "ruff:F401 rose 1 -> 2" in report and "ruff:F401 rose 1 -> 2" in out

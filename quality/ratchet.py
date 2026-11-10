@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import configparser
+import contextlib
 import io
 import json
 import os
@@ -480,11 +481,19 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] = os.environ)
     if args.loosen and not args.write_baseline:
         parser.error("--loosen only applies with --write-baseline")
     write = ("loosen" if args.loosen else "tighten") if args.write_baseline else None
-    try:
-        return run(args.root, args.base, write, env)
-    except ToolError as error:
-        print(f"ratchet: {error}")
-        return 1
+    report = io.StringIO()
+    with contextlib.redirect_stdout(report):
+        try:
+            code = run(args.root, args.base, write, env)
+        except ToolError as error:
+            print(f"ratchet: {error}")
+            code = 1
+    sys.stdout.write(report.getvalue())
+    if summary := env.get("GITHUB_STEP_SUMMARY"):
+        # CI shows the report on the run page (amber-7q0.10).
+        with Path(summary).open("a", encoding="utf-8") as job:
+            job.write(f"### Quality ratchet\n\n```\n{report.getvalue()}```\n")
+    return code
 
 
 if __name__ == "__main__":

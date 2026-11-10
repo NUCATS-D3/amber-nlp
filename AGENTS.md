@@ -95,10 +95,11 @@ Two hooks in `.claude/hooks/` check agent work. OpenCode runs them through
 `.opencode/plugins/amber-harness.ts`; Claude Code runs them through `.claude/settings.json`.
 
 - After each edit to a Python file under `src/` or `tests/`, `post_edit.py` runs Ruff (with
-  fixes) and, under `src/`, mypy. Failures are appended to the edit's result.
+  fixes) and, under `src/`, mypy and the import contracts. Failures are appended to the edit's
+  result.
 - When a top-level session ends a turn with changes under `src/` or `tests/`, `stop_gate.py` runs
-  `make lint typecheck test-fast` (about 45 s). Failures come back as a "Stop gate" message, at
-  most once in a row.
+  `make lint typecheck test-fast imports ratchet` (about 100 s, mostly the tests). Failures come
+  back as a "Stop gate" message, at most once in a row.
 
 Fix what they report; never work around them. The plugin and the `reviewer` agent's permissions
 were verified with OpenCode 2.2.5; CI (`opencode-harness.yml`) type-checks the plugin and decodes
@@ -165,8 +166,9 @@ scripts/                  core-install check and local MLflow launcher
 
 ## Commands
 
-`make check` runs sync, lint, mypy, lint-imports, the lock check, the identifier scan, and the
-fast test suite; `make help` lists the other targets. The underlying commands:
+`make check` runs sync, lint, mypy, lint-imports, the lock check, the identifier scan, the
+fast test suite, and `make quality` (today the ratchet); `make help` lists the other targets.
+The underlying commands:
 
 ```sh
 uv sync --extra dev --extra tracking --extra bundles   # full development environment
