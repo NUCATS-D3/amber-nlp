@@ -37,3 +37,6 @@ notebooks/**/__marimo__/
 # OpenCode SDK check (tools/opencode-check)
 /tools/opencode-check/node_modules/
 /tools/opencode-check/build/
+
+# make diff-coverage (amber-7q0.8)
+/.coverage-report/

@@ -12,8 +12,8 @@
 
 A task is done when all of these hold:
 
-1. `make check` passes on the final tree. Quote its last two lines (the pytest summary and
-   `check ok`) in your final message. Without that output, do not say the work passes.
+1. `make check` passes on the final tree. Quote the fast suite's pytest summary and the final
+   `check ok` in your final message. Without that output, do not say the work passes.
 2. The bead's acceptance criteria are met, each with the evidence: a test, a command and its
    output, or a review.
 3. The `reviewer` agent has reviewed the branch, and every blocking finding is resolved or
@@ -179,9 +179,10 @@ scripts/                  core-install check and local MLflow launcher
 ## Commands
 
 `make check` runs sync, lint, mypy, lint-imports, the lock check, the identifier scan, the
-fast test suite, and `make quality` (Ruff, the import contracts, the ratchet, deptry, and the
-dependency diff; pass `RATCHET_BASE=<ref>` without an `origin/main`); `make help` lists the
-other targets. The underlying commands:
+fast test suite, `make quality` (Ruff, the import contracts, the ratchet, deptry, and the
+dependency diff), and `make diff-coverage` (changed lines in `src/` at least 90% covered; it
+reruns the fast suite with coverage). Pass `RATCHET_BASE=<ref>` without an `origin/main`;
+`make help` lists the other targets. The underlying commands:
 
 ```sh
 uv sync --extra dev --extra tracking --extra bundles   # full development environment

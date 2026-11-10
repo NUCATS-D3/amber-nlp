@@ -86,7 +86,8 @@ credentials or external services:
   absence of optional stacks, Unicode/CRLF grounding, commits, restore, and case results.
 - **Full suite.** `dev`, `tracking`, and `bundles` are installed without editable mode; MLflow
   import is required before tests; then the `make check` targets other than its editable sync
-  run (`lock`, `lint`, `typecheck`, `imports`, `phi-scan`, `test-fast`, `quality`).
+  run (`lock`, `lint`, `typecheck`, `imports`, `phi-scan`, `test-fast`, `quality`,
+  `diff-coverage`).
   `test_ci_workflow.py` fails if CI stops running one of them. `test-fast` runs on four
   pytest-xdist workers, so a test that leaks global state may break a test on another worker
   only sometimes; `make test` runs everything serially. Keep tests to `tmp_path` and

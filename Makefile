@@ -5,7 +5,7 @@ RUN := uv run --no-sync
 PYTEST := $(RUN) pytest --strict-markers -ra
 
 .DEFAULT_GOAL := help
-.PHONY: help sync hooks lint format typecheck imports lock phi-scan test-fast test check ratchet quality-fast deps quality quality-rebaseline mutation
+.PHONY: help sync hooks lint format typecheck imports lock phi-scan test-fast test check ratchet quality-fast deps quality diff-coverage quality-rebaseline mutation
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -42,7 +42,7 @@ test-fast: ## Offline suite without slow tests, on parallel workers (about 40 s)
 test: ## Every test, including slow ones
 	$(PYTEST)
 
-check: sync lint typecheck imports lock phi-scan test-fast quality ## Definition of done
+check: sync lint typecheck imports lock phi-scan test-fast quality diff-coverage ## Definition of done
 	@echo "check ok"
 
 # New code is measured from the merge base with RATCHET_BASE; set it without an origin/main.
@@ -59,7 +59,15 @@ deps: ## Declared dependencies match src imports (deptry); print dependency chan
 	$(RUN) deptry src --optional-dependencies-dev-groups dev --known-first-party amber --per-rule-ignores DEP002=amber
 	$(RUN) python quality/dep_gate.py --base $(RATCHET_BASE)
 
-quality: quality-fast deps ## Every cleanliness check; slower ones join here (amber-7q0.8-.9)
+quality: quality-fast deps ## Every cleanliness check; slower ones join here (amber-7q0.9)
+
+# Coverage reads only the pinned, empty config, so pyproject settings cannot omit files; the
+# sys.monitoring tracer keeps the run near 60 s. Not in the stop hook.
+COVERAGE := .coverage-report
+diff-coverage: ## Changed lines in src are at least 90% covered (fast suite again, with coverage)
+	COVERAGE_CORE=sysmon COVERAGE_FILE=$(COVERAGE)/data $(PYTEST) -n 4 -m "not slow" --cov=amber --cov-config=quality/pinned-config.toml --cov-report=xml:$(COVERAGE)/coverage.xml --cov-report=
+	$(RUN) coverage report --data-file=$(COVERAGE)/data --rcfile=quality/pinned-config.toml --format=total | sed 's/^/total coverage (reported, not gated): /; s/$$/%/'
+	$(RUN) diff-cover $(COVERAGE)/coverage.xml --compare-branch=$(RATCHET_BASE) --include-untracked --fail-under=90
 
 quality-rebaseline: ## HUMAN ONLY: rewrite quality/baseline.json (ALLOW_ORACLE_CHANGE=1; only tightens)
 	$(RUN) python quality/ratchet.py --write-baseline
