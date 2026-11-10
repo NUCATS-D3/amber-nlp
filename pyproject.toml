@@ -39,6 +39,8 @@ dev = [
     "pre-commit",
     "hypothesis",
     "import-linter>=2.15",
+    # scripts/deps_graph.py and tests/test_architecture.py read the import graph directly.
+    "grimp>=3.18",
 ]
 
 # MLflow discovers run-context providers through this entry-point group.

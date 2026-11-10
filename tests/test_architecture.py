@@ -34,6 +34,9 @@ PLANTED = [
     ("mlflow_ext/context", "import loupe", "amber.mlflow_ext.context -> loupe"),
     ("scoring", "import torch.nn", "amber.scoring -> torch"),
     ("reference/extractor", "import anthropic", "amber.reference.extractor -> anthropic"),
+    ("mlflow_ext/deployment", "import databricks.sdk", "amber.mlflow_ext.deployment -> databricks"),
+    ("providers", "from google import genai", "amber.providers -> google"),
+    ("extraction", "import boto3", "amber.extraction -> boto3"),
 ]
 
 

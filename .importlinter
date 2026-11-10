@@ -160,4 +160,16 @@ forbidden_modules =
     pydantic_ai
     litellm
     ollama
+    databricks
+    google
+    boto3
+    botocore
+    mistralai
+    cohere
+    onnxruntime
+    ctranslate2
+    peft
+    accelerate
+    outlines
+    gliner
 broken_contract_guidance = amber owns contracts, not implementations (docs/decisions/0004-contracts-not-implementations.md): move this code to lapidary, copal, or loupe.
