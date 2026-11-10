@@ -186,8 +186,11 @@ For the core-only installation check, see [tests/README.md](tests/README.md#ci).
 - Four-space indentation, 100-character lines. Ruff owns import order and formatting.
 - Every `# noqa`, `# type: ignore`, and `# pragma: no cover` counts against the ratchet
   (`make ratchet`), and a new one needs a trailing justification: `# noqa: E741 - reason`, or
-  `# type: ignore[code]  # - reason` (mypy allows only a comment after an ignore). Files added on
-  a branch must have no Ruff or `mypy --strict` finding and no function over complexity 10.
+  `# type: ignore[code]  # - reason` (mypy allows only a comment after an ignore). File-level
+  `# ruff: noqa`, `# flake8: noqa`, and `# mypy:` directives never count as justified. Added
+  files and added lines must have no Ruff finding and, under `src/` and `quality/`, no
+  `mypy --strict` error; no function there may exceed complexity 10 unless its module already
+  did.
 - `snake_case` for modules and functions, `PascalCase` for models.
 - Tests are `tests/test_*.py`, run offline on CPU with invented data only.
 - Every invariant has an adversarial test covering:

@@ -215,6 +215,17 @@ def test_a_justified_type_ignore_is_valid_for_mypy(
             "x = 1  # type: ignore[misc]  # noqa: E501 - long",
             [("type-ignore", "unjustified"), ("noqa", "justified")],
         ),
+        ("x = 1  # NOQA: E501", [("noqa", "unjustified")]),
+        ("x = 1  #noqa", [("noqa", "unjustified")]),
+        ("x = 1  # Type: Ignore", [("type-ignore", "unjustified")]),
+        ("x = 1  # pragma: nocover", [("no-cover", "unjustified")]),
+        ("x = 1  # PRAGMA: NO COVER - why", [("no-cover", "justified")]),
+        ("# ruff: noqa", [("noqa", "unjustified")]),
+        ("# ruff: noqa: E501 - generated", [("noqa", "unjustified")]),
+        ("# ruff: noqa - generated", [("noqa", "unjustified")]),
+        ("# flake8: noqa", [("noqa", "unjustified")]),
+        ("# mypy: ignore-errors", [("type-ignore", "unjustified")]),
+        ("# mypy: disable-error-code=misc", [("type-ignore", "unjustified")]),
         ("x = '# noqa'", []),
         ("x = 1  # we never noqa here", []),
     ],
@@ -353,3 +364,134 @@ def test_import_linter_ignores_are_counted(repo: Path, capsys: pytest.CaptureFix
 def test_an_unknown_base_is_an_error(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert ratchet.main(["--root", str(repo), "--base", "nowhere"], env={}) == 1
     assert "no merge base with nowhere" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "directive", ["# ruff: noqa\n", "# flake8: noqa\n", "# mypy: ignore-errors\n"]
+)
+def test_a_file_level_directive_in_a_new_file_fails(
+    repo: Path, capsys: pytest.CaptureFixture[str], directive: str
+) -> None:
+    (repo / "src" / "pkg" / "fresh.py").write_text(directive + "import os\n")
+    assert _run(repo) == ratchet.REGRESSION
+    out = capsys.readouterr().out
+    assert "new code must be clean" in out
+    assert f"src/pkg/fresh.py:1:unjustified {directive.strip()}" in out
+
+
+@pytest.mark.parametrize("noqa", ["# noqa: C901", "# NOQA: C901 - it is fine"])
+def test_a_noqa_does_not_hide_complexity(
+    repo: Path, capsys: pytest.CaptureFixture[str], noqa: str
+) -> None:
+    source = _complex("fresh", 12).replace("-> int:", f"-> int:  {noqa}", 1)
+    (repo / "src" / "pkg" / "fresh.py").write_text(source)
+    assert _run(repo) == ratchet.REGRESSION
+    assert "complexity:src/pkg/fresh.py rose 10 -> 13" in capsys.readouterr().out
+
+
+def test_a_violation_on_an_added_line_fails_even_when_the_count_holds(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    legacy = repo / "src" / "pkg" / "legacy.py"
+    legacy.write_text(legacy.read_text().replace("import os\n", ""))
+    small = repo / "src" / "pkg" / "small.py"
+    small.write_text("import os\n" + small.read_text())
+    assert _run(repo) == ratchet.REGRESSION
+    out = capsys.readouterr().out
+    assert "ruff:F401 rose" not in out
+    assert "src/pkg/small.py:1:F401" in out
+
+
+def test_a_mypy_strict_error_in_a_new_file_fails_even_when_the_count_holds(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    legacy = repo / "src" / "pkg" / "legacy.py"
+    legacy.write_text(legacy.read_text().replace("def untyped(x):", "def untyped(x: int) -> int:"))
+    (repo / "src" / "pkg" / "untyped.py").write_text("def f(x):\n    return x\n")
+    assert _run(repo) == ratchet.REGRESSION
+    out = capsys.readouterr().out
+    assert "mypy-strict rose" not in out
+    assert "src/pkg/untyped.py:1:no-untyped-def" in out
+
+
+def test_a_gitignored_tracked_file_is_still_linted(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (repo / ".gitignore").write_text((repo / ".gitignore").read_text() + "hidden.py\n")
+    (repo / "src" / "pkg" / "hidden.py").write_text("import os\n")
+    _git(repo, "add", "-f", "src/pkg/hidden.py")
+    assert _run(repo) == ratchet.REGRESSION
+    assert "src/pkg/hidden.py:1:F401" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("config", [["diff.mnemonicPrefix", "true"], ["diff.noprefix", "true"]])
+def test_added_lines_do_not_depend_on_git_diff_config(
+    repo: Path, capsys: pytest.CaptureFixture[str], config: list[str]
+) -> None:
+    _git(repo, "config", *config)
+    small = repo / "src" / "pkg" / "small.py"
+    small.write_text(small.read_text() + "LIMIT = 3  # noqa: E501\n")
+    _commit(repo, "added an unjustified noqa")
+    legacy = repo / "src" / "pkg" / "legacy.py"
+    legacy.write_text(legacy.read_text().replace("  # noqa: E501", ""))
+    assert _run(repo) == ratchet.REGRESSION
+    assert "src/pkg/small.py:7:unjustified" in capsys.readouterr().out
+
+
+def test_hunk_bodies_are_not_read_as_file_headers() -> None:
+    diff = (
+        "diff --git a/m.py b/m.py\n--- a/m.py\n+++ b/m.py\n"
+        "@@ -1,1 +1,2 @@\n--- old\n+++ b/elsewhere.py\n+x = 1\n@@ -9,0 +10 @@\n+y = 2\n"
+        "diff --git a/n p.py b/n p.py\n--- a/n p.py\t\n+++ b/n p.py\t\n@@ -0,0 +3 @@\n+y\n"
+    )
+    assert ratchet.added_lines(diff) == {"m.py": {1, 2, 10}, "n p.py": {3}}
+
+
+def test_renamed_and_spaced_paths_are_read(repo: Path) -> None:
+    _git(repo, "mv", "src/pkg/small.py", "src/pkg/small moved.py")
+    (repo / "src" / "pkg" / "new one.py").write_text("X = 1\n")
+    changes = ratchet.changed_since(repo, "main")
+    assert changes.renamed_from == {"src/pkg/small moved.py": "src/pkg/small.py"}
+    assert "src/pkg/new one.py" in changes.added_files
+    assert changes.added_lines["src/pkg/new one.py"] == frozenset({1, 2})
+
+
+def test_an_untracked_nested_repository_is_skipped(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _git(repo, "init", "-q", "nested")
+    (repo / "nested" / "x.txt").write_text("x\n")
+    assert _run(repo) == 0, capsys.readouterr().out
+
+
+def test_a_tool_failure_is_an_error_not_a_pass(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (repo / "ruff.toml").write_text("[lint]\nselect = 7\n")
+    assert _run(repo) == 1
+    assert "ratchet: " in capsys.readouterr().out
+
+
+def test_bootstrapping_a_baseline_needs_a_human(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (repo / "quality" / "baseline.json").unlink()
+    assert _run(repo, "--write-baseline") == 1
+    assert "ALLOW_ORACLE_CHANGE=1" in capsys.readouterr().out
+    assert not (repo / "quality" / "baseline.json").exists()
+
+
+def test_the_ratchet_holds_quality_code_to_mypy_strict(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (repo / "quality" / "tool.py").write_text("def f(x):\n    return x\n")
+    assert _run(repo) == ratchet.REGRESSION
+    assert "quality/tool.py:1:no-untyped-def" in capsys.readouterr().out
+
+
+def test_a_percent_sign_in_the_import_contracts_is_read_literally(repo: Path) -> None:
+    (repo / ".importlinter").write_text(
+        "[importlinter:contract:one]\nname = One\n"
+        "ignore_imports =\n    pkg.a -> os  # 100% legacy\n"
+    )
+    assert [f.message for f in ratchet.import_ignores(repo)] == ["pkg.a -> os  # 100% legacy"]

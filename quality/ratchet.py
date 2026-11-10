@@ -3,22 +3,23 @@
 Legacy code may keep the violations the baseline records; new code is held to the full
 standard. Metrics:
 
-- ``ruff:<code>``: Ruff violations under ruff.toml, per rule code;
-- ``mypy-strict``: ``mypy --strict`` errors in src/;
+- ``ruff:<code>``: Ruff violations under ruff.toml in git-listed files, per rule code;
+- ``mypy-strict``: ``mypy --strict`` errors in src/ and quality/;
 - ``suppressions:noqa``, ``suppressions:type-ignore``, ``suppressions:no-cover``: suppression
-  comments in Python files, every one counted, and ``suppressions:unjustified``: those without a
-  trailing justification: a ``-``, ``--``, or em dash, then text (``# noqa: E741 - the protocol's
-  name``). mypy allows only a comment after an ignore, so there it is ``# type: ignore[misc]  #
-  - reason``;
-- ``complexity:<module>``: the highest cyclomatic complexity (Ruff's C901, mccabe) of a function
-  in a src/ module. Only modules above COMPLEXITY_LIMIT are recorded; any other module may grow
-  up to the limit;
+  comments in Python files, every one counted (any case; file-level ``# ruff: noqa``,
+  ``# flake8: noqa``, and ``# mypy:`` inline config included), and
+  ``suppressions:unjustified``: those without a trailing justification, a ``-``, ``--``, or em
+  dash, then text (``# noqa: E741 - the protocol's name``). mypy allows only a comment after an
+  ignore, so there it is ``# type: ignore[misc]  # - reason``. A file-level directive is never
+  justified;
+- ``complexity:<module>``: the highest cyclomatic complexity (Ruff's C901, mccabe, ignoring
+  noqa) of a function in a src/ or quality/ module. Only modules above COMPLEXITY_LIMIT are
+  recorded; any other module may grow up to the limit;
 - ``importlinter:ignore_imports``: ``ignore_imports`` entries in .importlinter.
 
 Whatever the baseline says, measured against the merge base with ``--base`` (origin/main):
-files added since then must have no Ruff or mypy-strict finding, no unjustified suppression, and
-no function over COMPLEXITY_LIMIT, and no added line anywhere may carry an unjustified
-suppression.
+files added since then, and lines added to other files, must have no Ruff or mypy-strict
+finding and no unjustified suppression.
 
 Exit 2 when anything rose, printing each metric old -> new with the findings likely to be new;
 otherwise exit 0, printing "ratchet can be tightened" for each metric that fell. Exit 1 when a
@@ -48,6 +49,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BASELINE = Path("quality/baseline.json")
 COMPLEXITY_LIMIT = 10
 REGRESSION = 2
+STRICT_DIRECTORIES = ("src", "quality")
 _SHOWN = 20
 _ALWAYS_RECORDED = (
     "mypy-strict",
@@ -57,14 +59,22 @@ _ALWAYS_RECORDED = (
     "suppressions:unjustified",
     "importlinter:ignore_imports",
 )
-_SUPPRESSION = re.compile(
-    r"#\s*(?P<kind>noqa|type:\s*ignore|pragma:\s*no\s+cover)"
-    r"(?::\s*[A-Z]+\d+(?:\s*,\s*[A-Z]+\d+)*|\[[^\]]*\])?"
+_LINTED = ("*.py", "*.pyi", "*.ipynb")
+# Fixed diff settings, so a user's git config cannot hide added lines.
+_GIT = (
+    *("-c", "core.quotePath=false", "-c", "diff.renames=true"),
+    *("-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false"),
 )
-_KINDS = {"n": "noqa", "t": "type-ignore", "p": "no-cover"}
+_SUPPRESSION = re.compile(
+    r"#\s*(?:(?P<file>(?:ruff|flake8)\s*:\s*noqa|mypy\s*:)"
+    r"|(?P<line>noqa|type\s*:\s*ignore|pragma[:\s]?\s*no\s*cover)"
+    r"(?::\s*[A-Z]+\d+(?:[\s,]+[A-Z]+\d+)*|\[[^\]]*\])?)",
+    re.IGNORECASE,
+)
+_KINDS = {"n": "noqa", "r": "noqa", "f": "noqa", "t": "type-ignore", "m": "type-ignore"}
 _JUSTIFIED = re.compile(r"\s*(?:#\s*)?(?:-|--|\u2014)\s*[^\s#]")
 _COMPLEXITY = re.compile(r"\((\d+) > 0\)")
-_HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+_HUNK = re.compile(r"^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
 
 class ToolError(RuntimeError):
@@ -102,6 +112,12 @@ class Changes:
     added_lines: Mapping[str, frozenset[int]]
 
 
+@dataclass(frozen=True)
+class Baseline:
+    metrics: dict[str, int]
+    tools: dict[str, str]
+
+
 def _run(root: Path, command: Sequence[str], ok: Sequence[int] = (0,)) -> str:
     done = subprocess.run(command, cwd=root, capture_output=True, text=True, check=False)
     if done.returncode not in ok:
@@ -114,7 +130,13 @@ def _tool(root: Path, *args: str, ok: Sequence[int] = (0,)) -> str:
 
 
 def _git(root: Path, *args: str) -> str:
-    return _run(root, ["git", "-c", "core.quotePath=false", *args])
+    return _run(root, ["git", *_GIT, *args])
+
+
+def _listed(root: Path, *args: str) -> list[str]:
+    """Paths from a NUL-separated git listing that are regular files."""
+    paths = _git(root, *args).split("\0")
+    return sorted(path for path in paths if path and (root / path).is_file())
 
 
 def _relative(path: str, root: Path) -> str:
@@ -122,8 +144,16 @@ def _relative(path: str, root: Path) -> str:
     return resolved.resolve().relative_to(root.resolve()).as_posix()
 
 
-def ruff_findings(root: Path, *options: str, target: str = ".") -> list[Finding]:
-    report = _tool(root, "ruff", "check", "--exit-zero", "--output-format=json", *options, target)
+def _strict(paths: Sequence[str]) -> list[str]:
+    return [path for path in paths if path.split("/", 1)[0] in STRICT_DIRECTORIES]
+
+
+def ruff_findings(root: Path, paths: Sequence[str], *options: str) -> list[Finding]:
+    """Ruff's findings in exactly these files, still honouring ruff.toml's exclusions."""
+    if not paths:
+        return []
+    command = ("ruff", "check", "--exit-zero", "--output-format=json", "--force-exclude")
+    report = _tool(root, *command, *options, "--", *paths)
     return [
         Finding(
             _relative(item["filename"], root),
@@ -135,8 +165,10 @@ def ruff_findings(root: Path, *options: str, target: str = ".") -> list[Finding]
     ]
 
 
-def mypy_findings(root: Path) -> list[Finding]:
-    report = _tool(root, "mypy", "--strict", "-O", "json", "src", ok=(0, 1))
+def mypy_findings(root: Path, paths: Sequence[str]) -> list[Finding]:
+    if not paths:
+        return []
+    report = _tool(root, "mypy", "--strict", "-O", "json", "--", *paths, ok=(0, 1))
     found = []
     for line in report.splitlines():
         if not line.startswith("{"):
@@ -148,21 +180,16 @@ def mypy_findings(root: Path) -> list[Finding]:
     return found
 
 
-def function_complexity(root: Path) -> list[tuple[Finding, int]]:
-    """Every function in src/ with its cyclomatic complexity, from Ruff's C901 at limit 0."""
-    options = ("--select", "C901", "--config", "lint.mccabe.max-complexity = 0")
+def function_complexity(root: Path, paths: Sequence[str]) -> list[tuple[Finding, int]]:
+    """Every function with its cyclomatic complexity, from Ruff's C901 at limit 0."""
+    options = ("--select=C901", "--config", "lint.mccabe.max-complexity = 0", "--ignore-noqa")
     scored = []
-    for finding in ruff_findings(root, *options, target="src"):
+    for finding in ruff_findings(root, paths, *options):
         match = _COMPLEXITY.search(finding.message)
         if match is None:
             raise ToolError(f"unexpected C901 message: {finding}")
         scored.append((finding, int(match.group(1))))
     return scored
-
-
-def python_files(root: Path) -> list[str]:
-    listed = _git(root, "ls-files", "--cached", "--others", "--exclude-standard", "--", "*.py")
-    return sorted(path for path in listed.splitlines() if (root / path).is_file())
 
 
 def suppressions(path: str, text: str) -> Iterator[tuple[str, Finding]]:
@@ -176,13 +203,18 @@ def suppressions(path: str, text: str) -> Iterator[tuple[str, Finding]]:
         if token.type != tokenize.COMMENT:
             continue
         for match in _SUPPRESSION.finditer(token.string):
-            justified = _JUSTIFIED.match(token.string, match.end()) is not None
+            directive = match["file"] or match["line"]
+            justified = bool(match["line"]) and _JUSTIFIED.match(token.string, match.end())
             code = "justified" if justified else "unjustified"
-            yield _KINDS[match["kind"][0]], Finding(path, token.start[0], code, match.group())
+            message = token.string.strip()[:80]
+            yield (
+                _KINDS.get(directive[0].lower(), "no-cover"),
+                Finding(path, token.start[0], code, message),
+            )
 
 
 def import_ignores(root: Path) -> list[Finding]:
-    config = configparser.ConfigParser()
+    config = configparser.ConfigParser(interpolation=None)
     config.read(root / ".importlinter")
     return [
         Finding(".importlinter", 0, section, entry.strip())
@@ -197,12 +229,14 @@ def _version(root: Path, tool: str) -> str:
 
 
 def measure(root: Path) -> Measurement:
+    files = _listed(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--")
+    files = [path for path in files if any(Path(path).match(glob) for glob in _LINTED)]
+    python = [path for path in files if path.endswith((".py", ".pyi"))]
     with ThreadPoolExecutor() as pool:
-        ruff = pool.submit(ruff_findings, root)
-        mypy = pool.submit(mypy_findings, root)
-        scored = pool.submit(function_complexity, root)
+        ruff = pool.submit(ruff_findings, root, files)
+        mypy = pool.submit(mypy_findings, root, _strict(python))
+        scored = pool.submit(function_complexity, root, _strict(python))
         versions = {tool: pool.submit(_version, root, tool) for tool in ("ruff", "mypy")}
-        files = pool.submit(python_files, root)
     measurement = Measurement(findings={metric: [] for metric in _ALWAYS_RECORDED})
     for finding in ruff.result():
         measurement.findings.setdefault(f"ruff:{finding.code}", []).append(finding)
@@ -212,7 +246,7 @@ def measure(root: Path) -> Measurement:
         measurement.complexity[finding.path] = max(top, score)
         if score > COMPLEXITY_LIMIT:
             measurement.over_limit.append(finding)
-    for path in files.result():
+    for path in python:
         for kind, finding in suppressions(path, (root / path).read_text(encoding="utf-8")):
             measurement.findings[f"suppressions:{kind}"].append(finding)
             if finding.code == "unjustified":
@@ -222,15 +256,22 @@ def measure(root: Path) -> Measurement:
     return measurement
 
 
-def _added_lines(diff: str) -> dict[str, set[int]]:
+def added_lines(diff: str) -> dict[str, set[int]]:
+    """Line numbers each file gains in a ``git diff -U0`` with a/ and b/ prefixes. Hunk bodies
+    are skipped by their counts, so an added line that looks like a header is not one."""
     lines: dict[str, set[int]] = {}
-    path = None
+    path, body = None, 0
     for line in diff.splitlines():
-        if line.startswith("+++ "):
-            path = line[6:] if line.startswith("+++ b/") else None
+        if body:
+            body -= not line.startswith("\\")
+        elif line.startswith("+++ "):
+            name = line[4:].removesuffix("\t")
+            path = name[2:] if name.startswith("b/") else None
         elif path is not None and (hunk := _HUNK.match(line)):
-            start, count = int(hunk.group(1)), int(hunk.group(2) or 1)
-            lines.setdefault(path, set()).update(range(start, start + count))
+            removed, start, count = hunk.group(1, 2, 3)
+            gained = int(count or 1)
+            body = int(removed or 1) + gained
+            lines.setdefault(path, set()).update(range(int(start), int(start) + gained))
     return lines
 
 
@@ -242,21 +283,17 @@ def changed_since(root: Path, base: str) -> Changes:
     except ToolError as error:
         raise ToolError(f"no merge base with {base}; fetch it or pass --base") from error
     added, renamed = set(), {}
-    status = _git(root, "diff", "--name-status", "-M", "-z", merge_base).split("\0")
-    fields = iter(status)
-    for code in fields:
-        if code.startswith("R"):
-            old, new = next(fields), next(fields)
-            renamed[new] = old
-        elif code.startswith("C"):
-            next(fields)
-            added.add(next(fields))
-        elif code:
+    fields = iter(_git(root, "diff", "--name-status", "-M", "-z", merge_base).split("\0"))
+    for status in fields:
+        if status.startswith("R"):
+            old = next(fields)
+            renamed[next(fields)] = old
+        elif status:
             path = next(fields)
-            if code == "A":
+            if status == "A":
                 added.add(path)
-    lines = _added_lines(_git(root, "diff", "-U0", "--no-color", "--no-ext-diff", merge_base))
-    for path in _git(root, "ls-files", "--others", "--exclude-standard").splitlines():
+    lines = added_lines(_git(root, "diff", "-U0", "--no-color", "--no-ext-diff", merge_base))
+    for path in _listed(root, "ls-files", "-z", "--others", "--exclude-standard"):
         added.add(path)
         text = (root / path).read_text(encoding="utf-8", errors="replace")
         lines[path] = set(range(1, text.count("\n") + 2))
@@ -291,20 +328,23 @@ def compare(
 
 
 def unclean_new_code(measurement: Measurement, changes: Changes) -> list[Finding]:
-    """Findings that new code may not have, whatever the baseline says. (A new module's
-    complexity needs no check here: with no baseline entry its ceiling is the limit.)"""
-    strict = [
+    """Findings in added files or on added lines, which new code may not have whatever the
+    baseline says. (A new module's complexity needs no check here: with no baseline entry its
+    ceiling is the limit.)"""
+    checked = [
         finding
         for metric, found in measurement.findings.items()
-        if metric.startswith("ruff:") or metric == "mypy-strict"
+        if metric.startswith("ruff:") or metric in ("mypy-strict", "suppressions:unjustified")
         for finding in found
     ]
-    unclean = {finding for finding in strict if finding.path in changes.added_files}
-    for finding in measurement.findings["suppressions:unjustified"]:
-        added = changes.added_lines.get(finding.path, frozenset())
-        if finding.path in changes.added_files or finding.line in added:
-            unclean.add(finding)
-    return sorted(unclean)
+    return sorted(
+        {
+            finding
+            for finding in checked
+            if finding.path in changes.added_files
+            or finding.line in changes.added_lines.get(finding.path, frozenset())
+        }
+    )
 
 
 def _suspects(metric: str, measurement: Measurement, changes: Changes) -> list[Finding]:
@@ -334,12 +374,6 @@ def _print_findings(findings: Sequence[Finding]) -> None:
         print(f"  {finding}")
     if len(findings) > _SHOWN:
         print(f"  ... and {len(findings) - _SHOWN} more")
-
-
-@dataclass(frozen=True)
-class Baseline:
-    metrics: dict[str, int]
-    tools: dict[str, str]
 
 
 def _load(path: Path) -> Baseline | None:
