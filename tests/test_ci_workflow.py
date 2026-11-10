@@ -102,4 +102,5 @@ def test_the_fast_suite_runs_on_parallel_workers_and_deselects_only_slow_tests()
     """amber-7q0.18: the stop hook and CI run make test-fast; workers keep it under ~90 s."""
     recipe = re.search(r"^test-fast:.*\n\t(.+)$", (ROOT / "Makefile").read_text(), re.MULTILINE)
     assert recipe is not None
-    assert recipe.group(1).split() == ["$(PYTEST)", "-n", "auto", "-m", '"not', 'slow"']
+    # Four workers run as fast as eighteen here (about 40 s) with a quarter of the memory.
+    assert recipe.group(1).split() == ["$(PYTEST)", "-n", "4", "-m", '"not', 'slow"']
