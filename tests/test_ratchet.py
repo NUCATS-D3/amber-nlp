@@ -246,6 +246,9 @@ def test_a_justified_type_ignore_is_valid_for_mypy(
         ("# flake8: noqa", [("noqa", "unjustified")]),
         ("# mypy: ignore-errors", [("type-ignore", "unjustified")]),
         ("# mypy: disable-error-code=misc", [("type-ignore", "unjustified")]),
+        ("# pylint: disable=duplicate-code", [("noqa", "unjustified")]),
+        ("x = 1  # pylint: disable=R0801 - reason", [("noqa", "unjustified")]),
+        ("x = 1  # PyLint:disable=all", [("noqa", "unjustified")]),
         ("x = '# noqa'", []),
         ("x = 1  # we never noqa here", []),
     ],
@@ -830,3 +833,27 @@ def test_two_bare_modules_with_one_name_are_an_error() -> None:
     message = {"symbol": "duplicate-code", "message": "==tool:[1:9]\n==tool:[20:28]\n"}
     with pytest.raises(ratchet.ToolError, match="tool"):
         ratchet.duplicate_ranges(message, names)
+
+
+def test_a_pylint_pragma_cannot_hide_a_copied_block(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    block = "def {name}(value: int) -> int:\n    total = 0\n" + COPIED + "    return total\n"
+    (repo / "src" / "pkg" / "first.py").write_text(block.format(name="first"))
+    hidden = "# pylint: disable=duplicate-code\n" + block.format(name="second")
+    (repo / "src" / "pkg" / "second.py").write_text(hidden)
+    (repo / "tests" / "test_copies.py").write_text(
+        "def test_it(pkg: object) -> None:\n    pkg.first, pkg.second\n"
+    )
+    assert _run(repo) == ratchet.REGRESSION
+    out = capsys.readouterr().out
+    assert "suppressions:unjustified rose 1 -> 2" in out
+    assert "src/pkg/second.py:1:unjustified # pylint: disable=duplicate-code" in out
+
+
+def test_a_dead_function_named_like_a_pytest_hook_is_still_dead(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (repo / "src" / "pkg" / "hooks.py").write_text("def pytest_whatever() -> int:\n    return 1\n")
+    assert _run(repo) == ratchet.REGRESSION
+    assert "unused function 'pytest_whatever'" in capsys.readouterr().out

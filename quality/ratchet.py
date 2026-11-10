@@ -11,19 +11,21 @@ standard. Metrics:
 - ``mypy-strict``: ``mypy --strict`` errors in src/ and quality/;
 - ``suppressions:noqa``, ``suppressions:type-ignore``, ``suppressions:no-cover``: suppression
   comments in Python files, every one counted (any case; file-level ``# ruff: noqa``,
-  ``# flake8: noqa``, and ``# mypy:`` inline config included), and
-  ``suppressions:unjustified``: those without a trailing justification, a ``-``, ``--``, or em
-  dash, then text (``# noqa: E741 - the protocol's name``). mypy allows only a comment after an
-  ignore, so there it is ``# type: ignore[misc]  # - reason``. A file-level directive is never
-  justified;
+  ``# flake8: noqa``, ``# mypy:`` inline config, and ``# pylint:`` pragmas, which can hide
+  duplicated code, included), and ``suppressions:unjustified``: those without a trailing
+  justification, a ``-``, ``--``, or em dash, then text (``# noqa: E741 - the protocol's
+  name``). mypy allows only a comment after an ignore, so there it is ``# type: ignore[misc]  #
+  - reason``. A file-level directive or a ``# pylint:`` pragma is never justified;
 - ``complexity:<module>``: the highest cyclomatic complexity (Ruff's C901, mccabe, ignoring
   noqa) of a function in a src/ or quality/ module. Only modules above COMPLEXITY_LIMIT are
   recorded; any other module may grow up to the limit;
 - ``importlinter:ignore_imports``: ``ignore_imports`` entries in .importlinter;
 - ``vulture``: dead code in src/ and quality/ at 60% confidence (unused functions rate 60%),
   with tests/ scanned too, since a library's tests use its API. Pydantic validator and
-  serializer decorators and ``pytest_*`` hooks are ignored; other false positives go in the
-  protected quality/vulture_whitelist.py (amber-7q0.6);
+  serializer decorators and the conformance plugin's pytest hooks are ignored; other false
+  positives go in the protected quality/vulture_whitelist.py (amber-7q0.6). Vulture treats a
+  file as a test when its absolute path matches ``*/test/*``, ``*/tests/*``, or
+  ``*/test*.py``, so a checkout under such a directory reports less;
 - ``duplicate-code``: ranges in src/ and quality/ that pylint finds repeated elsewhere (eight
   or more similar lines, imports ignored).
 
@@ -85,7 +87,9 @@ _VULTURE = (
     f"--config={PINNED_CONFIG.as_posix()}",
     "--min-confidence=60",
     "--ignore-decorators=@field_validator,@model_validator,@field_serializer,@model_serializer",
-    "--ignore-names=pytest_*",
+    # The hooks src/amber/conformance/plugin.py defines; pytest calls them by name.
+    "--ignore-names=pytest_addhooks,pytest_addoption,pytest_configure,"
+    "pytest_runtest_makereport,pytest_sessionfinish",
 )
 _VULTURE_LINE = re.compile(r"^(?P<path>[^:]+):(?P<line>\d+): (?P<message>.+) \(\d+% confidence\)$")
 _DUPLICATES = (
@@ -106,12 +110,20 @@ _GIT = (
     *("-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false"),
 )
 _SUPPRESSION = re.compile(
-    r"#\s*(?:(?P<file>(?:ruff|flake8)\s*:\s*noqa|mypy\s*:)"
+    r"#\s*(?:(?P<file>(?:ruff|flake8)\s*:\s*noqa|mypy\s*:|pylint\s*:)"
     r"|(?P<line>noqa|type\s*:\s*ignore|pragma[:\s]?\s*no\s*cover)"
     r"(?::\s*[A-Z]+\d+(?:[\s,]+[A-Z]+\d+)*|\[[^\]]*\])?)",
     re.IGNORECASE,
 )
-_KINDS = {"n": "noqa", "r": "noqa", "f": "noqa", "t": "type-ignore", "m": "type-ignore"}
+# By a directive's first two letters; anything else is ``pragma: no cover``.
+_KINDS = {
+    "no": "noqa",
+    "ru": "noqa",
+    "fl": "noqa",
+    "py": "noqa",
+    "ty": "type-ignore",
+    "my": "type-ignore",
+}
 _JUSTIFIED = re.compile(r"\s*(?:#\s*)?(?:-|--|\u2014)\s*[^\s#]")
 _COMPLEXITY = re.compile(r"\((\d+) > 0\)")
 _HUNK = re.compile(r"^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
@@ -255,7 +267,7 @@ def suppressions(path: str, text: str) -> Iterator[tuple[str, Finding]]:
             code = "justified" if justified else "unjustified"
             message = token.string.strip()[:80]
             yield (
-                _KINDS.get(directive[0].lower(), "no-cover"),
+                _KINDS.get(directive[:2].lower(), "no-cover"),
                 Finding(path, token.start[0], code, message),
             )
 
