@@ -80,7 +80,7 @@ def test_a_source_file_is_fixed_formatted_and_type_checked(
     assert _run(post_edit.main, _edit(SRC_FILE), runner, capsys) == (0, "", "")
     tools = [command[3:5] for command in runner.commands]
     # Format first, so lines the formatter wraps are never reported as lint errors.
-    assert tools == [("ruff", "format"), ("ruff", "check"), ("mypy", SRC_FILE)]
+    assert tools == [("ruff", "format"), ("ruff", "check"), ("mypy", SRC_FILE), ("lint-imports",)]
     assert "--fix" in runner.commands[1] and runner.commands[1][-1] == SRC_FILE
 
 
@@ -115,7 +115,7 @@ def test_a_relative_path_resolves_against_the_session_directory(
     runner = FakeRunner()
     event = {**_edit(SRC_FILE), "tool_input": {"file_path": SRC_FILE}}
     assert _run(post_edit.main, event, runner, capsys)[0] == 0
-    assert len(runner.commands) == 3
+    assert len(runner.commands) == 4
 
 
 def test_unreadable_input_does_not_block(capsys: pytest.CaptureFixture[str]) -> None:
@@ -124,7 +124,7 @@ def test_unreadable_input_does_not_block(capsys: pytest.CaptureFixture[str]) -> 
     assert runner.commands == []
 
 
-@pytest.mark.parametrize("tool", ["ruff check", "ruff format", "mypy"])
+@pytest.mark.parametrize("tool", ["ruff check", "ruff format", "mypy", "lint-imports"])
 def test_a_failing_check_blocks_with_its_output(
     tool: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -184,7 +184,7 @@ def test_source_or_test_changes_run_lint_types_and_fast_tests(
     runner = FakeRunner({**outcomes, ("make", "test-fast"): TESTS_OK})
     code, out, err = _run(stop_gate.main, _stop(), runner, capsys)
     assert code == 0 and err == ""
-    assert _makes(runner) == ["lint", "typecheck", "test-fast"]
+    assert _makes(runner) == ["lint", "typecheck", "test-fast", "imports", "ratchet"]
     assert out.startswith("check ok: 1543 passed")
 
 
@@ -204,7 +204,7 @@ def test_a_failing_test_blocks_with_the_failure_summary(
     assert "2 failed, 1541 passed" in err and "test_a PASSED" not in err
 
 
-@pytest.mark.parametrize("target", ["lint", "typecheck"])
+@pytest.mark.parametrize("target", ["lint", "typecheck", "imports", "ratchet"])
 def test_lint_or_type_errors_block_and_tests_still_run(
     target: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -217,13 +217,13 @@ def test_lint_or_type_errors_block_and_tests_still_run(
     )
     code, _, err = _run(stop_gate.main, _stop(), runner, capsys)
     assert code == 2 and f"make {target}" in err and "src/amber/ids.py:3: error: bad" in err
-    assert _makes(runner) == ["lint", "typecheck", "test-fast"]
+    assert _makes(runner) == ["lint", "typecheck", "test-fast", "imports", "ratchet"]
 
 
 def test_git_failure_runs_the_gate_anyway(capsys: pytest.CaptureFixture[str]) -> None:
     runner = FakeRunner({GIT_DIFF: (128, ""), ("make", "test-fast"): TESTS_OK})
     assert _run(stop_gate.main, _stop(), runner, capsys)[0] == 0
-    assert _makes(runner) == ["lint", "typecheck", "test-fast"]
+    assert _makes(runner) == ["lint", "typecheck", "test-fast", "imports", "ratchet"]
 
 
 def test_the_opencode_plugin_runs_the_same_scripts() -> None:

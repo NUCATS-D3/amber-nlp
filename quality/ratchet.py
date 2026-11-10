@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import configparser
+import contextlib
 import io
 import json
 import os
@@ -175,7 +176,9 @@ def ruff_findings(root: Path, paths: Sequence[str], *options: str) -> list[Findi
 def mypy_findings(root: Path, paths: Sequence[str]) -> list[Finding]:
     if not paths:
         return []
-    report = _tool(root, "mypy", "--strict", "-O", "json", "--", *paths, ok=(0, 1))
+    # Its own cache: sharing make typecheck's (other options) re-checks everything each switch.
+    cache = ("--cache-dir", ".mypy_cache/strict")
+    report = _tool(root, "mypy", "--strict", *cache, "-O", "json", "--", *paths, ok=(0, 1))
     found = []
     for line in report.splitlines():
         if not line.startswith("{"):
@@ -480,11 +483,20 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] = os.environ)
     if args.loosen and not args.write_baseline:
         parser.error("--loosen only applies with --write-baseline")
     write = ("loosen" if args.loosen else "tighten") if args.write_baseline else None
+    report = io.StringIO()
     try:
-        return run(args.root, args.base, write, env)
-    except ToolError as error:
-        print(f"ratchet: {error}")
-        return 1
+        with contextlib.redirect_stdout(report):
+            try:
+                return run(args.root, args.base, write, env)
+            except ToolError as error:
+                print(f"ratchet: {error}")
+                return 1
+    finally:
+        sys.stdout.write(report.getvalue())
+        if summary := env.get("GITHUB_STEP_SUMMARY"):
+            # CI shows the report on the run page (amber-7q0.10).
+            with Path(summary).open("a", encoding="utf-8") as job:
+                job.write(f"### Quality ratchet\n\n```\n{report.getvalue()}```\n")
 
 
 if __name__ == "__main__":

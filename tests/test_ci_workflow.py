@@ -89,3 +89,10 @@ def test_the_mutation_summary_reads_the_report_the_script_writes(tmp_path: Path)
     )
     assert run.returncode == 0, run.stderr
     assert "90.0%" in run.stdout and "grounding: 4 survivors" in run.stdout
+
+
+def test_the_tests_job_fetches_history_for_the_ratchet() -> None:
+    """The ratchet in make quality finds new code against the merge base with origin/main."""
+    job = _tests_job()
+    assert "make quality" in job
+    assert re.search(r"fetch-depth: 0\n", job), "the tests job needs origin/main for the ratchet"
