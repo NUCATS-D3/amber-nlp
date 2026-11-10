@@ -109,7 +109,6 @@ def test_generated_and_locked_files_do_not_count(
         ".beads/issues.jsonl",
         "src/amber/conformance/golden/case.json",
         "docs/architecture/deps.md",
-        "docs/architecture/deps.svg",
         "quality/baseline.json",
     ):
         _write(repo, path, 900)
@@ -123,20 +122,37 @@ def test_generated_and_locked_files_do_not_count(
 def test_spreading_over_many_subpackages_warns(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    for name in ("graph.py", "tools/cite.py", "bundles/core.py", "loupe/adapter.py"):
+    for name in (
+        "graph.py",
+        "tools/cite.py",
+        "bundles/core.py",
+        "loupe/adapter.py",
+        "schemas/x.py",
+    ):
         _write(repo, f"src/amber/{name}", 2)
     assert _budget(repo, "--enforce") == 0
     out = capsys.readouterr().out
     assert "warning: touches 4 amber subpackages" in out
-    for unit in ("graph", "tools", "bundles", "loupe"):
-        assert f"  {unit}: 2 lines in 1 file" in out
+    for unit in ("tools", "bundles", "loupe", "schemas"):
+        assert f"  {unit}/: 2 lines in 1 file" in out
+    assert "  (top-level modules): 2 lines in 1 file" in out
 
 
-def test_three_subpackages_do_not_warn(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    for name in ("graph.py", "tools/cite.py", "tools/quote.py", "ids.py"):
+def test_top_level_modules_count_as_one_unit(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    for name in (
+        "graph.py",
+        "cases.py",
+        "_graph_validation.py",
+        "graph_errors.py",
+        "tools/cite.py",
+    ):
         _write(repo, f"src/amber/{name}", 2)
     assert _budget(repo) == 0
-    assert "subpackages" not in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "subpackages" not in out
+    assert "  (top-level modules): 8 lines in 4 files" in out
 
 
 def test_committed_deleted_and_untracked_changes_count(
@@ -154,3 +170,14 @@ def test_committed_deleted_and_untracked_changes_count(
 def test_an_unknown_base_is_an_error(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert diff_budget.main(["--root", str(repo), "--base", "nowhere"]) == 1
     assert "nowhere" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "path", ["docs/architecture/notes.md", "src/amber/data.lock", "src/amber/golden/x.json"]
+)
+def test_hand_written_files_near_generated_ones_count(
+    repo: Path, capsys: pytest.CaptureFixture[str], path: str
+) -> None:
+    _write(repo, path, 5)
+    assert _budget(repo) == 0
+    assert "5 lines in 1 file" in capsys.readouterr().out
