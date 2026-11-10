@@ -34,6 +34,8 @@ conformance = [
 dev = [
     "pytest>=8",
     "pytest-cov",
+    # make test-fast runs on parallel workers (amber-7q0.18).
+    "pytest-xdist>=3.6",
     "ruff>=0.6",
     "mypy>=1.11",
     "pre-commit",

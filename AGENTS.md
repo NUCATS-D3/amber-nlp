@@ -98,8 +98,8 @@ Two hooks in `.claude/hooks/` check agent work. OpenCode runs them through
   fixes) and, under `src/`, mypy and the import contracts. Failures are appended to the edit's
   result.
 - When a top-level session ends a turn with changes under `src/` or `tests/`, `stop_gate.py` runs
-  `make lint typecheck test-fast imports ratchet` (about 100 s, mostly the tests). Failures come
-  back as a "Stop gate" message, at most once in a row.
+  `make lint typecheck test-fast imports ratchet` (about 50 s; the tests run on parallel
+  workers). Failures come back as a "Stop gate" message, at most once in a row.
 
 Fix what they report; never work around them. The plugin and the `reviewer` agent's permissions
 were verified with OpenCode 2.2.5; CI (`opencode-harness.yml`) type-checks the plugin and decodes

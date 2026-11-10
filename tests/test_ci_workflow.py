@@ -96,3 +96,11 @@ def test_the_tests_job_fetches_history_for_the_ratchet() -> None:
     job = _tests_job()
     assert "make quality" in job
     assert re.search(r"fetch-depth: 0\n", job), "the tests job needs origin/main for the ratchet"
+
+
+def test_the_fast_suite_runs_on_parallel_workers_and_deselects_only_slow_tests() -> None:
+    """amber-7q0.18: the stop hook and CI run make test-fast; workers keep it under ~90 s."""
+    recipe = re.search(r"^test-fast:.*\n\t(.+)$", (ROOT / "Makefile").read_text(), re.MULTILINE)
+    assert recipe is not None
+    # Four workers run as fast as eighteen here (about 40 s) with a quarter of the memory.
+    assert recipe.group(1).split() == ["$(PYTEST)", "-n", "4", "-m", '"not', 'slow"']

@@ -36,8 +36,8 @@ lock: ## uv.lock matches pyproject.toml
 phi-scan: ## Identifier-shaped text in tests, examples, conformance, docs
 	python3 scripts/phi_scan.py
 
-test-fast: ## Offline suite without slow tests (about 100 s)
-	$(PYTEST) -m "not slow"
+test-fast: ## Offline suite without slow tests, on parallel workers (about 40 s)
+	$(PYTEST) -n 4 -m "not slow"
 
 test: ## Every test, including slow ones
 	$(PYTEST)
