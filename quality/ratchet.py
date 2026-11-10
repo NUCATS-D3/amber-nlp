@@ -110,20 +110,15 @@ _GIT = (
     *("-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false"),
 )
 _SUPPRESSION = re.compile(
-    r"#\s*(?:(?P<file>(?:ruff|flake8)\s*:\s*noqa|mypy\s*:|pylint\s*:)"
+    r"#\s*(?:(?P<file>(?:ruff|flake8)\s*:\s*noqa|mypy\s*:)"
     r"|(?P<line>noqa|type\s*:\s*ignore|pragma[:\s]?\s*no\s*cover)"
     r"(?::\s*[A-Z]+\d+(?:[\s,]+[A-Z]+\d+)*|\[[^\]]*\])?)",
     re.IGNORECASE,
 )
+# pylint honours a pragma anywhere in a comment, not only after the "#".
+_PYLINT_PRAGMA = re.compile(r"\bpylint\s*:", re.IGNORECASE)
 # By a directive's first two letters; anything else is ``pragma: no cover``.
-_KINDS = {
-    "no": "noqa",
-    "ru": "noqa",
-    "fl": "noqa",
-    "py": "noqa",
-    "ty": "type-ignore",
-    "my": "type-ignore",
-}
+_KINDS = {"no": "noqa", "ru": "noqa", "fl": "noqa", "ty": "type-ignore", "my": "type-ignore"}
 _JUSTIFIED = re.compile(r"\s*(?:#\s*)?(?:-|--|\u2014)\s*[^\s#]")
 _COMPLEXITY = re.compile(r"\((\d+) > 0\)")
 _HUNK = re.compile(r"^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
@@ -261,15 +256,17 @@ def suppressions(path: str, text: str) -> Iterator[tuple[str, Finding]]:
     for token in tokens:
         if token.type != tokenize.COMMENT:
             continue
+        message = token.string.strip()[:80]
         for match in _SUPPRESSION.finditer(token.string):
             directive = match["file"] or match["line"]
             justified = bool(match["line"]) and _JUSTIFIED.match(token.string, match.end())
             code = "justified" if justified else "unjustified"
-            message = token.string.strip()[:80]
             yield (
                 _KINDS.get(directive[:2].lower(), "no-cover"),
                 Finding(path, token.start[0], code, message),
             )
+        if _PYLINT_PRAGMA.search(token.string):
+            yield "noqa", Finding(path, token.start[0], "unjustified", message)
 
 
 def vulture_findings(root: Path, python: Sequence[str]) -> list[Finding]:

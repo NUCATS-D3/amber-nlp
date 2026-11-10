@@ -249,6 +249,12 @@ def test_a_justified_type_ignore_is_valid_for_mypy(
         ("# pylint: disable=duplicate-code", [("noqa", "unjustified")]),
         ("x = 1  # pylint: disable=R0801 - reason", [("noqa", "unjustified")]),
         ("x = 1  # PyLint:disable=all", [("noqa", "unjustified")]),
+        ("x = 1  # copied pylint: disable=duplicate-code", [("noqa", "unjustified")]),
+        ("# -pylint: disable=all", [("noqa", "unjustified")]),
+        (
+            "x = 1  # noqa: E501 - long  # pylint: disable=R0801",
+            [("noqa", "justified"), ("noqa", "unjustified")],
+        ),
         ("x = '# noqa'", []),
         ("x = 1  # we never noqa here", []),
     ],
