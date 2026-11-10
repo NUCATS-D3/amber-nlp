@@ -131,6 +131,8 @@ def test_changed_lines_must_be_covered() -> None:
     # no data for the diff and passes. The recipe also refuses a report without src/amber.
     assert "PYTHONPATH=src COVERAGE_CORE=sysmon" in commands
     assert """grep -q 'filename="src/amber/' $(COVERAGE)/coverage.xml""" in commands
-    assert "set -o pipefail" in commands
+    # No pipe: make's /bin/sh (dash on CI) lacks pipefail, so a failing report must stop make.
+    assert "--format=total > $(COVERAGE)/total" in commands
+    assert "|" not in commands.replace("||", "")
     assert "diff-coverage" in _check_prerequisites()
     assert "diff-coverage" in _make_targets(_tests_job())

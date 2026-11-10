@@ -71,7 +71,8 @@ COVERAGE := .coverage-report
 diff-coverage: ## Changed lines in src are at least 90% covered (fast suite again, with coverage)
 	PYTHONPATH=src COVERAGE_CORE=sysmon COVERAGE_FILE=$(COVERAGE)/data $(PYTEST) -n 4 -m "not slow" -p no:amber_conformance --cov=amber --cov-config=quality/pinned-config.toml --cov-report=xml:$(COVERAGE)/coverage.xml --cov-report=
 	@grep -q 'filename="src/amber/' $(COVERAGE)/coverage.xml || { echo "diff-coverage: the report does not measure src/amber"; exit 1; }
-	set -o pipefail; $(RUN) coverage report --data-file=$(COVERAGE)/data --rcfile=quality/pinned-config.toml --format=total | sed 's/^/total coverage (reported, not gated): /; s/$$/%/'
+	$(RUN) coverage report --data-file=$(COVERAGE)/data --rcfile=quality/pinned-config.toml --format=total > $(COVERAGE)/total
+	@echo "total coverage (reported, not gated): $$(cat $(COVERAGE)/total)%"
 	$(RUN) diff-cover $(COVERAGE)/coverage.xml --compare-branch=$(RATCHET_BASE) --include-untracked --fail-under=90
 
 quality-rebaseline: ## HUMAN ONLY: rewrite quality/baseline.json (ALLOW_ORACLE_CHANGE=1; only tightens)
