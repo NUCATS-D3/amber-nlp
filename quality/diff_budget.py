@@ -85,7 +85,10 @@ def _git(root: Path, *args: str) -> str:
 
 
 def _counted(path: str) -> bool:
-    return not any(fnmatch(path, pattern) for pattern in EXCLUDED)
+    # fnmatch's * also matches "/", so a pattern applies only at its own depth.
+    return not any(
+        fnmatch(path, pattern) and path.count("/") == pattern.count("/") for pattern in EXCLUDED
+    )
 
 
 def measure(root: Path, base: str) -> Change:

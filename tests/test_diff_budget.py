@@ -173,7 +173,13 @@ def test_an_unknown_base_is_an_error(repo: Path, capsys: pytest.CaptureFixture[s
 
 
 @pytest.mark.parametrize(
-    "path", ["docs/architecture/notes.md", "src/amber/data.lock", "src/amber/golden/x.json"]
+    "path",
+    [
+        "docs/architecture/notes.md",
+        "src/amber/data.lock",
+        "src/amber/golden/x.json",
+        "src/amber/conformance/golden/nested/x.json",
+    ],
 )
 def test_hand_written_files_near_generated_ones_count(
     repo: Path, capsys: pytest.CaptureFixture[str], path: str
@@ -181,3 +187,12 @@ def test_hand_written_files_near_generated_ones_count(
     _write(repo, path, 5)
     assert _budget(repo) == 0
     assert "5 lines in 1 file" in capsys.readouterr().out
+
+
+def test_exactly_three_subpackages_do_not_warn(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    for name in ("graph.py", "tools/cite.py", "bundles/core.py", "loupe/adapter.py"):
+        _write(repo, f"src/amber/{name}", 2)
+    assert _budget(repo) == 0
+    assert "subpackages" not in capsys.readouterr().out
