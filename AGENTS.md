@@ -198,21 +198,20 @@ For the core-only installation check, see [tests/README.md](tests/README.md#ci).
   above) rather than adding a parallel one.
 - No new abstraction (base class, protocol, factory, registry, or configuration option) without
   two production callers in `src/amber` in the same change; tests don't count. A new interface
-  follows CLAUDE.md's stability rule, with one reference implementation (ADR 0004).
+  instead follows CLAUDE.md's stability rule, with one reference implementation (ADR 0004).
 - The core (the `core` contract in `.importlinter`) touches no files, environment, network, or
   logging; reading and writing belong to plugins and callers.
 - Keep validation at load, commit, and transfer boundaries even when callers "cannot" violate
   it, including re-grounding spans (ADR 0003). Code past a boundary trusts it.
-- Expected failures carry stable, source-free codes, as results (`GroundingFailure`,
-  `LabelerFailure`, failed outcomes) or as the module's `ValueError` subclass
-  (`GraphValidationError`, `CaseValidationError`). Messages never include source text. Never
-  catch broadly or swallow an error to make something pass.
-- A record type has one creation or load path; a new one uses a private mint context and refuses
-  `model_construct` (ADR 0003).
+- Expected failures carry source-free codes: results (`GroundingFailure`, `LabelerFailure`,
+  failed outcomes) or a module's `ValueError` subclass (`GraphValidationError`). Messages never
+  include source text; never catch broadly or swallow an error to make something pass.
+- Records asserting verified content (`Inclusion`, `Mention`, `Claim`, `CaseResult`, `Example`,
+  and any new one) have one creation or load path and refuse `model_construct` (ADR 0003).
 - Delete replaced code in the same change: no `_old` or `_v2` copies, shims, or commented-out
   code. Breaking contract changes ship a migration note (contract-change skill) instead.
-- Comments explain why, citing the contract section or ADR.
-- New dependencies, including development tools, need human approval.
+- Comments explain why, citing the contract section or ADR. New dependencies, including
+  development tools, need human approval.
 - Accepted ADRs in [docs/decisions/](docs/decisions/) are not reopened without discussion.
 
 ## Coding and testing
