@@ -18,6 +18,9 @@ A task is done when all of these hold:
    output, or a review.
 3. The `reviewer` agent has reviewed the branch, and every blocking finding is resolved or
    explained in the pull request (see [Review](#review)).
+4. For any change under `src/` or `tests/`, the `cleanliness-reviewer` agent has reviewed the
+   branch; every blocker and major is fixed, or a major is explained in the pull request. Only
+   a human sets a blocker aside.
 
 ### Protected paths
 
@@ -125,6 +128,12 @@ Before landing a branch, get an independent review from the read-only `reviewer`
 findings. Resolve every blocking finding or explain it in the pull request; never edit the prompt
 or the agents to get a PASS.
 
+For design quality, the read-only `cleanliness-reviewer` agent (same two folders) follows
+[docs/cleanliness_review_prompt.md](docs/cleanliness_review_prompt.md): eleven checks, from
+speculative generality to ADR conflicts, against the [Design rules](#design-rules) and accepted
+ADRs. It replies `PASS`, `PASS WITH NITS`, or `FAIL`. Paste `make quality` output into its prompt
+when you have it. The same rule applies: never edit its prompt or definition to get a PASS.
+
 ## Layout and dependency direction
 
 ```
@@ -189,8 +198,8 @@ For the core-only installation check, see [tests/README.md](tests/README.md#ci).
 
 ## Design rules
 
-> **Draft (amber-7q0.11), pending human review.** Invariants and the framework boundary live in
-> [CLAUDE.md](CLAUDE.md); calling validation, never copying it, in the [charter](docs/charter.md).
+Accepted by Will Thompson on 2026-11-10. Invariants and the framework boundary live in
+[CLAUDE.md](CLAUDE.md); calling validation, never copying it, in the [charter](docs/charter.md).
 
 - Imports follow `.importlinter`'s layers ([ADR 0001](docs/decisions/0001-dependency-layering.md));
   placing a new module, moving one, or adding an `ignore_imports` entry is a human edit.

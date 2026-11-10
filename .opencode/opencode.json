@@ -16,6 +16,7 @@
     { "action": "edit", "resource": "/etc/opencode/*", "effect": "ask" },
     { "action": "edit", "resource": "/Library/Application Support/opencode/*", "effect": "ask" },
     { "action": "edit", "resource": "docs/review_prompt.md", "effect": "ask" },
+    { "action": "edit", "resource": "docs/cleanliness_review_prompt.md", "effect": "ask" },
     { "action": "edit", "resource": ".pre-commit-config.yaml", "effect": "ask" },
     { "action": "edit", "resource": ".github/workflows/*", "effect": "ask" },
     { "action": "edit", "resource": "Makefile", "effect": "ask" },

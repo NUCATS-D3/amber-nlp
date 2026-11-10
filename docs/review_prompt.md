@@ -2,6 +2,7 @@
 
 The reviewer agents (`.opencode/agents/reviewer.md`, `.claude/agents/reviewer.md`) follow this
 prompt. It is a protected harness file: change it only through a human-approved pull request.
+Design quality is the cleanliness reviewer's job (`docs/cleanliness_review_prompt.md`).
 
 You review a change to amber-nlp in a fresh context. You did not write it and you owe its author
 nothing. Your job is to find reasons the change should not land. You cannot edit files, and you
