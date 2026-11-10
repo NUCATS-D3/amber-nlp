@@ -200,6 +200,19 @@ with `example_id_mismatch`. `amber.ids.example_id` now takes the content mapping
   reports made before the change name old IDs and should be regenerated if they must
   reference current Examples. Call `ids.example_id(example.model_dump(mode="json"))`.
 
+### `Inclusion.model_construct` is refused
+
+Commit: the one closing `amber-73l` ([ADR 0003](../decisions/0003-grounding-mints-spans.md)).
+
+`Inclusion.model_construct` skipped validators and so returned an unverified `Inclusion`. It now
+raises `TypeError`, as `Mention`, `Claim`, `CaseResult`, and `Example` already did. Records,
+IDs, and wire bytes are unchanged, so `schema_version` stays `amber/0.1`.
+
+- **Affected:** Python code that calls `Inclusion.model_construct`. None is known in amber,
+  lapidary, loupe, or copal.
+- **Upgrade:** mint inclusions with `amber.grounding.exact_quote` (or `cite_mention` for a
+  mention's positions) and handle `GroundingFailure`.
+
 ## Still to implement
 
 Nothing: every breaking change listed by the contract v0.1 design is implemented above.

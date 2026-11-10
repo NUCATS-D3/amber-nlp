@@ -1,12 +1,13 @@
 """Evidence value objects.
 
 Inclusions require a private validation context so ordinary model construction cannot mint
-verified evidence. Grounding and, later, the explicit human annotation path own that context.
+verified evidence. Only grounding owns that context (ADR 0003), and ``model_construct``, which
+skips validators, is refused.
 """
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import (
     BaseModel,
@@ -56,6 +57,12 @@ class Inclusion(BaseModel):
         if self.evidence_id != expected_id:
             raise ValueError("evidence_id does not match the inclusion identity fields")
         return self
+
+    @classmethod
+    def model_construct(  # type: ignore[override]
+        cls, _fields_set: set[str] | None = None, **values: Any
+    ) -> Self:
+        raise TypeError("Inclusion may only be minted by a verified grounding path")
 
 
 def _mint_inclusion(data: dict[str, Any]) -> Inclusion:
