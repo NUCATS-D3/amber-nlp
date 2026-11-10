@@ -36,7 +36,7 @@ lock: ## uv.lock matches pyproject.toml
 phi-scan: ## Identifier-shaped text in tests, examples, conformance, docs
 	python3 scripts/phi_scan.py
 
-test-fast: ## Offline suite without slow tests (about 40 s)
+test-fast: ## Offline suite without slow tests (about 100 s)
 	$(PYTEST) -m "not slow"
 
 test: ## Every test, including slow ones
@@ -45,8 +45,11 @@ test: ## Every test, including slow ones
 check: sync lint typecheck imports lock phi-scan test-fast quality ## Definition of done
 	@echo "check ok"
 
+# New code is measured from the merge base with BASE; override it without an origin/main.
+BASE ?= origin/main
+
 ratchet: ## Violation counts against quality/baseline.json; new code must be clean
-	$(RUN) python quality/ratchet.py
+	$(RUN) python quality/ratchet.py --base $(BASE)
 
 quality-fast: lint imports ratchet ## Ruff, import contracts, and the ratchet (seconds)
 

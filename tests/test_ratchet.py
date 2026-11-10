@@ -627,3 +627,31 @@ def test_ci_gets_the_report_in_its_job_summary(
     report = summary.read_text()
     assert report.startswith("earlier step\n### Quality ratchet\n")
     assert "ruff:F401 rose 1 -> 2" in report and "ruff:F401 rose 1 -> 2" in out
+
+
+def test_strict_mypy_keeps_its_own_cache(repo: Path) -> None:
+    """Sharing make typecheck's cache made each run re-check everything (options differ)."""
+    assert _run(repo) == 0
+    assert (repo / ".mypy_cache" / "strict").is_dir()
+
+
+def test_the_report_and_summary_survive_an_unexpected_error(
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def failing_run(*_: object) -> int:
+        sys.stdout.write("ratchet: measuring\n")
+        raise RuntimeError("tool output changed shape")
+
+    monkeypatch.setattr(ratchet, "run", failing_run)
+    summary = tmp_path / "summary.md"
+    with pytest.raises(RuntimeError):
+        _run(repo, env={"GITHUB_STEP_SUMMARY": str(summary)})
+    assert "ratchet: measuring" in capsys.readouterr().out
+    assert "ratchet: measuring" in summary.read_text()
+
+
+def test_make_passes_a_base_through_to_the_ratchet() -> None:
+    root = Path(__file__).parents[1]
+    dry = ["make", "-n", "ratchet", "BASE=main"]
+    done = subprocess.run(dry, cwd=root, capture_output=True, text=True, check=True)
+    assert "quality/ratchet.py --base main" in done.stdout
