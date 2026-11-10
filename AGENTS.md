@@ -132,9 +132,12 @@ src/amber/schemas/        contract models (pure; no I/O)
 src/amber/ids.py          canonical hashing and ULIDs
 src/amber/grounding.py    exact grounding (the only Inclusion minting path today)
 src/amber/graph.py        EvidenceGraph lifecycle; _graph_validation.py holds the checks
+src/amber/graph_errors.py source-free codes for GraphValidationError
 src/amber/cases.py        CaseResult creation/loading and outcome validation
 src/amber/tools/          quote, mention, cite, commit_claim, no_claim: operations implementations call
 src/amber/examples.py     Example and LabelRecord load boundary
+src/amber/labels.py       the sanctioned derived_text -> labels_only views
+src/amber/policy.py       declared data-handling policy and the transfer check (pure)
 src/amber/annotations.py  annotation-event replay, projections, Examples from events
 src/amber/interfaces.py   protocols (Store, SourceResolver, PolicyGate, Exporter, Provider, Extractor, Scorer,
                           Labeler, ReviewBackend; Rule is re-exported from rules.py)
@@ -183,6 +186,33 @@ bash scripts/mlflow_local.sh              # local MLflow server in .mlflow/
 ```
 
 For the core-only installation check, see [tests/README.md](tests/README.md#ci).
+
+## Design rules
+
+> **Draft (amber-7q0.11), pending human review.** Invariants and the framework boundary live in
+> [CLAUDE.md](CLAUDE.md); calling validation, never copying it, in the [charter](docs/charter.md).
+
+- Imports follow `.importlinter`'s layers ([ADR 0001](docs/decisions/0001-dependency-layering.md));
+  placing a new module, moving one, or adding an `ignore_imports` entry is a human edit.
+- Search `src/amber` before writing, and extend the module that owns the concept (see the layout
+  above) rather than adding a parallel one.
+- No new abstraction (base class, protocol, factory, registry, or configuration option) without
+  two production callers in `src/amber` in the same change; tests don't count. A new interface
+  instead follows CLAUDE.md's stability rule, with one reference implementation (ADR 0004).
+- The core (the `core` contract in `.importlinter`) touches no files, environment, network, or
+  logging; reading and writing belong to plugins and callers.
+- Keep validation at load, commit, and transfer boundaries even when callers "cannot" violate
+  it, including re-grounding spans (ADR 0003). Code past a boundary trusts it.
+- Expected failures carry source-free codes: results (`GroundingFailure`, `LabelerFailure`,
+  failed outcomes) or a module's `ValueError` subclass (`GraphValidationError`). Messages never
+  include source text; never catch broadly or swallow an error to make something pass.
+- Records asserting verified content (`Inclusion`, `Mention`, `Claim`, `CaseResult`, `Example`,
+  and any new one) have one creation or load path and refuse `model_construct` (ADR 0003).
+- Delete replaced code in the same change: no `_old` or `_v2` copies, shims, or commented-out
+  code. Breaking contract changes ship a migration note (contract-change skill) instead.
+- Comments explain why, citing the contract section or ADR. New dependencies, including
+  development tools, need human approval.
+- Accepted ADRs in [docs/decisions/](docs/decisions/) are not reopened without discussion.
 
 ## Coding and testing
 
