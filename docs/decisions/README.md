@@ -1,8 +1,9 @@
 # Decisions
 
 Architecture decision records (ADRs) for amber-nlp. Each records one decision that should not be
-reopened without discussion. [AGENTS.md](../../AGENTS.md) will point agents here (amber-7q0.11),
-and the cleanliness reviewer (amber-7q0.12) will check changes against accepted ADRs.
+reopened without discussion. The Design rules in [AGENTS.md](../../AGENTS.md#design-rules) point
+agents here, and the cleanliness reviewer (amber-7q0.12) will check changes against accepted
+ADRs.
 Copy [0000-template.md](0000-template.md) for a new one.
 
 Agents draft ADRs with status `proposed`. Only a human marks one `accepted` or `superseded`.

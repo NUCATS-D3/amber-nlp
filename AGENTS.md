@@ -184,6 +184,32 @@ bash scripts/mlflow_local.sh              # local MLflow server in .mlflow/
 
 For the core-only installation check, see [tests/README.md](tests/README.md#ci).
 
+## Design rules
+
+> **Draft (amber-7q0.11), pending human review.** The invariants and framework boundary are in
+> [CLAUDE.md](CLAUDE.md); these rules cover how code is shaped.
+
+- Follow the layers in `.importlinter` ([ADR 0001](docs/decisions/0001-dependency-layering.md)).
+  Never add `ignore_imports` entries; moving a module between layers is a human decision.
+- Search `src/amber` before writing. Extend the module or helper that owns the concept rather
+  than adding a parallel one; each concept has one home in the layout above.
+- No new abstraction (base class, protocol, factory, registry, option, or parameter) without
+  two concrete uses in the same change or an accepted ADR. New interfaces follow CLAUDE.md's
+  stability rule.
+- The core does no I/O: no files, environment, network, or logging. Reading and writing belong
+  to plugins and callers at a boundary.
+- Validate at boundaries (load, commit, transfer) by calling amber's validation, never a copy
+  of it, and don't re-check inside the core what a boundary guarantees.
+- Expected failures are results with source-free codes (`GroundingFailure`, `graph_errors`).
+  Raise specific exceptions for misuse; never catch broadly or swallow to make things pass.
+- Delete replaced code in the same change: no `_old` or `_v2` copies, shims, or commented-out
+  code. Contract changes ship a migration note, not compatibility code.
+- Comments explain why, citing the contract section or ADR; Ruff and names cover what.
+- Stay in scope. File unrelated findings as Beads issues instead of fixing them.
+- New dependencies, including development tools, need human approval.
+- Accepted ADRs in [docs/decisions/](docs/decisions/) are not reopened without discussion;
+  propose a new ADR instead.
+
 ## Coding and testing
 
 - Four-space indentation, 100-character lines. Ruff owns import order and formatting.
