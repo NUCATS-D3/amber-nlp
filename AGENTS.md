@@ -189,8 +189,10 @@ For the core-only installation check, see [tests/README.md](tests/README.md#ci).
   `# type: ignore[code]  # - reason` (mypy allows only a comment after an ignore). File-level
   `# ruff: noqa`, `# flake8: noqa`, and `# mypy:` directives never count as justified. Added
   files and added lines must have no Ruff finding and, under `src/` and `quality/`, no
-  `mypy --strict` error; no function there may exceed complexity 10 unless its module already
-  did.
+  `mypy --strict` error. A function whose `def` line is new may not exceed complexity 10, and no
+  module's most complex function may get worse. For this the ratchet applies wider Ruff rules
+  than `make lint` (docstrings on public API, argument and branch counts, blind excepts, prints
+  in `src/`): see `quality/ruff-ratchet.toml`, and run `make ratchet` before finishing.
 - `snake_case` for modules and functions, `PascalCase` for models.
 - Tests are `tests/test_*.py`, run offline on CPU with invented data only.
 - Every invariant has an adversarial test covering:

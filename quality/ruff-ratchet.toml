@@ -1,0 +1,52 @@
+# The quality ratchet's Ruff rules (amber-7q0.5): ruff.toml plus the spec's rule families that
+# legacy code does not yet meet. Only quality/ratchet.py reads this file (Ruff never discovers
+# it), so lint, the editing hooks, and `make format` keep ruff.toml's rules; the ratchet holds
+# legacy counts at quality/baseline.json and new code to every rule here. Protected: change only
+# through a human-approved pull request. A rule clean everywhere can move into ruff.toml.
+extend = "../ruff.toml"
+
+[lint]
+extend-select = [
+    "W",    # pycodestyle warnings
+    "N",    # naming
+    "C90",  # mccabe complexity
+    "PL",   # pylint-derived: arguments, branches, statements, returns, magic values
+    "ARG",  # unused arguments
+    "BLE",  # blind except
+    "TRY",  # exception anti-patterns
+    "PTH",  # pathlib over os.path
+    "T20",  # print
+    "ANN",  # annotations
+    "D",    # docstrings, Google convention
+    "PGH",  # blanket noqa and type: ignore
+    "RUF",  # Ruff's own rules, including RUF100 (unused noqa)
+]
+extend-ignore = [
+    "D100", "D104", "D105", "D107",  # module, package, magic-method, and __init__ docstrings
+    "TRY003",   # long messages in exceptions
+    # Left out by Will Thompson on 2026-11-09 because they contradict deliberate patterns here:
+    "D205", "D209",  # docstrings wrap the summary and close on the last text line
+    "PLC0415",  # plugins import optional stacks inside functions (ADR 0001)
+    "ANN401",   # Any in Pydantic validators and JSON helpers; mypy is the type authority
+]
+
+[lint.mccabe]
+max-complexity = 10
+
+[lint.pylint]
+max-args = 6
+max-branches = 12
+max-statements = 50
+max-returns = 6
+
+[lint.pydocstyle]
+convention = "google"
+
+[lint.per-file-ignores]
+# Tests implement the seven-parameter PolicyGate and Extractor protocols.
+"tests/**" = ["D", "ANN", "PLR2004", "ARG", "PLR0913", "PLR0917"]
+# Protocol methods are documented in their class docstring.
+"src/amber/interfaces.py" = ["D102"]
+"scripts/**" = ["T20", "D"]
+"quality/**" = ["T20"]
+".claude/hooks/**" = ["T20"]
