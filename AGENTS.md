@@ -225,7 +225,9 @@ For the core-only installation check, see [tests/README.md](tests/README.md#ci).
   `mypy --strict` error. A function whose `def` line is new may not exceed complexity 10, and no
   module's most complex function may get worse. For this the ratchet applies wider Ruff rules
   than `make lint` (docstrings on public API, argument and branch counts, blind excepts, prints
-  in `src/`): see `quality/ruff-ratchet.toml`, and run `make ratchet` before finishing.
+  in `src/`; see `quality/ruff-ratchet.toml`), and counts dead code (vulture) and duplicated
+  blocks (pylint). Code only tests use is not dead; a real false positive goes in the protected
+  `quality/vulture_whitelist.py`. Run `make ratchet` before finishing.
 - `snake_case` for modules and functions, `PascalCase` for models.
 - Tests are `tests/test_*.py`, run offline on CPU with invented data only.
 - Every invariant has an adversarial test covering:

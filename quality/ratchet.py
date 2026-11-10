@@ -11,26 +11,38 @@ standard. Metrics:
 - ``mypy-strict``: ``mypy --strict`` errors in src/ and quality/;
 - ``suppressions:noqa``, ``suppressions:type-ignore``, ``suppressions:no-cover``: suppression
   comments in Python files, every one counted (any case; file-level ``# ruff: noqa``,
-  ``# flake8: noqa``, and ``# mypy:`` inline config included), and
-  ``suppressions:unjustified``: those without a trailing justification, a ``-``, ``--``, or em
-  dash, then text (``# noqa: E741 - the protocol's name``). mypy allows only a comment after an
-  ignore, so there it is ``# type: ignore[misc]  # - reason``. A file-level directive is never
-  justified;
+  ``# flake8: noqa``, ``# mypy:`` inline config, and ``# pylint:`` pragmas, which can hide
+  duplicated code, included), and ``suppressions:unjustified``: those without a trailing
+  justification, a ``-``, ``--``, or em dash, then text (``# noqa: E741 - the protocol's
+  name``). mypy allows only a comment after an ignore, so there it is ``# type: ignore[misc]  #
+  - reason``. A file-level directive or a ``# pylint:`` pragma is never justified;
 - ``complexity:<module>``: the highest cyclomatic complexity (Ruff's C901, mccabe, ignoring
   noqa) of a function in a src/ or quality/ module. Only modules above COMPLEXITY_LIMIT are
   recorded; any other module may grow up to the limit;
-- ``importlinter:ignore_imports``: ``ignore_imports`` entries in .importlinter.
+- ``importlinter:ignore_imports``: ``ignore_imports`` entries in .importlinter;
+- ``vulture``: dead code in src/ and quality/ at 60% confidence (unused functions rate 60%),
+  with tests/ scanned too, since a library's tests use its API. Pydantic validator and
+  serializer decorators and the conformance plugin's pytest hooks are ignored; other false
+  positives go in the protected quality/vulture_whitelist.py (amber-7q0.6). Vulture treats a
+  file as a test when its absolute path matches ``*/test/*``, ``*/tests/*``, or
+  ``*/test*.py``, so a checkout under such a directory reports less;
+- ``duplicate-code``: ranges in src/ and quality/ that pylint finds repeated elsewhere (eight
+  or more similar lines, imports ignored).
+
+Vulture and pylint read only the deliberately empty, protected quality/pinned-config.toml, so no
+pyproject.toml, pylintrc, setup.cfg, or home configuration can change what they report.
 
 Whatever the baseline says, measured against the merge base with ``--base`` (origin/main):
-files added since then, and lines added to other files, must have no Ruff or mypy-strict
-finding and no unjustified suppression.
+files added since then, and lines added to other files, must have no Ruff, mypy-strict, vulture,
+or duplicate-code finding and no unjustified suppression.
 
 Exit 2 when anything rose, printing each metric old -> new with the findings likely to be new;
 otherwise exit 0, printing "ratchet can be tightened" for each metric that fell. Exit 1 when a
 tool or git fails. ``--write-baseline`` rewrites the baseline only with ALLOW_ORACLE_CHANGE=1 and
-only when nothing rose: rebaselining tightens. With ``--loosen`` it also records Ruff rule codes
-the baseline lacks, for a human adopting new rules, and lists their findings; a rise in a
-metric the baseline already has stays a hand edit.
+only when nothing rose: rebaselining tightens. With ``--loosen`` it also records metrics the
+baseline lacks (new Ruff codes or a newly adopted tool, not a module's complexity), for a human
+adopting new rules, and lists their findings; a rise in a metric the baseline already has stays
+a hand edit.
 
 Standard library only; the tools run from this interpreter's environment (pinned by uv.lock).
 """
@@ -55,6 +67,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE = Path("quality/baseline.json")
 RUFF_CONFIG = Path("quality/ruff-ratchet.toml")
+PINNED_CONFIG = Path("quality/pinned-config.toml")
 COMPLEXITY_LIMIT = 10
 REGRESSION = 2
 STRICT_DIRECTORIES = ("src", "quality")
@@ -66,7 +79,30 @@ _ALWAYS_RECORDED = (
     "suppressions:no-cover",
     "suppressions:unjustified",
     "importlinter:ignore_imports",
+    "vulture",
+    "duplicate-code",
 )
+_HELD_FOR_NEW_CODE = ("mypy-strict", "suppressions:unjustified", "vulture", "duplicate-code")
+_VULTURE = (
+    f"--config={PINNED_CONFIG.as_posix()}",
+    "--min-confidence=60",
+    "--ignore-decorators=@field_validator,@model_validator,@field_serializer,@model_serializer",
+    # The hooks src/amber/conformance/plugin.py defines; pytest calls them by name.
+    "--ignore-names=pytest_addhooks,pytest_addoption,pytest_configure,"
+    "pytest_runtest_makereport,pytest_sessionfinish",
+)
+_VULTURE_LINE = re.compile(r"^(?P<path>[^:]+):(?P<line>\d+): (?P<message>.+) \(\d+% confidence\)$")
+_DUPLICATES = (
+    f"--rcfile={PINNED_CONFIG.as_posix()}",
+    "--disable=all",
+    "--enable=duplicate-code",
+    "--min-similarity-lines=8",
+    "--ignore-imports=yes",
+    "--persistent=n",
+    "--output-format=json",
+)
+_COPIES = 2  # a duplicate-code report names at least two ranges
+_DUPLICATE_RANGE = re.compile(r"^==(?P<module>[\w.]+):\[(?P<start>\d+):(?P<end>\d+)\]$")
 _LINTED = ("*.py", "*.pyi", "*.ipynb")
 # Fixed diff settings, so a user's git config cannot hide added lines.
 _GIT = (
@@ -79,7 +115,10 @@ _SUPPRESSION = re.compile(
     r"(?::\s*[A-Z]+\d+(?:[\s,]+[A-Z]+\d+)*|\[[^\]]*\])?)",
     re.IGNORECASE,
 )
-_KINDS = {"n": "noqa", "r": "noqa", "f": "noqa", "t": "type-ignore", "m": "type-ignore"}
+# pylint honours a pragma anywhere in a comment, not only after the "#".
+_PYLINT_PRAGMA = re.compile(r"\bpylint\s*:", re.IGNORECASE)
+# By a directive's first two letters; anything else is ``pragma: no cover``.
+_KINDS = {"no": "noqa", "ru": "noqa", "fl": "noqa", "ty": "type-ignore", "my": "type-ignore"}
 _JUSTIFIED = re.compile(r"\s*(?:#\s*)?(?:-|--|\u2014)\s*[^\s#]")
 _COMPLEXITY = re.compile(r"\((\d+) > 0\)")
 _HUNK = re.compile(r"^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
@@ -95,6 +134,11 @@ class Finding:
     line: int
     code: str
     message: str = ""
+    end: int = 0
+
+    def lines(self) -> range:
+        """The lines the finding covers: one, or a duplicated block's range."""
+        return range(self.line, max(self.end, self.line) + 1)
 
     def __str__(self) -> str:
         return f"{self.path}:{self.line}:{self.code} {self.message}".rstrip()
@@ -212,15 +256,77 @@ def suppressions(path: str, text: str) -> Iterator[tuple[str, Finding]]:
     for token in tokens:
         if token.type != tokenize.COMMENT:
             continue
+        message = token.string.strip()[:80]
         for match in _SUPPRESSION.finditer(token.string):
             directive = match["file"] or match["line"]
             justified = bool(match["line"]) and _JUSTIFIED.match(token.string, match.end())
             code = "justified" if justified else "unjustified"
-            message = token.string.strip()[:80]
             yield (
-                _KINDS.get(directive[0].lower(), "no-cover"),
+                _KINDS.get(directive[:2].lower(), "no-cover"),
                 Finding(path, token.start[0], code, message),
             )
+        if _PYLINT_PRAGMA.search(token.string):
+            yield "noqa", Finding(path, token.start[0], "unjustified", message)
+
+
+def vulture_findings(root: Path, python: Sequence[str]) -> list[Finding]:
+    """Dead code in src/ and quality/, with tests/ and the whitelist counted as uses."""
+    scanned = [p for p in python if p.split("/", 1)[0] in (*STRICT_DIRECTORIES, "tests")]
+    if not scanned:
+        return []
+    report = _tool(root, "vulture", *_VULTURE, "--", *scanned, ok=(0, 3))
+    found = []
+    for line in report.splitlines():
+        match = _VULTURE_LINE.match(line)
+        if match is None:
+            raise ToolError(f"unexpected vulture line: {line}")
+        path = _relative(match["path"], root)
+        if _strict([path]):
+            found.append(Finding(path, int(match["line"]), "vulture", match["message"]))
+    return found
+
+
+def module_paths(paths: Sequence[str]) -> dict[str, str | None]:
+    """Each file's dotted module name as pylint reports it (under src/, or a bare file name);
+    ``None`` for a bare name two files share."""
+    names: dict[str, str | None] = {}
+    for path in paths:
+        dotted = path.removesuffix(".py").removesuffix("/__init__").removeprefix("src/")
+        names[dotted.replace("/", ".")] = path
+        bare = Path(dotted).name
+        names[bare] = path if names.get(bare, path) == path else None
+    return names
+
+
+def duplicate_ranges(message: Mapping[str, str], names: Mapping[str, str | None]) -> list[Finding]:
+    """The ranges of one pylint duplicate-code message, each spanning its lines."""
+    ranges = [m for line in message["message"].splitlines() if (m := _DUPLICATE_RANGE.match(line))]
+    if message["symbol"] != "duplicate-code" or len(ranges) < _COPIES:
+        raise ToolError(f"unreadable duplicate-code report: {message['message'][:200]}")
+    where = ", ".join(f"{m['module']}:{int(m['start']) + 1}" for m in ranges)
+    found = []
+    for match in ranges:
+        path = names.get(match["module"])
+        if path is None:
+            raise ToolError(f"pylint reported an unknown or ambiguous module: {match['module']}")
+        start = int(match["start"]) + 1
+        found.append(Finding(path, start, "duplicate-code", where, end=int(match["end"])))
+    return found
+
+
+def duplicate_findings(root: Path, paths: Sequence[str]) -> list[Finding]:
+    """One finding per range of a block pylint finds repeated."""
+    if not paths:
+        return []
+    # pylint's exit code is a bit mask; 1 (fatal) and 32 (usage error) mean no result.
+    usable = tuple(code for code in range(32) if not code & 1)
+    report = _tool(root, "pylint", *_DUPLICATES, "--", *paths, ok=usable)
+    names = module_paths(paths)
+    return [
+        found
+        for message in json.loads(report or "[]")
+        for found in duplicate_ranges(message, names)
+    ]
 
 
 def import_ignores(root: Path) -> list[Finding]:
@@ -246,7 +352,10 @@ def measure(root: Path) -> Measurement:
         ruff = pool.submit(ruff_findings, root, files, "--config", RUFF_CONFIG.as_posix())
         mypy = pool.submit(mypy_findings, root, _strict(python))
         scored = pool.submit(function_complexity, root, _strict(python))
-        versions = {tool: pool.submit(_version, root, tool) for tool in ("ruff", "mypy")}
+        dead = pool.submit(vulture_findings, root, python)
+        repeated = pool.submit(duplicate_findings, root, _strict(python))
+        tools = ("ruff", "mypy", "vulture", "pylint")
+        versions = {tool: pool.submit(_version, root, tool) for tool in tools}
     measurement = Measurement(findings={metric: [] for metric in _ALWAYS_RECORDED})
     for finding in ruff.result():
         measurement.findings.setdefault(f"ruff:{finding.code}", []).append(finding)
@@ -262,6 +371,8 @@ def measure(root: Path) -> Measurement:
             if finding.code == "unjustified":
                 measurement.findings["suppressions:unjustified"].append(finding)
     measurement.findings["importlinter:ignore_imports"] = import_ignores(root)
+    measurement.findings["vulture"] = dead.result()
+    measurement.findings["duplicate-code"] = repeated.result()
     measurement.tools = {tool: version.result() for tool, version in versions.items()}
     return measurement
 
@@ -346,17 +457,17 @@ def unclean_new_code(measurement: Measurement, changes: Changes) -> list[Finding
     checked = [
         finding
         for metric, found in measurement.findings.items()
-        if metric.startswith("ruff:") or metric in ("mypy-strict", "suppressions:unjustified")
+        if metric.startswith("ruff:") or metric in _HELD_FOR_NEW_CODE
         for finding in found
     ]
-    return sorted(
-        {
-            finding
-            for finding in checked
-            if finding.path in changes.added_files
-            or finding.line in changes.added_lines.get(finding.path, frozenset())
-        }
-    )
+    return sorted({finding for finding in checked if _is_new(finding, changes)})
+
+
+def _is_new(finding: Finding, changes: Changes) -> bool:
+    if finding.path in changes.added_files:
+        return True
+    added = changes.added_lines.get(finding.path, frozenset())
+    return any(line in added for line in finding.lines())
 
 
 def _suspects(metric: str, measurement: Measurement, changes: Changes) -> list[Finding]:
@@ -366,7 +477,7 @@ def _suspects(metric: str, measurement: Measurement, changes: Changes) -> list[F
         found = [f for f in measurement.over_limit if f.path == path]
     else:
         found = measurement.findings.get(metric, [])
-    added = [f for f in found if f.line in changes.added_lines.get(f.path, frozenset())]
+    added = [f for f in found if _is_new(f, changes)]
     return added or found
 
 
@@ -412,7 +523,7 @@ def _write_baseline(
         return 1
     if refused:
         print("ratchet: refusing to rebaseline: it may only tighten, and --loosen")
-        print("accepts only new Ruff rule codes. Rose:")
+        print("accepts only new Ruff rule codes or newly adopted tools. Rose:")
         for metric, old, new in refused:
             print(f"  {metric} {old} -> {new}")
         return REGRESSION
@@ -437,7 +548,9 @@ def run(root: Path, base: str, write: str | None, env: Mapping[str, str]) -> int
         loosened = [
             rise
             for rise in rising
-            if write == "loosen" and rise[0].startswith("ruff:") and rise[0] not in metrics
+            if write == "loosen"
+            and rise[0] not in metrics
+            and not rise[0].startswith("complexity:")
         ]
         refused = [rise for rise in rising if rise not in loosened]
         allowed = env.get("ALLOW_ORACLE_CHANGE") == "1"
