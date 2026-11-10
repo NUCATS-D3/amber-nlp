@@ -2,7 +2,8 @@
 
 - Status: accepted (Will Thompson, 2026-11-09)
 - Date: 2026-11-09
-- Related: [CLAUDE.md invariant 1](../../CLAUDE.md), amber-bpr.8 (Mention scope), amber-7q0.2
+- Related: [CLAUDE.md invariant 1](../../CLAUDE.md), amber-bpr.8 (Mention scope), amber-7q0.2,
+  amber-73l
 
 ## Context
 
@@ -16,9 +17,9 @@ offset could enter the evidence graph looking verified.
 - `Inclusion` and `Mention` can only be minted inside `amber.grounding` (`exact_quote`,
   `exact_mention`, `cite_mention`), after the quote has been checked against the source.
 - Their validators require a private context object held by the minting function, so plain
-  construction and `model_validate` are refused. `Mention` also refuses `model_construct`,
-  which skips validators; `Inclusion` does not yet, and gains the same override in amber-73l.
-  Until then, graph registration re-grounds every inclusion it receives.
+  construction and `model_validate` are refused. Both also refuse `model_construct`, which
+  skips validators (`Inclusion` since amber-73l). `model_copy(update=...)` still writes fields
+  without validating (amber-8gm); the boundaries below re-ground any span they receive.
 - Every other path that receives spans (graph validation, bundle loading, the loupe adapter, and
   the human-review import) re-grounds them through those functions rather than trusting stored
   offsets. Human review therefore adds no second minting path: a reviewed span is grounded like
@@ -32,10 +33,9 @@ offset could enter the evidence graph looking verified.
 - `src/amber/schemas/evidence.py` (`_INCLUSION_MINT_CONTEXT`) and
   `src/amber/schemas/mentions.py` (`_MENTION_MINT_CONTEXT`) enforce the rule; `_mint_inclusion`
   and `_mint_mention` are called only from `src/amber/grounding.py`.
-- `tests/test_invariants.py::test_inclusion_cannot_be_constructed_outside_grounding` and
-  `tests/test_mentions.py::test_mention_cannot_be_constructed_outside_grounding` try the bypasses
-  (the mention test covers all three; the inclusion test covers plain construction until
-  amber-73l). The conformance catalog's MEN-01 and MEN-02 pin this inside amber, and MEN-11
+- `tests/test_invariants.py::test_inclusion_refuses_every_bypass_of_grounding` and
+  `tests/test_mentions.py::test_mention_cannot_be_constructed_outside_grounding` try all three
+  bypasses. The conformance catalog's MEN-01 and MEN-02 pin this inside amber, and MEN-11
   checks implementations from the outside.
 - Implementations must call the grounding tools and handle `GroundingFailure`; they cannot
   "fix up" a span by constructing it.

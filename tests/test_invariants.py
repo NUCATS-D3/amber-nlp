@@ -108,6 +108,29 @@ def test_inclusion_cannot_be_constructed_outside_grounding() -> None:
         )
 
 
+def test_inclusion_refuses_every_bypass_of_grounding() -> None:
+    source = make_source("verified text")
+    payload = {
+        "evidence_id": inclusion_id(source_id=source.source_id, start=0, end=8),
+        "source_id": source.source_id,
+        "start": 0,
+        "end": 8,
+        "quote": "verified",
+        "alignment": "exact",
+        "alignment_score": 1.0,
+    }
+    with pytest.raises(ValidationError, match="verified grounding path"):
+        Inclusion(**payload)
+    with pytest.raises(ValidationError, match="verified grounding path"):
+        Inclusion.model_validate(payload)
+    with pytest.raises(ValidationError, match="verified grounding path"):
+        Inclusion.model_validate(payload, context={"inclusion_minter": object()})
+    with pytest.raises(TypeError, match="verified grounding path"):
+        Inclusion.model_construct(**payload)
+    with pytest.raises(TypeError, match="verified grounding path"):
+        Inclusion.model_construct()
+
+
 def test_grounded_inclusion_id_changes_with_offsets() -> None:
     source = make_source("same same")
     first = exact_quote(source, "same", hint_start=0)
