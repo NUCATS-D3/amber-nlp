@@ -53,6 +53,8 @@ ratchet: ## Violation counts against quality/baseline.json; new code must be cle
 
 quality-fast: lint imports ratchet ## Ruff, import contracts, and the ratchet (seconds)
 
+# deptry scans src/ only (scripts/ and quality/ are dev tooling); DEP002=amber ignores the
+# reference extra's self-reference, amber[bundles].
 deps: ## Declared dependencies match src imports (deptry); print dependency changes
 	$(RUN) deptry src --optional-dependencies-dev-groups dev --known-first-party amber --per-rule-ignores DEP002=amber
 	$(RUN) python quality/dep_gate.py --base $(RATCHET_BASE)

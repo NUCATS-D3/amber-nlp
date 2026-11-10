@@ -36,6 +36,8 @@ LOCK = """version = 1
 [[package]]
 name = "pydantic"
 version = "2.7.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.example.invalid/pydantic-2.7.0.tar.gz", hash = "sha256:aaaa" }
 
 [[package]]
 name = "pytest"
@@ -118,7 +120,8 @@ def test_a_locked_version_change_is_a_dependency_change(
 ) -> None:
     _edit(repo, 'version = "8.0.0"', 'version = "8.1.0"', name="uv.lock")
     assert _gate(repo, "--enforce") == 2
-    assert "~ uv.lock: pytest 8.0.0 -> 8.1.0" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "~ uv.lock: pytest 8.0.0" in out and "-> 8.1.0" in out
 
 
 def test_names_compare_normalized(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -157,3 +160,92 @@ def test_committed_changes_count_too(repo: Path, capsys: pytest.CaptureFixture[s
 def test_an_unknown_base_is_an_error(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert dep_gate.main(["--root", str(repo), "--base", "nowhere"]) == 1
     assert "nowhere" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        (
+            'source = { registry = "https://pypi.org/simple" }',
+            'source = { git = "https://example.invalid/fork?tag=v2" }',
+        ),
+        ('hash = "sha256:aaaa"', 'hash = "sha256:bbbb"'),
+    ],
+    ids=["source", "hash"],
+)
+def test_a_lock_source_or_hash_change_at_the_same_version_is_a_change(
+    repo: Path, capsys: pytest.CaptureFixture[str], old: str, new: str
+) -> None:
+    _edit(repo, old, new, name="uv.lock")
+    assert _gate(repo, "--enforce") == 2
+    assert "~ uv.lock: pydantic 2.7.0" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "name"),
+    [
+        (
+            'version = "8.0.0"\n',
+            'version = "8.0.0"\n\n[[package]]\nname = "x"\nversion = "1"\n',
+            "uv.lock",
+        ),
+        ('[[package]]\nname = "pytest"\nversion = "8.0.0"\n', "", "uv.lock"),
+        ('"pydantic>=2.7"', "\"pydantic>=2.7; python_version >= '3.12'\"", "pyproject.toml"),
+        ('"pydantic>=2.7"', '"pydantic[email]>=2.7"', "pyproject.toml"),
+        (
+            '"pydantic>=2.7"',
+            '"torch @ https://example.invalid/t.whl", "pydantic>=2.7"',
+            "pyproject.toml",
+        ),
+        (
+            '"pydantic>=2.7", "Python_Ulid>=2"]',
+            '"pydantic @ https://example.invalid/p.whl", "pydantic>=2.7", "Python_Ulid>=2"]',
+            "pyproject.toml",
+        ),
+        ('docs = ["mkdocs"]', 'docs = ["mkdocs", {include-group = "other"}]', "pyproject.toml"),
+        (
+            "[build-system]",
+            '[tool.uv.sources]\npydantic = { git = "https://example.invalid/f" }\n\n[build-system]',
+            "pyproject.toml",
+        ),
+        (
+            "[build-system]",
+            '[tool.hatch.build.hooks.custom]\ndependencies = ["x"]\n\n[build-system]',
+            "pyproject.toml",
+        ),
+    ],
+    ids=[
+        "lock-added",
+        "lock-removed",
+        "marker",
+        "extra",
+        "new-name",
+        "same-name-twice",
+        "include-group",
+        "uv-sources",
+        "hatch-hook",
+    ],
+)
+def test_other_dependency_changes_are_caught(
+    repo: Path, capsys: pytest.CaptureFixture[str], old: str, new: str, name: str
+) -> None:
+    _edit(repo, old, new, name=name)
+    assert _gate(repo, "--enforce") == 2, capsys.readouterr().out
+
+
+def test_whitespace_alone_is_not_a_change(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _edit(repo, '"pydantic>=2.7"', '"pydantic >= 2.7"')
+    assert _gate(repo, "--enforce") == 0, capsys.readouterr().out
+
+
+def test_a_missing_lock_at_the_base_is_an_error(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _git(repo, "rm", "-q", "uv.lock")
+    _git(repo, "commit", "-qm", "no lock")
+    _git(repo, "switch", "-q", "main")
+    _git(repo, "merge", "-q", "--ff-only", "work")
+    _git(repo, "switch", "-q", "work")
+    (repo / "uv.lock").write_text(LOCK)
+    assert _gate(repo, "--enforce") == 1
+    assert "uv.lock" in capsys.readouterr().out
