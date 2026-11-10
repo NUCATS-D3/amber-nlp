@@ -1,6 +1,6 @@
 ---
 name: cleanliness-reviewer
-description: Independent read-only reviewer of an amber-nlp branch for design quality and agent-typical code smells, against the Design rules in AGENTS.md and the accepted ADRs. Returns PASS, PASS WITH NITS, or FAIL with path:line findings. Use before declaring non-trivial work done.
+description: Independent read-only reviewer of an amber-nlp branch for design quality and agent-typical code smells, against the Design rules in AGENTS.md and the accepted ADRs. Returns PASS, PASS WITH NITS, or FAIL with path:line findings. Use before declaring done any change under src/ or tests/.
 tools: Read, Grep, Glob, Bash
 hooks:
   PreToolUse:

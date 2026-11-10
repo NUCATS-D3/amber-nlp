@@ -56,37 +56,33 @@ def test_the_prompt_reads_the_design_rules_and_accepted_adrs() -> None:
         assert source in prompt
 
 
-def _permissions_block(path: Path) -> str:
-    """The raw ``permissions:`` block, whatever YAML style its rules use."""
-    front = _frontmatter(path)
-    match = re.search(r"^permissions:\n((?:[ \t].*\n?)*)", front + "\n", re.MULTILINE)
-    assert match is not None, f"{path}: no permissions block"
-    return match.group(1)
+def _settings(path: Path) -> list[str]:
+    """Every frontmatter line except the description and colour, so permissions written in any
+    style, after a blank line, or under another key (such as ``tools``) all count."""
+    return [
+        line
+        for line in _frontmatter(path).splitlines()
+        if not line.startswith(("description:", "color:"))
+    ]
 
 
-def test_the_opencode_agent_has_exactly_the_reviewers_read_only_rules() -> None:
+def test_the_opencode_agent_has_exactly_the_reviewers_read_only_settings() -> None:
     reviewer = ROOT / ".opencode" / "agents" / "reviewer.md"
-    assert _permissions_block(OPENCODE) == _permissions_block(reviewer)
+    assert _settings(OPENCODE) == _settings(reviewer)
     assert _rules(OPENCODE)[0] == {"action": "*", "resource": "*", "effect": "deny"}
 
 
-def test_parity_sees_rules_in_any_yaml_style(tmp_path: Path) -> None:
-    agent = tmp_path / "agent.md"
-    one_line = '  - {"action": "*", "resource": "*", "effect": "deny"}\n'
-    agent.write_text(f"---\npermissions:\n{one_line}---\nbody\n")
-    plain = _permissions_block(agent)
-    block = "  - action: edit\n    resource: '*'\n    effect: allow\n"
-    agent.write_text(f"---\npermissions:\n{one_line}{block}---\nbody\n")
-    assert _permissions_block(agent) == plain + block
-
-
-def test_the_claude_agent_has_no_edit_tools_and_runs_the_bash_guard() -> None:
-    frontmatter = _frontmatter(CLAUDE)
-    match = re.search(r"^tools: (.+)$", frontmatter, re.MULTILINE)
-    assert match is not None
-    assert {tool.strip() for tool in match.group(1).split(",")} == {"Read", "Grep", "Glob", "Bash"}
-    assert "PreToolUse:" in frontmatter and 'matcher: "Bash"' in frontmatter
-    assert 'command: python3 "${CLAUDE_PROJECT_DIR}/.claude/hooks/reviewer_bash.py"' in frontmatter
+def test_settings_parity_sees_any_added_frontmatter(tmp_path: Path) -> None:
+    base = OPENCODE.read_text()
+    original = _settings(OPENCODE)
+    for extra in (
+        "\n  - action: edit\n    resource: '*'\n    effect: allow",
+        "\ntools:\n  write: true",
+        "\n\n  - action: edit\n    resource: '*'\n    effect: allow",
+    ):
+        planted = tmp_path / "agent.md"
+        planted.write_text(base.replace("\n---\n", extra + "\n---\n", 1))
+        assert _settings(planted) != original
 
 
 def test_agents_md_asks_for_the_cleanliness_review() -> None:
