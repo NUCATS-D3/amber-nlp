@@ -105,3 +105,71 @@ forbidden_modules =
     amber.reference.**
     amber.loupe
     amber.loupe.**
+
+[importlinter:contract:layers]
+name = Plugins over the framework over the core, each layer importing only the layers below it
+type = layers
+# ADR 0001 (amber-7q0.3). One line per layer, top first: "|" separates modules that may not
+# import each other, ":" modules that may. Plugins sit on top (the conformance kit uses the
+# reference implementations, and both use Parquet bundles). amber.providers shares a layer with
+# amber.interfaces because it names the Provider and PolicyGate protocols for type checking.
+# docs/architecture/deps.md draws this graph (scripts/deps_graph.py).
+layers =
+    amber.conformance
+    amber.reference
+    amber.mlflow_ext | amber.loupe | amber.bundles.parquet
+    amber.bundles.core : amber.span_scoring
+    amber.interfaces : amber.providers
+    amber.labeling : amber.review
+    amber.annotations : amber.extraction : amber.regression : amber.bundles.schema
+    amber.examples : amber.labels : amber.policy : amber.scoring : amber.wire : amber.evaluation : amber.rules
+    amber.tools
+    amber.cases
+    amber.graph
+    amber._graph_validation
+    amber.grounding | amber.graph_errors
+    amber.schemas
+    amber.ids
+broken_contract_guidance = Import downward only (docs/decisions/0001-dependency-layering.md); moving a module to another layer is a human decision.
+
+[importlinter:contract:no-implementations]
+name = amber imports no sibling project, model runtime, or provider SDK
+type = forbidden
+# ADR 0004 (amber-7q0.15): implementations live in lapidary, copal, and loupe.
+source_modules =
+    amber
+forbidden_modules =
+    lapidary
+    copal
+    loupe
+    torch
+    tensorflow
+    jax
+    transformers
+    sentence_transformers
+    huggingface_hub
+    mlx
+    mlx_lm
+    vllm
+    llama_cpp
+    spacy
+    sklearn
+    openai
+    anthropic
+    azure
+    pydantic_ai
+    litellm
+    ollama
+    databricks
+    google
+    boto3
+    botocore
+    mistralai
+    cohere
+    onnxruntime
+    ctranslate2
+    peft
+    accelerate
+    outlines
+    gliner
+broken_contract_guidance = amber owns contracts, not implementations (docs/decisions/0004-contracts-not-implementations.md): move this code to lapidary, copal, or loupe.

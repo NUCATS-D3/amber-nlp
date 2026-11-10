@@ -96,6 +96,7 @@ conformance = [
     { name = "pytest" },
 ]
 dev = [
+    { name = "grimp" },
     { name = "hypothesis" },
     { name = "import-linter" },
     { name = "mypy" },
@@ -119,6 +120,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "amber", extras = ["bundles"], marker = "extra == 'reference'" },
+    { name = "grimp", marker = "extra == 'dev'", specifier = ">=3.18" },
     { name = "hypothesis", marker = "extra == 'dev'" },
     { name = "import-linter", marker = "extra == 'dev'", specifier = ">=2.15" },
     { name = "mlflow", marker = "extra == 'tracking'", specifier = ">=3.17,<3.18" },

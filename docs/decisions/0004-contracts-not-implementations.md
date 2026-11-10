@@ -27,9 +27,9 @@ on none of them.
 ## Consequences
 
 - amber never imports lapidary, copal, loupe, a model runtime, or a dataset; nothing in
-  `src/amber` assumes a model family or device. Today review enforces this: the import-linter
-  contracts name only amber's own modules and a few optional stacks, and the core-install check
-  lists model runtimes but not the sibling projects. amber-7q0.15 adds them to the contracts.
+  `src/amber` assumes a model family or device. The `no-implementations` import contract
+  (amber-7q0.15) forbids lapidary, copal, loupe, model runtimes, and provider SDKs in every
+  amber module; review covers datasets and device assumptions.
 - A contract field or interface becomes stable only when a real consumer uses it and the
   conformance kit covers it; breaking changes ship with a migration note and an updated kit
   (the contract-change skill).

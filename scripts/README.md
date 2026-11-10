@@ -24,6 +24,10 @@
   the SHA-256 of reviewed content; line exceptions go in `ALLOWED`. All three lists are reviewed
   by a human (the script is protected). `make phi-scan`, `make check`, pre-commit, and CI run
   it.
+- `deps_graph.py` writes [docs/architecture/deps.md](../docs/architecture/deps.md), amber's
+  module dependencies as a Mermaid graph grouped by the `layers` import contract. Rerun it after
+  changing imports between modules; `tests/test_architecture.py` fails while the document is
+  stale.
 - `mutation_test.py` runs mutmut over the validation core (`annotations`, `cases`, `examples`,
   `_graph_validation`, `grounding`) weekly in CI
   ([mutation.yml](../.github/workflows/mutation.yml), which uploads the report and summarizes
