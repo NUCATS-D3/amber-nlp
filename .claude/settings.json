@@ -31,7 +31,10 @@
       "Edit(**/.gitattributes)",
       "Edit(**/ruff.toml)",
       "Edit(**/.ruff.toml)",
-      "Edit(/.importlinter)"
+      "Edit(/.importlinter)",
+      "Edit(/mypy.ini)",
+      "Edit(/.mypy.ini)",
+      "Edit(/quality/**)"
     ]
   },
   "hooks": {

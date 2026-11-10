@@ -43,6 +43,8 @@ SAMPLES = {
     r"^tools/opencode-check/": "tools/opencode-check/check-agents.mjs",
     r"^(?:.+/)?\.?ruff\.toml$": "src/.ruff.toml",
     r"^\.importlinter$": ".importlinter",
+    r"^quality/": "quality/baseline.json",
+    r"^\.?mypy\.ini$": "mypy.ini",
 }
 # Places outside the guard's view (a diff of this repository) that could switch the rules off:
 # local and global config, parent directories, agent folders OpenCode also reads, and the system

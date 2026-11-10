@@ -5,9 +5,10 @@
 - `check_protected_changes.py` reads a unified diff and fails when golden records, the catalog,
   conformance fixtures, harness files (agent hooks, agent definitions, the review prompt,
   pre-commit config, `Makefile`, CI workflows, itself, the identifier scan, the OpenCode SDK
-  check, and the lint and architecture config: `ruff.toml`/`.ruff.toml` at any depth,
-  `.importlinter`, `[tool.ruff` in any `pyproject.toml`), existing test assertions or test
-  names, any `conftest.py`, pytest configuration (`pyproject.toml` settings and entry points,
+  check, the lint, type, and architecture config: `ruff.toml`/`.ruff.toml` at any depth,
+  `mypy.ini`/`.mypy.ini`, `.importlinter`, `[tool.ruff` or `[tool.mypy` in any `pyproject.toml`,
+  and the quality ratchet and baseline in `quality/`), existing test assertions or test names,
+  any `conftest.py`, pytest configuration (`pyproject.toml` settings and entry points,
   `pytest.ini`, `tox.ini`, `setup.cfg`), `.gitattributes`, or the conformance pytest plugin
   change; when a test gains a line that skips, xfails, slow-marks, or stops tests or sets
   Hypothesis settings, or any Python file gains a collection hook; when a test module is renamed

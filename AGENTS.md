@@ -26,8 +26,9 @@ These are the oracle. They judge your work, so you never change them:
 - golden records, the conformance catalog, and conformance fixtures;
 - the verification harness: Claude Code hooks and settings, the OpenCode plugin and config,
   agent definitions and the review prompt, `.pre-commit-config.yaml`, `Makefile`, CI workflows,
-  the identifier scan, the OpenCode SDK check (`tools/opencode-check/`), the guard script, and the
-  lint and architecture config (`ruff.toml`, `.importlinter`);
+  the identifier scan, the OpenCode SDK check (`tools/opencode-check/`), the guard script, the
+  lint, type, and architecture config (`ruff.toml`, `mypy.ini`, `.importlinter`), and the quality
+  ratchet and its baseline (`quality/`);
 - every existing test assertion and test name, any `conftest.py`, pytest configuration
   (`pyproject.toml`, `pytest.ini`, `tox.ini`, `setup.cfg`), `.gitattributes`, and the
   conformance pytest plugin; added lines that skip, xfail, slow-mark, or stop tests, Hypothesis
@@ -171,8 +172,9 @@ fast test suite; `make help` lists the other targets. The underlying commands:
 uv sync --extra dev --extra tracking --extra bundles   # full development environment
 uv run pytest
 uv run ruff check . && uv run ruff format --check .
-uv run mypy src
+uv run mypy src                           # config in mypy.ini
 uv run lint-imports                       # dependency direction (.importlinter)
+make ratchet                              # violation counts may not rise (quality/baseline.json)
 uv lock --check
 bash scripts/mlflow_local.sh              # local MLflow server in .mlflow/
 ```
@@ -182,6 +184,13 @@ For the core-only installation check, see [tests/README.md](tests/README.md#ci).
 ## Coding and testing
 
 - Four-space indentation, 100-character lines. Ruff owns import order and formatting.
+- Every `# noqa`, `# type: ignore`, and `# pragma: no cover` counts against the ratchet
+  (`make ratchet`), and a new one needs a trailing justification: `# noqa: E741 - reason`, or
+  `# type: ignore[code]  # - reason` (mypy allows only a comment after an ignore). File-level
+  `# ruff: noqa`, `# flake8: noqa`, and `# mypy:` directives never count as justified. Added
+  files and added lines must have no Ruff finding and, under `src/` and `quality/`, no
+  `mypy --strict` error; no function there may exceed complexity 10 unless its module already
+  did.
 - `snake_case` for modules and functions, `PascalCase` for models.
 - Tests are `tests/test_*.py`, run offline on CPU with invented data only.
 - Every invariant has an adversarial test covering:
