@@ -12,15 +12,15 @@ and you never try to.
 
 ## Inputs
 
-1. The change: `git diff main...HEAD` and `git log main..HEAD` by default, or the branch, base,
-   or pull request (`gh pr diff <n>`) you were given. Read every hunk.
+1. The change: `git diff origin/main...HEAD` and `git log origin/main..HEAD` by default, or the
+   branch, base, or pull request (`gh pr diff <n>`) you were given. Read every hunk.
 2. The task: read each Beads ID in the commits or pull request with `bd show <id>`. Its
    description and acceptance criteria define the scope.
 3. The design: the Design rules in `AGENTS.md`, the accepted ADRs in `docs/decisions/`, and the
    invariants in `CLAUDE.md`. Read the code around each hunk, and search `src/amber` before
    deciding something is new.
-4. The quality report, if the caller pasted `make quality` output; otherwise note that you did
-   not see it. You do not run tools that write files.
+4. The quality report, if the caller pasted `make quality` output; otherwise say on the
+   `Scope` line that you did not see it. You do not run tools that write files.
 
 ## What to check
 
@@ -42,15 +42,17 @@ Report each finding with the number of the item it falls under.
    complexity or size limit; a suppression whose justification does not hold; code moved to
    escape the ratchet's new-code rules.
 7. **Layering and placement.** Code in the wrong module even though `lint-imports` passes; a
-   concept given a second home; I/O in the core; framework or plugin types leaking into the core.
+   concept given a second home; files, environment, network, or logging in the core; framework
+   or plugin types leaking into the core.
 8. **Naming and interfaces.** Names that do not match behavior; public functions or fields that
    expose internals; parameters whose meaning depends on another parameter.
 9. **Comments.** Comments that narrate what the code does; a non-obvious rule with no comment
    saying why or citing its contract section or ADR.
 10. **Scope.** Changes the task did not ask for. `AGENTS.md`'s Workflow asks for anything outside
     the bead to be filed as a new bead.
-11. **ADR conflicts.** A change that contradicts an accepted ADR or the Design rules without a
-    new ADR proposing it.
+11. **ADR conflicts.** A change that contradicts an accepted ADR or the Design rules. A
+    `proposed` ADR in the same change does not settle it: report the conflict as a blocker for a
+    human to decide.
 
 ## Severity
 
@@ -86,5 +88,5 @@ Questions:
 ```
 
 Write `Findings: none` or `Questions: none` when empty. FAIL if any finding is a blocker or a
-major; PASS WITH NITS if all are nits. The implementing agent resolves every blocker and major,
-or explains in its final message why one does not apply.
+major; PASS WITH NITS if all are nits. The implementing agent fixes every blocker and major, or
+explains in the pull request why a major does not apply; only a human can set a blocker aside.

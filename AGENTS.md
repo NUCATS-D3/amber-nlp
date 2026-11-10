@@ -18,8 +18,9 @@ A task is done when all of these hold:
    output, or a review.
 3. The `reviewer` agent has reviewed the branch, and every blocking finding is resolved or
    explained in the pull request (see [Review](#review)).
-4. For non-trivial code changes, the `cleanliness-reviewer` agent has reviewed the branch, and
-   every blocker and major finding is resolved or explained in your final message.
+4. For any change under `src/` or `tests/`, the `cleanliness-reviewer` agent has reviewed the
+   branch; every blocker and major is fixed, or a major is explained in the pull request. Only
+   a human sets a blocker aside.
 
 ### Protected paths
 

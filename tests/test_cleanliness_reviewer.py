@@ -56,10 +56,28 @@ def test_the_prompt_reads_the_design_rules_and_accepted_adrs() -> None:
         assert source in prompt
 
 
+def _permissions_block(path: Path) -> str:
+    """The raw ``permissions:`` block, whatever YAML style its rules use."""
+    front = _frontmatter(path)
+    match = re.search(r"^permissions:\n((?:[ \t].*\n?)*)", front + "\n", re.MULTILINE)
+    assert match is not None, f"{path}: no permissions block"
+    return match.group(1)
+
+
 def test_the_opencode_agent_has_exactly_the_reviewers_read_only_rules() -> None:
     reviewer = ROOT / ".opencode" / "agents" / "reviewer.md"
-    assert _rules(OPENCODE) == _rules(reviewer)
+    assert _permissions_block(OPENCODE) == _permissions_block(reviewer)
     assert _rules(OPENCODE)[0] == {"action": "*", "resource": "*", "effect": "deny"}
+
+
+def test_parity_sees_rules_in_any_yaml_style(tmp_path: Path) -> None:
+    agent = tmp_path / "agent.md"
+    one_line = '  - {"action": "*", "resource": "*", "effect": "deny"}\n'
+    agent.write_text(f"---\npermissions:\n{one_line}---\nbody\n")
+    plain = _permissions_block(agent)
+    block = "  - action: edit\n    resource: '*'\n    effect: allow\n"
+    agent.write_text(f"---\npermissions:\n{one_line}{block}---\nbody\n")
+    assert _permissions_block(agent) == plain + block
 
 
 def test_the_claude_agent_has_no_edit_tools_and_runs_the_bash_guard() -> None:
