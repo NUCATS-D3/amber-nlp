@@ -68,7 +68,7 @@ pre-commit guard and CI's protected-artifacts check catch any such change in a d
   human's approval. (Regression baselines live with consumers such as lapidary, which protect
   their own.)
 - Setting `ALLOW_ORACLE_CHANGE`, committing with `--no-verify`, or adding the
-  `contract-approved` label.
+  `contract-approved` or `dependency-change` label.
 
 ### Workflow
 
@@ -259,6 +259,8 @@ dependency, or wire-format changes, and their migrations.
 Work lands on `main` through pull requests. CI's "Protected contract artifacts" check fails a
 pull request that changes a [protected path](#protected-paths) until a human adds the
 `contract-approved` label. The same guard runs as a pre-commit hook (`make hooks`), where only a
-human sets `ALLOW_ORACLE_CHANGE=1`. An agent may merge its own pull request once every check
-passes and the protected-artifacts check passed without that label; anything that needs the
-label waits for a human.
+human sets `ALLOW_ORACLE_CHANGE=1`. The same check fails on any change to declared or locked
+dependencies (`quality/dep_gate.py`; `make deps` prints the diff) until a human adds the
+`dependency-change` label. An agent may merge its own pull request once every check passes and
+the protected-artifacts check passed without either label; anything that needs a label waits
+for a human.

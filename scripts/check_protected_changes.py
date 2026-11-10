@@ -97,7 +97,8 @@ _PYTEST_CONFIG = re.compile(
     r"|required_plugins|xfail_strict|minversion)\b"
     # Ruff reads [tool.ruff] from the closest pyproject.toml (amber-7q0.1); mypy falls back to
     # [tool.mypy] when mypy.ini is missing (amber-7q0.14).
-    r"|^\s*\[\[?tool\.(?:ruff|mypy)"
+    # deptry reads [tool.deptry] there too (amber-7q0.7).
+    r"|^\s*\[\[?tool\.(?:ruff|mypy|deptry)"
     # A hunk does not say which TOML section it is in, so any line shaped like an entry point
     # (a module:attr target, or an amber module) counts: pytest11 entries load plugins.
     r"""|^\s*[\w.-]+\s*=\s*(["'])(?:[\w.]+:[\w.]+|amber(?:\.\w+)+)\1\s*$"""

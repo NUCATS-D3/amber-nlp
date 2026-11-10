@@ -740,3 +740,12 @@ def test_mypy_config_in_any_pyproject_is_found(repo: Path) -> None:
     _git(repo, "commit", "-q", "-m", "nested")
     nested.write_text(nested.read_text() + "\n[[tool.mypy.overrides]]\nignore_errors = true\n")
     assert _found(repo) == ["src/amber/pyproject.toml:4"]
+
+
+def test_deptry_config_in_any_pyproject_is_found(repo: Path) -> None:
+    nested = repo / "src" / "amber" / "pyproject.toml"
+    nested.write_text("[project]\nname = 'x'\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "nested")
+    nested.write_text(nested.read_text() + "\n[tool.deptry]\nexclude = ['src']\n")
+    assert _found(repo) == ["src/amber/pyproject.toml:4"]

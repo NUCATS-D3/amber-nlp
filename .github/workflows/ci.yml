@@ -31,6 +31,12 @@ jobs:
         run: |
           git diff --unified=0 --text --no-ext-diff --no-textconv "$BASE_SHA" HEAD > "$RUNNER_TEMP/changes.diff"
           python3 scripts/check_protected_changes.py "$RUNNER_TEMP/changes.diff" --labels "$LABELS"
+      - name: Require the dependency-change label for dependency changes (amber-7q0.7)
+        if: ${{ !cancelled() }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: python3 quality/dep_gate.py --base "$BASE_SHA" --labels "$LABELS" --enforce
 
   core-install:
     name: Core install (Python ${{ matrix.python }})
