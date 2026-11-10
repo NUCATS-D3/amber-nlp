@@ -292,7 +292,9 @@ def changed_since(root: Path, base: str) -> Changes:
             path = next(fields)
             if status == "A":
                 added.add(path)
-    lines = added_lines(_git(root, "diff", "-U0", "--no-color", "--no-ext-diff", merge_base))
+    prefixes = ("--src-prefix=a/", "--dst-prefix=b/")
+    diff = _git(root, "diff", "-U0", "--no-color", "--no-ext-diff", *prefixes, merge_base)
+    lines = added_lines(diff)
     for path in _listed(root, "ls-files", "-z", "--others", "--exclude-standard"):
         added.add(path)
         text = (root / path).read_text(encoding="utf-8", errors="replace")

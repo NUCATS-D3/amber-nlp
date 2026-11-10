@@ -424,7 +424,15 @@ def test_a_gitignored_tracked_file_is_still_linted(
     assert "src/pkg/hidden.py:1:F401" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("config", [["diff.mnemonicPrefix", "true"], ["diff.noprefix", "true"]])
+@pytest.mark.parametrize(
+    "config",
+    [
+        ["diff.mnemonicPrefix", "true"],
+        ["diff.noprefix", "true"],
+        ["diff.srcPrefix", "x/"],
+        ["diff.dstPrefix", "y/"],
+    ],
+)
 def test_added_lines_do_not_depend_on_git_diff_config(
     repo: Path, capsys: pytest.CaptureFixture[str], config: list[str]
 ) -> None:
