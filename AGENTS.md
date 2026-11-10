@@ -168,7 +168,7 @@ scripts/                  core-install check and local MLflow launcher
 
 `make check` runs sync, lint, mypy, lint-imports, the lock check, the identifier scan, the
 fast test suite, and `make quality` (Ruff, the import contracts, and the ratchet; pass
-`BASE=<ref>` to `make ratchet` without an `origin/main`); `make help` lists the other targets.
+`RATCHET_BASE=<ref>` to `make ratchet` without an `origin/main`); `make help` lists the other targets.
 The underlying commands:
 
 ```sh

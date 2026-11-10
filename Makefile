@@ -45,11 +45,11 @@ test: ## Every test, including slow ones
 check: sync lint typecheck imports lock phi-scan test-fast quality ## Definition of done
 	@echo "check ok"
 
-# New code is measured from the merge base with BASE; override it without an origin/main.
-BASE ?= origin/main
+# New code is measured from the merge base with RATCHET_BASE; set it without an origin/main.
+RATCHET_BASE ?= origin/main
 
 ratchet: ## Violation counts against quality/baseline.json; new code must be clean
-	$(RUN) python quality/ratchet.py --base $(BASE)
+	$(RUN) python quality/ratchet.py --base $(RATCHET_BASE)
 
 quality-fast: lint imports ratchet ## Ruff, import contracts, and the ratchet (seconds)
 

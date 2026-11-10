@@ -652,6 +652,6 @@ def test_the_report_and_summary_survive_an_unexpected_error(
 
 def test_make_passes_a_base_through_to_the_ratchet() -> None:
     root = Path(__file__).parents[1]
-    dry = ["make", "-n", "ratchet", "BASE=main"]
+    dry = ["make", "-n", "ratchet", "RATCHET_BASE=main"]
     done = subprocess.run(dry, cwd=root, capture_output=True, text=True, check=True)
     assert "quality/ratchet.py --base main" in done.stdout
