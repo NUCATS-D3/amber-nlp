@@ -2,7 +2,8 @@
 
 - Status: accepted (Will Thompson, 2026-11-09)
 - Date: 2026-11-09
-- Related: [CLAUDE.md invariant 1](../../CLAUDE.md), amber-bpr.8 (Mention scope), amber-7q0.2
+- Related: [CLAUDE.md invariant 1](../../CLAUDE.md), amber-bpr.8 (Mention scope), amber-7q0.2,
+  amber-73l
 
 ## Context
 
@@ -17,7 +18,8 @@ offset could enter the evidence graph looking verified.
   `exact_mention`, `cite_mention`), after the quote has been checked against the source.
 - Their validators require a private context object held by the minting function, so plain
   construction and `model_validate` are refused. Both also refuse `model_construct`, which
-  skips validators (`Inclusion` since amber-73l).
+  skips validators (`Inclusion` since amber-73l). `model_copy(update=...)` still writes fields
+  without validating (amber-8gm); the boundaries below re-ground any span they receive.
 - Every other path that receives spans (graph validation, bundle loading, the loupe adapter, and
   the human-review import) re-grounds them through those functions rather than trusting stored
   offsets. Human review therefore adds no second minting path: a reviewed span is grounded like
