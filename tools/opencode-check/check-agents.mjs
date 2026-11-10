@@ -25,8 +25,9 @@ for (const name of files) {
     if (!text.startsWith("---\n") || end < 0) throw new Error("no frontmatter")
     const agent = decode(parse(text.slice(4, end)))
     const rules = agent.permissions ?? []
-    if (name === "reviewer.md" && (rules[0]?.action !== "*" || rules[0]?.effect !== "deny")) {
-      throw new Error("the reviewer must deny everything first")
+    const readOnly = ["reviewer.md", "cleanliness-reviewer.md"]
+    if (readOnly.includes(name) && (rules[0]?.action !== "*" || rules[0]?.effect !== "deny")) {
+      throw new Error("a read-only reviewer must deny everything first")
     }
     console.log(`${name}: mode ${agent.mode ?? "primary"}, ${rules.length} permission rules`)
   } catch (error) {

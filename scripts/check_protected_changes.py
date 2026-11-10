@@ -60,6 +60,7 @@ _PROTECTED = (
     # .opencode directory it discovers, and config from any opencode.json(c) or .opencode one.
     re.compile(r"^(?:.+/)?\.opencode/(?:plugins?|agents?|modes?)/"),
     re.compile(r"^docs/review_prompt\.md$"),
+    re.compile(r"^docs/cleanliness_review_prompt\.md$"),
     re.compile(r"^(?:.+/)?opencode\.jsonc?$"),
     re.compile(r"^\.pre-commit-config\.yaml$"),
     re.compile(r"^\.github/workflows/"),

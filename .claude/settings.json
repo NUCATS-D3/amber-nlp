@@ -17,6 +17,7 @@
       "Edit(~/.claude/agents/**)",
       "Edit(~/.config/opencode/**)",
       "Edit(/docs/review_prompt.md)",
+      "Edit(/docs/cleanliness_review_prompt.md)",
       "Edit(/.pre-commit-config.yaml)",
       "Edit(/.github/workflows/**)",
       "Edit(/Makefile)",

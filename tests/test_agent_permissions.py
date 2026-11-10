@@ -30,6 +30,7 @@ SAMPLES = {
     r"^\.claude/agents/": ".claude/agents/reviewer.md",
     r"^(?:.+/)?\.opencode/(?:plugins?|agents?|modes?)/": "src/.opencode/mode/build.md",
     r"^docs/review_prompt\.md$": "docs/review_prompt.md",
+    r"^docs/cleanliness_review_prompt\.md$": "docs/cleanliness_review_prompt.md",
     r"^(?:.+/)?opencode\.jsonc?$": "src/opencode.json",
     r"^\.pre-commit-config\.yaml$": ".pre-commit-config.yaml",
     r"^\.github/workflows/": ".github/workflows/ci.yml",
