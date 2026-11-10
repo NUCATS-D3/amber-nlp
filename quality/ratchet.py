@@ -3,7 +3,10 @@
 Legacy code may keep the violations the baseline records; new code is held to the full
 standard. Metrics:
 
-- ``ruff:<code>``: Ruff violations under ruff.toml in git-listed files, per rule code;
+- ``ruff:<code>``: Ruff violations in git-listed files, per rule code, under
+  quality/ruff-ratchet.toml when it exists: ruff.toml plus rule families that legacy code does
+  not yet meet. Ruff never discovers that file by itself, so lint, the editing hooks, and
+  ``make format`` keep ruff.toml's rules (amber-7q0.5);
 - ``mypy-strict``: ``mypy --strict`` errors in src/ and quality/;
 - ``suppressions:noqa``, ``suppressions:type-ignore``, ``suppressions:no-cover``: suppression
   comments in Python files, every one counted (any case; file-level ``# ruff: noqa``,
@@ -24,7 +27,8 @@ finding and no unjustified suppression.
 Exit 2 when anything rose, printing each metric old -> new with the findings likely to be new;
 otherwise exit 0, printing "ratchet can be tightened" for each metric that fell. Exit 1 when a
 tool or git fails. ``--write-baseline`` rewrites the baseline only with ALLOW_ORACLE_CHANGE=1 and
-only when nothing rose: rebaselining tightens, and loosening is a hand edit in a human commit.
+only when nothing rose: rebaselining tightens. ``--loosen`` lets it raise counts too, for a
+human recording the legacy findings of newly adopted rules; it lists everything it loosened.
 
 Standard library only; the tools run from this interpreter's environment (pinned by uv.lock).
 """
@@ -47,6 +51,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE = Path("quality/baseline.json")
+RUFF_CONFIG = Path("quality/ruff-ratchet.toml")
 COMPLEXITY_LIMIT = 10
 REGRESSION = 2
 STRICT_DIRECTORIES = ("src", "quality")
@@ -232,8 +237,9 @@ def measure(root: Path) -> Measurement:
     files = _listed(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--")
     files = [path for path in files if any(Path(path).match(glob) for glob in _LINTED)]
     python = [path for path in files if path.endswith((".py", ".pyi"))]
+    wider = ("--config", RUFF_CONFIG.as_posix()) if (root / RUFF_CONFIG).is_file() else ()
     with ThreadPoolExecutor() as pool:
-        ruff = pool.submit(ruff_findings, root, files)
+        ruff = pool.submit(ruff_findings, root, files, *wider)
         mypy = pool.submit(mypy_findings, root, _strict(python))
         scored = pool.submit(function_complexity, root, _strict(python))
         versions = {tool: pool.submit(_version, root, tool) for tool in ("ruff", "mypy")}
@@ -389,31 +395,39 @@ def _load(path: Path) -> Baseline | None:
 
 
 def _write_baseline(
-    path: Path, measurement: Measurement, rose: Sequence[tuple[str, int, int]], allowed: bool
+    path: Path,
+    measurement: Measurement,
+    rose: Sequence[tuple[str, int, int]],
+    allowed: bool,
+    loosen: bool,
 ) -> int:
     if not allowed:
         print("ratchet: rewriting the baseline is for humans: set ALLOW_ORACLE_CHANGE=1")
         return 1
-    if rose:
-        print("ratchet: refusing to rebaseline; it may only tighten. Rose:")
+    if rose and not loosen:
+        print("ratchet: refusing to rebaseline; it may only tighten (or --loosen). Rose:")
         for metric, old, new in rose:
             print(f"  {metric} {old} -> {new}")
         return REGRESSION
+    for metric, old, new in rose:
+        print(f"ratchet: loosened: {metric} {old} -> {new}")
     metrics = recorded(measurement)
     path.write_text(json.dumps({"tools": measurement.tools, "metrics": metrics}, indent=2) + "\n")
     print(f"ratchet: wrote {path} ({len(metrics)} metrics)")
     return 0
 
 
-def run(root: Path, base: str, write_baseline: bool, env: Mapping[str, str]) -> int:
+def run(root: Path, base: str, write: str | None, env: Mapping[str, str]) -> int:
+    """Check the ratchet, or rewrite the baseline when ``write`` is "tighten" or "loosen"."""
     measurement = measure(root)
     changes = changed_since(root, base)
     stored = _load(root / BASELINE)
     metrics = stored.metrics if stored else {}
     rose, fell = compare(metrics, measurement.values(), changes.renamed_from)
-    if write_baseline:
+    if write:
         allowed = env.get("ALLOW_ORACLE_CHANGE") == "1"
-        return _write_baseline(root / BASELINE, measurement, rose if stored else [], allowed)
+        rising = rose if stored else []
+        return _write_baseline(root / BASELINE, measurement, rising, allowed, write == "loosen")
     if stored is None:
         print(f"ratchet: no {BASELINE}; a human runs ALLOW_ORACLE_CHANGE=1 make quality-rebaseline")
         return 1
@@ -441,9 +455,15 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] = os.environ)
     parser.add_argument(
         "--write-baseline", action="store_true", help="human only: rewrite the baseline"
     )
+    parser.add_argument(
+        "--loosen", action="store_true", help="human only: with --write-baseline, allow rises"
+    )
     args = parser.parse_args(argv)
+    if args.loosen and not args.write_baseline:
+        parser.error("--loosen only applies with --write-baseline")
+    write = ("loosen" if args.loosen else "tighten") if args.write_baseline else None
     try:
-        return run(args.root, args.base, args.write_baseline, env)
+        return run(args.root, args.base, write, env)
     except ToolError as error:
         print(f"ratchet: {error}")
         return 1

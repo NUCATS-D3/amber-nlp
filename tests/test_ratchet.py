@@ -503,3 +503,51 @@ def test_a_percent_sign_in_the_import_contracts_is_read_literally(repo: Path) ->
         "ignore_imports =\n    pkg.a -> os  # 100% legacy\n"
     )
     assert [f.message for f in ratchet.import_ignores(repo)] == ["pkg.a -> os  # 100% legacy"]
+
+
+WIDER = 'extend = "../ruff.toml"\n\n[lint]\nextend-select = ["T20"]\n'
+
+
+def test_the_ratchet_reads_its_own_wider_ruff_config(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (repo / "quality" / "ruff-ratchet.toml").write_text(WIDER)
+    small = repo / "src" / "pkg" / "small.py"
+    small.write_text(small.read_text() + "print(1)\n")
+    assert _run(repo) == ratchet.REGRESSION
+    out = capsys.readouterr().out
+    assert "ruff:T201 rose 0 -> 1" in out
+    assert "src/pkg/small.py:7:T201" in out
+
+
+def test_lint_does_not_read_the_ratchet_config(repo: Path) -> None:
+    (repo / "quality" / "ruff-ratchet.toml").write_text(WIDER)
+    small = repo / "src" / "pkg" / "small.py"
+    small.write_text(small.read_text() + "print(1)\n")
+    lint = [sys.executable, "-m", "ruff", "check", "--select", "T20", "--quiet", "src/pkg/small.py"]
+    assert subprocess.run(lint, cwd=repo, check=False).returncode == 1
+    default = [sys.executable, "-m", "ruff", "check", "--quiet", "src/pkg/small.py"]
+    assert subprocess.run(default, cwd=repo, check=False).returncode == 0
+
+
+def test_loosening_the_baseline_takes_a_human_and_a_flag(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (repo / "quality" / "ruff-ratchet.toml").write_text(WIDER)
+    legacy = repo / "src" / "pkg" / "legacy.py"
+    legacy.write_text(legacy.read_text() + "print(1)\n")
+    before = (repo / "quality" / "baseline.json").read_text()
+    assert _run(repo, "--write-baseline", env=HUMAN) == ratchet.REGRESSION
+    assert _run(repo, "--write-baseline", "--loosen") == 1
+    assert (repo / "quality" / "baseline.json").read_text() == before
+    capsys.readouterr()
+    assert _run(repo, "--write-baseline", "--loosen", env=HUMAN) == 0
+    assert "loosened: ruff:T201 0 -> 1" in capsys.readouterr().out
+    assert _baseline(repo)["ruff:T201"] == 1
+
+
+def test_loosen_only_applies_to_writing_the_baseline(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit):
+        _run(repo, "--loosen")
