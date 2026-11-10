@@ -1,0 +1,35 @@
+{
+  "tools": {
+    "ruff": "0.16.7",
+    "mypy": "2.3.1"
+  },
+  "metrics": {
+    "complexity:src/amber/_graph_validation.py": 40,
+    "complexity:src/amber/annotations.py": 27,
+    "complexity:src/amber/bundles/core.py": 17,
+    "complexity:src/amber/cases.py": 14,
+    "complexity:src/amber/conformance/bundle.py": 13,
+    "complexity:src/amber/conformance/checks.py": 14,
+    "complexity:src/amber/evaluation.py": 11,
+    "complexity:src/amber/examples.py": 16,
+    "complexity:src/amber/graph.py": 21,
+    "complexity:src/amber/ids.py": 17,
+    "complexity:src/amber/labeling.py": 13,
+    "complexity:src/amber/labels.py": 12,
+    "complexity:src/amber/loupe/adapter.py": 12,
+    "complexity:src/amber/loupe/reference.py": 19,
+    "complexity:src/amber/reference/review.py": 12,
+    "complexity:src/amber/reference/scorers.py": 12,
+    "complexity:src/amber/reference/store.py": 11,
+    "complexity:src/amber/rules.py": 14,
+    "complexity:src/amber/schemas/examples.py": 11,
+    "complexity:src/amber/schemas/variables.py": 12,
+    "complexity:src/amber/wire.py": 12,
+    "importlinter:ignore_imports": 0,
+    "mypy-strict": 18,
+    "suppressions:no-cover": 3,
+    "suppressions:noqa": 41,
+    "suppressions:type-ignore": 122,
+    "suppressions:unjustified": 162
+  }
+}
