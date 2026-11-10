@@ -4,6 +4,7 @@ an entry, with the reason. Vulture counts each name below as used; nothing impor
 from amber.bundles.core import ManifestSources
 from amber.conformance.golden import write_golden
 from amber.conformance.report import ConformanceReport
+from amber.conformance.suite import test_amber_bundle_conformance, test_amber_conformance
 from amber.evaluation import ReviewEffort
 from amber.mlflow_ext.context import AmberRunContextProvider
 from amber.mlflow_ext.deployment import ExtractorModel
@@ -32,4 +33,7 @@ _ = (
     ExtractorModel.load_context,
     # Maintainer tool: the contract-change skill regenerates golden records with it.
     write_golden,
+    # The conformance kit's tests, which pytest collects through the conformance plugin.
+    test_amber_conformance,
+    test_amber_bundle_conformance,
 )

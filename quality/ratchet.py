@@ -22,10 +22,13 @@ standard. Metrics:
 - ``importlinter:ignore_imports``: ``ignore_imports`` entries in .importlinter;
 - ``vulture``: dead code in src/ and quality/ at 60% confidence (unused functions rate 60%),
   with tests/ scanned too, since a library's tests use its API. Pydantic validator and
-  serializer decorators and ``pytest_*``/``test_*`` names are ignored; other false positives go
-  in the protected quality/vulture_whitelist.py (amber-7q0.6);
+  serializer decorators and ``pytest_*`` hooks are ignored; other false positives go in the
+  protected quality/vulture_whitelist.py (amber-7q0.6);
 - ``duplicate-code``: ranges in src/ and quality/ that pylint finds repeated elsewhere (eight
   or more similar lines, imports ignored).
+
+Vulture and pylint read only the deliberately empty, protected quality/pinned-config.toml, so no
+pyproject.toml, pylintrc, setup.cfg, or home configuration can change what they report.
 
 Whatever the baseline says, measured against the merge base with ``--base`` (origin/main):
 files added since then, and lines added to other files, must have no Ruff, mypy-strict, vulture,
@@ -62,6 +65,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE = Path("quality/baseline.json")
 RUFF_CONFIG = Path("quality/ruff-ratchet.toml")
+PINNED_CONFIG = Path("quality/pinned-config.toml")
 COMPLEXITY_LIMIT = 10
 REGRESSION = 2
 STRICT_DIRECTORIES = ("src", "quality")
@@ -78,12 +82,14 @@ _ALWAYS_RECORDED = (
 )
 _HELD_FOR_NEW_CODE = ("mypy-strict", "suppressions:unjustified", "vulture", "duplicate-code")
 _VULTURE = (
+    f"--config={PINNED_CONFIG.as_posix()}",
     "--min-confidence=60",
     "--ignore-decorators=@field_validator,@model_validator,@field_serializer,@model_serializer",
-    "--ignore-names=pytest_*,test_*",
+    "--ignore-names=pytest_*",
 )
 _VULTURE_LINE = re.compile(r"^(?P<path>[^:]+):(?P<line>\d+): (?P<message>.+) \(\d+% confidence\)$")
 _DUPLICATES = (
+    f"--rcfile={PINNED_CONFIG.as_posix()}",
     "--disable=all",
     "--enable=duplicate-code",
     "--min-similarity-lines=8",
@@ -91,6 +97,7 @@ _DUPLICATES = (
     "--persistent=n",
     "--output-format=json",
 )
+_COPIES = 2  # a duplicate-code report names at least two ranges
 _DUPLICATE_RANGE = re.compile(r"^==(?P<module>[\w.]+):\[(?P<start>\d+):(?P<end>\d+)\]$")
 _LINTED = ("*.py", "*.pyi", "*.ipynb")
 # Fixed diff settings, so a user's git config cannot hide added lines.
@@ -270,36 +277,47 @@ def vulture_findings(root: Path, python: Sequence[str]) -> list[Finding]:
     return found
 
 
-def _module_paths(paths: Sequence[str]) -> dict[str, str]:
-    """Each file's dotted module name as pylint reports it (under src/, or a bare file name)."""
-    names = {}
+def module_paths(paths: Sequence[str]) -> dict[str, str | None]:
+    """Each file's dotted module name as pylint reports it (under src/, or a bare file name);
+    ``None`` for a bare name two files share."""
+    names: dict[str, str | None] = {}
     for path in paths:
         dotted = path.removesuffix(".py").removesuffix("/__init__").removeprefix("src/")
         names[dotted.replace("/", ".")] = path
-        names.setdefault(Path(dotted).name, path)
+        bare = Path(dotted).name
+        names[bare] = path if names.get(bare, path) == path else None
     return names
 
 
+def duplicate_ranges(message: Mapping[str, str], names: Mapping[str, str | None]) -> list[Finding]:
+    """The ranges of one pylint duplicate-code message, each spanning its lines."""
+    ranges = [m for line in message["message"].splitlines() if (m := _DUPLICATE_RANGE.match(line))]
+    if message["symbol"] != "duplicate-code" or len(ranges) < _COPIES:
+        raise ToolError(f"unreadable duplicate-code report: {message['message'][:200]}")
+    where = ", ".join(f"{m['module']}:{int(m['start']) + 1}" for m in ranges)
+    found = []
+    for match in ranges:
+        path = names.get(match["module"])
+        if path is None:
+            raise ToolError(f"pylint reported an unknown or ambiguous module: {match['module']}")
+        start = int(match["start"]) + 1
+        found.append(Finding(path, start, "duplicate-code", where, end=int(match["end"])))
+    return found
+
+
 def duplicate_findings(root: Path, paths: Sequence[str]) -> list[Finding]:
-    """One finding per range of a block pylint finds repeated, spanning the range's lines."""
+    """One finding per range of a block pylint finds repeated."""
     if not paths:
         return []
     # pylint's exit code is a bit mask; 1 (fatal) and 32 (usage error) mean no result.
     usable = tuple(code for code in range(32) if not code & 1)
     report = _tool(root, "pylint", *_DUPLICATES, "--", *paths, ok=usable)
-    names = _module_paths(paths)
-    found = []
-    for message in json.loads(report or "[]"):
-        ranges = [
-            m for line in message["message"].splitlines() if (m := _DUPLICATE_RANGE.match(line))
-        ]
-        where = ", ".join(f"{m['module']}:{int(m['start']) + 1}" for m in ranges)
-        for match in ranges:
-            if match["module"] not in names:
-                raise ToolError(f"pylint reported an unknown module: {match['module']}")
-            path, start = names[match["module"]], int(match["start"]) + 1
-            found.append(Finding(path, start, "duplicate-code", where, end=int(match["end"])))
-    return found
+    names = module_paths(paths)
+    return [
+        found
+        for message in json.loads(report or "[]")
+        for found in duplicate_ranges(message, names)
+    ]
 
 
 def import_ignores(root: Path) -> list[Finding]:
@@ -327,7 +345,8 @@ def measure(root: Path) -> Measurement:
         scored = pool.submit(function_complexity, root, _strict(python))
         dead = pool.submit(vulture_findings, root, python)
         repeated = pool.submit(duplicate_findings, root, _strict(python))
-        versions = {tool: pool.submit(_version, root, tool) for tool in ("ruff", "mypy")}
+        tools = ("ruff", "mypy", "vulture", "pylint")
+        versions = {tool: pool.submit(_version, root, tool) for tool in tools}
     measurement = Measurement(findings={metric: [] for metric in _ALWAYS_RECORDED})
     for finding in ruff.result():
         measurement.findings.setdefault(f"ruff:{finding.code}", []).append(finding)

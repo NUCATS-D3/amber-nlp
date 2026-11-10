@@ -74,6 +74,7 @@ def template(tmp_path_factory: pytest.TempPathFactory) -> Path:
     (root / "quality").mkdir()
     (root / "ruff.toml").write_text('[lint]\nselect = ["E", "F"]\n')
     (root / "quality" / "ruff-ratchet.toml").write_text('extend = "../ruff.toml"\n')
+    (root / "quality" / "pinned-config.toml").write_text("# Deliberately empty.\n")
     (root / ".gitignore").write_text(".mypy_cache/\n.ruff_cache/\n")
     (root / "src" / "pkg" / "__init__.py").write_text("")
     (root / "src" / "pkg" / "legacy.py").write_text(LEGACY)
@@ -92,8 +93,12 @@ def template(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture
-def repo(template: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> Path:
-    copy = tmp_path / "repo"
+def repo(
+    template: Path, tmp_path_factory: pytest.TempPathFactory, capsys: pytest.CaptureFixture[str]
+) -> Path:
+    # Not under pytest's per-test directory: vulture treats any path matching */test*.py as a
+    # test file, and that directory is named after the test.
+    copy = tmp_path_factory.mktemp("work") / "repo"
     shutil.copytree(template, copy, symlinks=True)
     capsys.readouterr()
     return copy
@@ -733,7 +738,10 @@ def test_a_copied_ten_line_block_fails(repo: Path, capsys: pytest.CaptureFixture
     assert _run(repo) == ratchet.REGRESSION
     out = capsys.readouterr().out
     assert "duplicate-code rose 0 -> 2" in out
-    assert "src/pkg/second.py:" in out and ":duplicate-code" in out
+    # pylint's range starts at the first similar line (the signature is ignored) and is
+    # end-exclusive, so the block covers lines 2 to 13.
+    assert "src/pkg/first.py:2:duplicate-code pkg.first:2, pkg.second:2" in out
+    assert "src/pkg/second.py:2:duplicate-code" in out
 
 
 def test_loosen_records_a_newly_adopted_tools_legacy_count(
@@ -766,9 +774,59 @@ def test_pydantic_validators_are_not_dead(repo: Path, capsys: pytest.CaptureFixt
     assert _run(repo) == 0, capsys.readouterr().out
 
 
-@pytest.mark.parametrize(("added", "unclean"), [({7}, True), ({3}, True), ({9}, False)])
+@pytest.mark.parametrize(
+    ("added", "unclean"), [({7}, True), ({3}, True), ({8}, True), ({9}, False), ({2}, False)]
+)
 def test_a_duplicate_range_is_new_when_any_of_its_lines_is(added: set[int], unclean: bool) -> None:
     block = ratchet.Finding("src/pkg/a.py", 3, "duplicate-code", "pkg.a:3, pkg.b:1", end=8)
     measurement = ratchet.Measurement(findings={"duplicate-code": [block]})
     changes = ratchet.Changes(frozenset(), {}, {"src/pkg/a.py": frozenset(added)})
     assert ratchet.unclean_new_code(measurement, changes) == ([block] if unclean else [])
+
+
+def test_other_tool_config_cannot_hide_dead_code_or_duplicates(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (repo / "pyproject.toml").write_text(
+        '[tool.vulture]\nexclude = ["src/pkg/fresh.py"]\nmin_confidence = 100\n\n'
+        "[tool.pylint.similarities]\nmin-similarity-lines = 1000\n"
+    )
+    (repo / "pylintrc").write_text("[MAIN]\nignore=first.py,second.py\n")
+    (repo / ".pylintrc").write_text("[MAIN]\nignore=first.py,second.py\n")
+    (repo / "src" / "pkg" / "fresh.py").write_text("def forgotten() -> int:\n    return 1\n")
+    block = "def {name}(value: int) -> int:\n    total = 0\n" + COPIED + "    return total\n"
+    (repo / "src" / "pkg" / "first.py").write_text(block.format(name="first"))
+    (repo / "src" / "pkg" / "second.py").write_text(block.format(name="second"))
+    (repo / "tests" / "test_copies.py").write_text(
+        "def test_it(pkg: object) -> None:\n    pkg.first, pkg.second\n"
+    )
+    assert _run(repo) == ratchet.REGRESSION
+    out = capsys.readouterr().out
+    assert "unused function 'forgotten'" in out
+    assert "duplicate-code rose 0 -> 2" in out
+
+
+def test_dead_code_named_like_a_test_in_src_is_still_dead(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (repo / "src" / "pkg" / "helpers.py").write_text("def test_helper() -> int:\n    return 1\n")
+    assert _run(repo) == ratchet.REGRESSION
+    assert "unused function 'test_helper'" in capsys.readouterr().out
+
+
+def test_the_baseline_records_every_tool_version(repo: Path) -> None:
+    tools = json.loads((repo / "quality" / "baseline.json").read_text())["tools"]
+    assert set(tools) == {"ruff", "mypy", "vulture", "pylint"}
+
+
+def test_an_unreadable_duplicate_report_is_an_error() -> None:
+    message = {"symbol": "duplicate-code", "message": "Similar lines in 2 files\n==pkg.a:[1:9]\n"}
+    with pytest.raises(ratchet.ToolError, match="duplicate-code"):
+        ratchet.duplicate_ranges(message, {"pkg.a": "src/pkg/a.py"})
+
+
+def test_two_bare_modules_with_one_name_are_an_error() -> None:
+    names = ratchet.module_paths(["quality/x/tool.py", "quality/y/tool.py"])
+    message = {"symbol": "duplicate-code", "message": "==tool:[1:9]\n==tool:[20:28]\n"}
+    with pytest.raises(ratchet.ToolError, match="tool"):
+        ratchet.duplicate_ranges(message, names)
