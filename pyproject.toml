@@ -43,6 +43,9 @@ dev = [
     "import-linter>=2.15",
     # scripts/deps_graph.py and tests/test_architecture.py read the import graph directly.
     "grimp>=3.18",
+    # The quality ratchet counts dead code and duplicated blocks (amber-7q0.6).
+    "vulture>=2.16",
+    "pylint>=4.1",
 ]
 
 # MLflow discovers run-context providers through this entry-point group.

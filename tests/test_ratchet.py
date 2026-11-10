@@ -24,8 +24,11 @@ HUMAN = {"ALLOW_ORACLE_CHANGE": "1"}
 
 
 def _complex(name: str, branches: int) -> str:
-    """A typed function whose cyclomatic complexity is ``branches + 1``."""
-    body = "".join(f"    if x == {i}:\n        return {i}\n" for i in range(branches))
+    """A typed function whose cyclomatic complexity is ``branches + 1``; its lines mention its
+    name, so two such functions are not duplicated code."""
+    body = "".join(
+        f"    if x == {i}:\n        return {i} + len({name!r})\n" for i in range(branches)
+    )
     return f"def {name}(x: int) -> int:\n{body}    return -1\n"
 
 
@@ -34,6 +37,13 @@ LEGACY = (
     + _complex("tangled", 11)
     + "\n\ndef untyped(x):\n    return x\n\n\nWIDTH = 3  # noqa: E501\n"
 )
+
+
+USES = """def test_names(pkg: object) -> None:
+    for name in (pkg.tangled, pkg.small, pkg.untyped, pkg.more, pkg.fresh, pkg.public, pkg.f):
+        assert name
+    assert (pkg.WIDTH, pkg.LIMIT, pkg.SPAN, pkg.VALUE)
+"""
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -68,6 +78,9 @@ def template(tmp_path_factory: pytest.TempPathFactory) -> Path:
     (root / "src" / "pkg" / "__init__.py").write_text("")
     (root / "src" / "pkg" / "legacy.py").write_text(LEGACY)
     (root / "src" / "pkg" / "small.py").write_text(_complex("small", 2))
+    # The names these tests give to code count as used, as a library's tests use its API.
+    (root / "tests").mkdir()
+    (root / "tests" / "test_pkg.py").write_text(USES)
     _git(root, "init", "-q", "-b", "main")
     _git(root, "config", "user.name", "Ratchet Test")
     _git(root, "config", "user.email", "ratchet@example.invalid")
@@ -655,3 +668,107 @@ def test_make_passes_a_base_through_to_the_ratchet() -> None:
     dry = ["make", "-n", "ratchet", "RATCHET_BASE=main"]
     done = subprocess.run(dry, cwd=root, capture_output=True, text=True, check=True)
     assert "quality/ratchet.py --base main" in done.stdout
+
+
+def test_an_unused_function_in_a_new_file_fails(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (repo / "src" / "pkg" / "fresh.py").write_text("def forgotten() -> int:\n    return 1\n")
+    assert _run(repo) == ratchet.REGRESSION
+    out = capsys.readouterr().out
+    # The legacy module's unused import is the baseline's one vulture finding.
+    assert "vulture rose 1 -> 2" in out
+    assert "src/pkg/fresh.py:1:vulture unused function 'forgotten'" in out
+
+
+def test_an_unused_function_on_added_lines_fails_even_when_the_count_holds(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    legacy = repo / "src" / "pkg" / "legacy.py"
+    legacy.write_text(legacy.read_text().replace("import os\n", ""))
+    small = repo / "src" / "pkg" / "small.py"
+    small.write_text(small.read_text() + "\n\ndef stray() -> int:\n    return 2\n")
+    assert _run(repo) == ratchet.REGRESSION
+    out = capsys.readouterr().out
+    assert "vulture rose" not in out
+    assert "new code must be clean" in out
+    assert "unused function 'stray'" in out
+
+
+def test_code_used_only_by_tests_or_the_whitelist_is_not_dead(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (repo / "src" / "pkg" / "api.py").write_text(
+        "def tested() -> int:\n    return 1\n\n\ndef listed() -> int:\n    return 2\n"
+    )
+    (repo / "tests" / "test_api.py").write_text(
+        "def test_it(pkg: object) -> None:\n    pkg.tested\n"
+    )
+    (repo / "quality" / "vulture_whitelist.py").write_text(
+        '"""Known false positives."""\n\nfrom pkg.api import listed\n\n'
+        "_ = listed  # consumers call it\n"
+    )
+    assert _run(repo) == 0, capsys.readouterr().out
+
+
+def test_validators_and_pytest_hooks_are_not_dead(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (repo / "src" / "pkg" / "hooks.py").write_text(
+        "def pytest_configure(config: object) -> object:\n    return config\n"
+    )
+    assert _run(repo) == 0, capsys.readouterr().out
+
+
+COPIED = "".join(f"    total += {n} * value - {n + 1}\n" for n in range(10))
+
+
+def test_a_copied_ten_line_block_fails(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    block = "def {name}(value: int) -> int:\n    total = 0\n" + COPIED + "    return total\n"
+    (repo / "src" / "pkg" / "first.py").write_text(block.format(name="first"))
+    (repo / "src" / "pkg" / "second.py").write_text(block.format(name="second"))
+    (repo / "tests" / "test_copies.py").write_text(
+        "def test_it(pkg: object) -> None:\n    pkg.first, pkg.second\n"
+    )
+    assert _run(repo) == ratchet.REGRESSION
+    out = capsys.readouterr().out
+    assert "duplicate-code rose 0 -> 2" in out
+    assert "src/pkg/second.py:" in out and ":duplicate-code" in out
+
+
+def test_loosen_records_a_newly_adopted_tools_legacy_count(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = repo / "quality" / "baseline.json"
+    stored = json.loads(path.read_text())
+    del stored["metrics"]["vulture"]  # a baseline written before vulture was adopted
+    path.write_text(json.dumps(stored))
+    assert _run(repo, "--write-baseline", "--loosen", env=HUMAN) == 0
+    out = capsys.readouterr().out
+    assert "loosened: vulture 0 -> 1" in out
+    assert "unused import 'os'" in out
+    assert _baseline(repo)["vulture"] == 1
+
+
+def test_pydantic_validators_are_not_dead(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (repo / "src" / "pkg" / "model.py").write_text(
+        "from pydantic import BaseModel, field_validator\n\n\n"
+        "class Width(BaseModel):\n"
+        "    size: int\n\n"
+        '    @field_validator("size")\n'
+        "    @classmethod\n"
+        "    def positive(cls, value: int) -> int:\n"
+        "        return max(value, len(cls.__name__))\n"
+    )
+    (repo / "tests" / "test_model.py").write_text(
+        "def test_it(pkg: object) -> None:\n    pkg.Width, pkg.size\n"
+    )
+    assert _run(repo) == 0, capsys.readouterr().out
+
+
+@pytest.mark.parametrize(("added", "unclean"), [({7}, True), ({3}, True), ({9}, False)])
+def test_a_duplicate_range_is_new_when_any_of_its_lines_is(added: set[int], unclean: bool) -> None:
+    block = ratchet.Finding("src/pkg/a.py", 3, "duplicate-code", "pkg.a:3, pkg.b:1", end=8)
+    measurement = ratchet.Measurement(findings={"duplicate-code": [block]})
+    changes = ratchet.Changes(frozenset(), {}, {"src/pkg/a.py": frozenset(added)})
+    assert ratchet.unclean_new_code(measurement, changes) == ([block] if unclean else [])
