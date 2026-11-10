@@ -132,9 +132,12 @@ src/amber/schemas/        contract models (pure; no I/O)
 src/amber/ids.py          canonical hashing and ULIDs
 src/amber/grounding.py    exact grounding (the only Inclusion minting path today)
 src/amber/graph.py        EvidenceGraph lifecycle; _graph_validation.py holds the checks
+src/amber/graph_errors.py source-free codes for GraphValidationError
 src/amber/cases.py        CaseResult creation/loading and outcome validation
 src/amber/tools/          quote, mention, cite, commit_claim, no_claim: operations implementations call
 src/amber/examples.py     Example and LabelRecord load boundary
+src/amber/labels.py       the sanctioned derived_text -> labels_only views
+src/amber/policy.py       declared data-handling policy and the transfer check (pure)
 src/amber/annotations.py  annotation-event replay, projections, Examples from events
 src/amber/interfaces.py   protocols (Store, SourceResolver, PolicyGate, Exporter, Provider, Extractor, Scorer,
                           Labeler, ReviewBackend; Rule is re-exported from rules.py)
@@ -186,29 +189,31 @@ For the core-only installation check, see [tests/README.md](tests/README.md#ci).
 
 ## Design rules
 
-> **Draft (amber-7q0.11), pending human review.** The invariants and framework boundary are in
-> [CLAUDE.md](CLAUDE.md); these rules cover how code is shaped.
+> **Draft (amber-7q0.11), pending human review.** Invariants and the framework boundary live in
+> [CLAUDE.md](CLAUDE.md); calling validation, never copying it, in the [charter](docs/charter.md).
 
-- Follow the layers in `.importlinter` ([ADR 0001](docs/decisions/0001-dependency-layering.md)).
-  Never add `ignore_imports` entries; moving a module between layers is a human decision.
-- Search `src/amber` before writing. Extend the module or helper that owns the concept rather
-  than adding a parallel one; each concept has one home in the layout above.
-- No new abstraction (base class, protocol, factory, registry, option, or parameter) without
-  two concrete uses in the same change or an accepted ADR. New interfaces follow CLAUDE.md's
-  stability rule.
-- The core does no I/O: no files, environment, network, or logging. Reading and writing belong
-  to plugins and callers at a boundary.
-- Validate at boundaries (load, commit, transfer) by calling amber's validation, never a copy
-  of it, and don't re-check inside the core what a boundary guarantees.
-- Expected failures are results with source-free codes (`GroundingFailure`, `graph_errors`).
-  Raise specific exceptions for misuse; never catch broadly or swallow to make things pass.
+- Imports follow `.importlinter`'s layers ([ADR 0001](docs/decisions/0001-dependency-layering.md));
+  placing a new module, moving one, or adding an `ignore_imports` entry is a human edit.
+- Search `src/amber` before writing, and extend the module that owns the concept (see the layout
+  above) rather than adding a parallel one.
+- No new abstraction (base class, protocol, factory, registry, or configuration option) without
+  two production callers in `src/amber` in the same change; tests don't count. A new interface
+  follows CLAUDE.md's stability rule, with one reference implementation (ADR 0004).
+- The core (the `core` contract in `.importlinter`) touches no files, environment, network, or
+  logging; reading and writing belong to plugins and callers.
+- Keep validation at load, commit, and transfer boundaries even when callers "cannot" violate
+  it, including re-grounding spans (ADR 0003). Code past a boundary trusts it.
+- Expected failures carry stable, source-free codes, as results (`GroundingFailure`,
+  `LabelerFailure`, failed outcomes) or as the module's `ValueError` subclass
+  (`GraphValidationError`, `CaseValidationError`). Messages never include source text. Never
+  catch broadly or swallow an error to make something pass.
+- A record type has one creation or load path; a new one uses a private mint context and refuses
+  `model_construct` (ADR 0003).
 - Delete replaced code in the same change: no `_old` or `_v2` copies, shims, or commented-out
-  code. Contract changes ship a migration note, not compatibility code.
-- Comments explain why, citing the contract section or ADR; Ruff and names cover what.
-- Stay in scope. File unrelated findings as Beads issues instead of fixing them.
+  code. Breaking contract changes ship a migration note (contract-change skill) instead.
+- Comments explain why, citing the contract section or ADR.
 - New dependencies, including development tools, need human approval.
-- Accepted ADRs in [docs/decisions/](docs/decisions/) are not reopened without discussion;
-  propose a new ADR instead.
+- Accepted ADRs in [docs/decisions/](docs/decisions/) are not reopened without discussion.
 
 ## Coding and testing
 
