@@ -99,3 +99,5 @@ jobs:
       # The ratchet also writes its report to the job summary.
       - name: Cleanliness (quality ratchet)
         run: make quality
+      - name: Changed lines are covered (diff-cover, 90%)
+        run: make diff-coverage

@@ -112,3 +112,27 @@ def test_ci_refuses_dependency_changes_without_the_label() -> None:
     job = CI[start : CI.index("\n  core-install:\n")]
     assert "fetch-depth: 0" in job
     assert 'python3 quality/dep_gate.py --base "$BASE_SHA" --labels "$LABELS" --enforce' in job
+
+
+def test_changed_lines_must_be_covered() -> None:
+    """amber-7q0.8: make diff-coverage runs the fast suite with coverage (pinned config, so
+    pyproject cannot omit files) and fails when changed src lines are under 90% covered."""
+    makefile = (ROOT / "Makefile").read_text()
+    recipe = re.search(r"^diff-coverage:.*\n((?:\t.*\n)+)", makefile, re.MULTILINE)
+    assert recipe is not None
+    commands = recipe.group(1)
+    # The conformance plugin (a pytest11 entry point) would import amber modules before
+    # coverage starts, so their top-level lines would count as missed; pytester still loads it.
+    assert '-n 4 -m "not slow" -p no:amber_conformance --cov=amber' in commands
+    assert "--cov-config=quality/pinned-config.toml" in commands
+    assert "--compare-branch=$(RATCHET_BASE)" in commands
+    assert "--fail-under=90" in commands and "--include-untracked" in commands
+    # CI installs amber non-editable; coverage must still measure src/amber, or diff-cover finds
+    # no data for the diff and passes. The recipe also refuses a report without src/amber.
+    assert "PYTHONPATH=src COVERAGE_CORE=sysmon" in commands
+    assert """grep -q 'filename="src/amber/' $(COVERAGE)/coverage.xml""" in commands
+    # No pipe: make's /bin/sh (dash on CI) lacks pipefail, so a failing report must stop make.
+    assert "--format=total > $(COVERAGE)/total" in commands
+    assert "|" not in commands.replace("||", "")
+    assert "diff-coverage" in _check_prerequisites()
+    assert "diff-coverage" in _make_targets(_tests_job())

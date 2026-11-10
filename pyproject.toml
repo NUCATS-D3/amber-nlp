@@ -48,6 +48,8 @@ dev = [
     "pylint>=4.1",
     # Declared dependencies match what src/ imports (amber-7q0.7).
     "deptry>=0.25",
+    # make diff-coverage fails when changed lines in src/ are under 90% covered (amber-7q0.8).
+    "diff-cover>=9",
 ]
 
 # MLflow discovers run-context providers through this entry-point group.
