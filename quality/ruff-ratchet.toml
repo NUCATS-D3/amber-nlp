@@ -43,7 +43,10 @@ max-returns = 6
 convention = "google"
 
 [lint.per-file-ignores]
-"tests/**" = ["D", "ANN", "PLR2004", "ARG"]
+# Tests implement the seven-parameter PolicyGate and Extractor protocols.
+"tests/**" = ["D", "ANN", "PLR2004", "ARG", "PLR0913", "PLR0917"]
+# Protocol methods are documented in their class docstring.
+"src/amber/interfaces.py" = ["D102"]
 "scripts/**" = ["T20", "D"]
 "quality/**" = ["T20"]
 ".claude/hooks/**" = ["T20"]

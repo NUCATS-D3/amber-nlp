@@ -8,6 +8,7 @@ import json
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -62,6 +63,7 @@ def template(tmp_path_factory: pytest.TempPathFactory) -> Path:
     (root / "src" / "pkg").mkdir(parents=True)
     (root / "quality").mkdir()
     (root / "ruff.toml").write_text('[lint]\nselect = ["E", "F"]\n')
+    (root / "quality" / "ruff-ratchet.toml").write_text('extend = "../ruff.toml"\n')
     (root / ".gitignore").write_text(".mypy_cache/\n.ruff_cache/\n")
     (root / "src" / "pkg" / "__init__.py").write_text("")
     (root / "src" / "pkg" / "legacy.py").write_text(LEGACY)
@@ -518,6 +520,7 @@ def test_the_ratchet_reads_its_own_wider_ruff_config(
     out = capsys.readouterr().out
     assert "ruff:T201 rose 0 -> 1" in out
     assert "src/pkg/small.py:7:T201" in out
+    assert "ruff:F401" not in out
 
 
 def test_lint_does_not_read_the_ratchet_config(repo: Path) -> None:
@@ -542,12 +545,71 @@ def test_loosening_the_baseline_takes_a_human_and_a_flag(
     assert (repo / "quality" / "baseline.json").read_text() == before
     capsys.readouterr()
     assert _run(repo, "--write-baseline", "--loosen", env=HUMAN) == 0
-    assert "loosened: ruff:T201 0 -> 1" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "loosened: ruff:T201 0 -> 1" in out
+    assert "src/pkg/legacy.py:" in out
+    assert ":T201 `print` found" in out
     assert _baseline(repo)["ruff:T201"] == 1
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda legacy: "import sys\n" + legacy,
+        lambda legacy: legacy.replace("WIDTH = 3", "WIDTH = 4  # noqa: E501\nSPAN = 5"),
+        lambda legacy: legacy.replace(
+            "def untyped(x):", "def untyped(x):\n    y = x\n    return y\n\n\ndef more(z):"
+        ),
+    ],
+    ids=["ruff-code-already-recorded", "suppression", "mypy-strict"],
+)
+def test_loosen_refuses_rises_in_metrics_the_baseline_already_has(
+    repo: Path, capsys: pytest.CaptureFixture[str], change: Callable[[str], str]
+) -> None:
+    legacy = repo / "src" / "pkg" / "legacy.py"
+    legacy.write_text(change(legacy.read_text()))
+    before = (repo / "quality" / "baseline.json").read_text()
+    assert _run(repo, "--write-baseline", "--loosen", env=HUMAN) == ratchet.REGRESSION
+    assert "only new Ruff rule codes" in capsys.readouterr().out
+    assert (repo / "quality" / "baseline.json").read_text() == before
+
+
+def test_a_missing_ratchet_ruff_config_is_an_error(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (repo / "quality" / "ruff-ratchet.toml").unlink()
+    assert _run(repo) == 1
+    assert "ruff-ratchet.toml" in capsys.readouterr().out
+
+
+def test_the_real_ratchet_config_resolves_its_paths_from_the_root(repo: Path) -> None:
+    root = Path(__file__).parents[1]
+    shutil.copy(root / "ruff.toml", repo / "ruff.toml")
+    shutil.copy(root / "quality" / "ruff-ratchet.toml", repo / "quality" / "ruff-ratchet.toml")
+    files = {
+        "tests/test_fresh.py": "def test_fresh(x):\n    assert x == 3\n",
+        "src/pkg/fresh.py": "def public(x: int) -> int:\n    return x\n",
+        "examples/demo.py": "import os\n",
+    }
+    for path, text in files.items():
+        (repo / path).parent.mkdir(parents=True, exist_ok=True)
+        (repo / path).write_text(text)
+    found = ratchet.ruff_findings(repo, list(files), "--config", "quality/ruff-ratchet.toml")
+    assert [(f.path, f.code) for f in found] == [("src/pkg/fresh.py", "D103")]
 
 
 def test_loosen_only_applies_to_writing_the_baseline(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit) as stopped:
         _run(repo, "--loosen")
+    assert stopped.value.code == 2
+    assert "--loosen only applies with --write-baseline" in capsys.readouterr().err
+
+
+def test_loosen_refuses_a_new_module_over_the_complexity_limit(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (repo / "src" / "pkg" / "fresh.py").write_text(_complex("fresh", 12))
+    assert _run(repo, "--write-baseline", "--loosen", env=HUMAN) == ratchet.REGRESSION
+    assert "complexity:src/pkg/fresh.py 10 -> 13" in capsys.readouterr().out
