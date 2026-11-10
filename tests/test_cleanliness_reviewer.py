@@ -72,6 +72,18 @@ def test_the_opencode_agent_has_exactly_the_reviewers_read_only_settings() -> No
     assert _rules(OPENCODE)[0] == {"action": "*", "resource": "*", "effect": "deny"}
 
 
+def test_the_claude_agent_has_exactly_the_reviewers_read_only_settings() -> None:
+    reviewer = ROOT / ".claude" / "agents" / "reviewer.md"
+    named = [line for line in _settings(CLAUDE) if not line.startswith("name:")]
+    assert named == [line for line in _settings(reviewer) if not line.startswith("name:")]
+    frontmatter = _frontmatter(CLAUDE)
+    match = re.search(r"^tools: (.+)$", frontmatter, re.MULTILINE)
+    assert match is not None
+    assert {tool.strip() for tool in match.group(1).split(",")} == {"Read", "Grep", "Glob", "Bash"}
+    assert "PreToolUse:" in frontmatter and 'matcher: "Bash"' in frontmatter
+    assert 'command: python3 "${CLAUDE_PROJECT_DIR}/.claude/hooks/reviewer_bash.py"' in frontmatter
+
+
 def test_settings_parity_sees_any_added_frontmatter(tmp_path: Path) -> None:
     base = OPENCODE.read_text()
     original = _settings(OPENCODE)
