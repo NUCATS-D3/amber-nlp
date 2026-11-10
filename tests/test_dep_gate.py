@@ -4,6 +4,7 @@ CI refuses it until a human adds the dependency-change label."""
 from __future__ import annotations
 
 import importlib.util
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -121,7 +122,7 @@ def test_a_locked_version_change_is_a_dependency_change(
     _edit(repo, 'version = "8.0.0"', 'version = "8.1.0"', name="uv.lock")
     assert _gate(repo, "--enforce") == 2
     out = capsys.readouterr().out
-    assert "~ uv.lock: pytest 8.0.0" in out and "-> 8.1.0" in out
+    assert re.search(r"~ uv\.lock: pytest 8\.0\.0 \(\w{12}\) -> 8\.1\.0 \(\w{12}\)", out), out
 
 
 def test_names_compare_normalized(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
