@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import tempfile
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import partial
@@ -114,12 +114,26 @@ class BundleUnderTest:
 
 
 @dataclass(frozen=True)
+class ExtractorFixture:
+    """A synthetic case on which a task-specific extractor's declared capabilities are checked
+    (IFC-03, amber-jae), because the kit's own fixtures use amber's variable sets. ``answers``
+    script the provider the kit gives the extractor, as ``ScriptedProvider`` takes them."""
+
+    case: Case
+    source: Source
+    variables: VariableSet
+    answers: Sequence[Any]
+
+
+@dataclass(frozen=True)
 class Subject:
-    """What a consumer declared: its name, version, and a factory per implemented target."""
+    """What a consumer declared: its name, version, and a factory per implemented target; an
+    extractor built for one task may add its own capability fixture (experimental)."""
 
     name: str
     version: str
     targets: Mapping[str, Callable[..., Any]]
+    extractor_fixture: ExtractorFixture | None = None
 
     def store(self) -> Store:
         factory = self.targets["Store"]
@@ -752,10 +766,50 @@ def check_ifc_12_extractor(subject: Subject) -> None:
         _fail("undeclared_derivations_served")
 
 
+def _own_fixture_run(subject: Subject, fixture: ExtractorFixture) -> CaseResult:
+    from amber.reference import ScriptedProvider
+
+    if fixture.case.sensitivity != Sensitivity.synthetic:
+        _fail("fixture_not_synthetic")
+    extractor = subject.extractor(ScriptedProvider(_MODEL, fixture.answers))
+    result = _must_accept(
+        lambda: extractor.run(
+            fixture.case,
+            fixture.source,
+            fixture.variables,
+            gate=StaticGate(DEFAULT_MATRIX),
+            budget=None,
+            context=fx.run_context(),
+        ),
+        "extractor_raised",
+    )
+    if not isinstance(result, CaseResult):
+        _fail("not_a_case_result")
+    loaded: CaseResult = _must_accept(
+        partial(
+            load_case_result,
+            result.model_dump(mode="json"),
+            case=fixture.case,
+            source=fixture.source,
+            variables=fixture.variables,
+        ),
+        "result_invalid",
+    )
+    return loaded
+
+
 def check_ifc_03(subject: Subject) -> None:
     """Declaring mentions emits a mention on a fixture with a known span; declaring derivations
-    emits a Derivation on the stage fixture. The kit answers with the known span's text."""
+    emits a Derivation on the stage fixture. The kit answers with the known span's text. An
+    extractor built for one task is checked on its own synthetic fixture instead."""
     probe = subject.extractor(_scripted(_FAILURES["provider"][0]))
+    if subject.extractor_fixture is not None:
+        own = _own_fixture_run(subject, subject.extractor_fixture)
+        if "mentions" in probe.capabilities and not own.mentions:
+            _fail("no_mention_emitted")
+        if "derivations" in probe.capabilities and not _derivations(own):
+            _fail("no_derivation_emitted")
+        return
     if "mentions" in probe.capabilities:
         _, result, _ = _fixture_run(subject, fx.case(), fx.VARIABLES, fx.MENTION.quote)
         if not result.mentions:
