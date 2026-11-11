@@ -21,7 +21,7 @@ kit supplies; ``ReviewBackend`` takes no arguments and returns ``(backend, revie
 least one derivation by the rule, and its variable set.
 An ``Extractor`` built for one task (whose results on the kit's own variable sets can only be
 failures) passes ``Subject(..., extractor_fixture=ExtractorFixture(case, source, variables,
-answers))``: a synthetic case of its task on which its declared capabilities are checked.
+answers))``: an invented case of its task on which its mentions are checked (IFC-03, IFC-12).
 
 then runs ``pytest --amber-conformance --amber-conformance-report=report.json``.
 

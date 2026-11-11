@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
-from typing import Any, NoReturn, get_args
+from typing import TYPE_CHECKING, Any, NoReturn, get_args
 
 from amber.annotations import example_from_projection, replay, verify_example
 from amber.cases import load_case_result
@@ -66,6 +66,9 @@ from amber.schemas import (
     Zone,
 )
 
+if TYPE_CHECKING:
+    from amber.reference.provider import Scripted
+
 StoreFactory = Callable[[], Store]
 ResolverFactory = Callable[[Iterable[Source]], SourceResolver]
 
@@ -115,14 +118,17 @@ class BundleUnderTest:
 
 @dataclass(frozen=True)
 class ExtractorFixture:
-    """A synthetic case on which a task-specific extractor's declared capabilities are checked
-    (IFC-03, amber-jae), because the kit's own fixtures use amber's variable sets. ``answers``
-    script the provider the kit gives the extractor, as ``ScriptedProvider`` takes them."""
+    """A synthetic case of an extractor's own task (amber-jae). The kit's fixtures use amber's
+    variable sets, on which an extractor built for one task can only fail, so IFC-03 checks
+    its declared ``mentions`` there and IFC-12 looks for undeclared mentions there. Only an
+    extractor that fails every kit-fixture outcome may use one. The consumer attests that the
+    source text and ``answers`` (scripted as ``ScriptedProvider`` takes them) are invented;
+    the kit can only refuse a case not labeled synthetic."""
 
     case: Case
     source: Source
     variables: VariableSet
-    answers: Sequence[Any]
+    answers: Sequence[Scripted]
 
 
 @dataclass(frozen=True)
@@ -764,13 +770,21 @@ def check_ifc_12_extractor(subject: Subject) -> None:
             _fail("undeclared_mentions_served")
     if "derivations" not in declared and (_derivations(layered) or _derivations(staged)):
         _fail("undeclared_derivations_served")
+    if subject.extractor_fixture is not None and "mentions" not in declared:
+        own = _own_fixture_run(subject, subject.extractor_fixture)
+        if own.mentions or own.mention_readings:
+            _fail("undeclared_mentions_served")
 
 
 def _own_fixture_run(subject: Subject, fixture: ExtractorFixture) -> CaseResult:
+    """The extractor's result on its own fixture, once the fixture is shown to be needed."""
     from amber.reference import ScriptedProvider
 
     if fixture.case.sensitivity != Sensitivity.synthetic:
         _fail("fixture_not_synthetic")
+    _, on_kit, _ = _fixture_run(subject, fx.case(), fx.VARIABLES, fx.MENTION.quote)
+    if any(item.outcome.status != "failed" for item in on_kit.variable_outcomes.values()):
+        _fail("fixture_not_needed")
     extractor = subject.extractor(ScriptedProvider(_MODEL, fixture.answers))
     result = _must_accept(
         lambda: extractor.run(
@@ -803,14 +817,13 @@ def check_ifc_03(subject: Subject) -> None:
     emits a Derivation on the stage fixture. The kit answers with the known span's text. An
     extractor built for one task is checked on its own synthetic fixture instead."""
     probe = subject.extractor(_scripted(_FAILURES["provider"][0]))
-    if subject.extractor_fixture is not None:
-        own = _own_fixture_run(subject, subject.extractor_fixture)
-        if "mentions" in probe.capabilities and not own.mentions:
+    fixture = subject.extractor_fixture
+    if "mentions" in probe.capabilities and fixture is not None:
+        if not any(v.level == "mention" for v in fixture.variables.variables.values()):
+            _fail("fixture_lacks_mention_variable")
+        if not _own_fixture_run(subject, fixture).mentions:
             _fail("no_mention_emitted")
-        if "derivations" in probe.capabilities and not _derivations(own):
-            _fail("no_derivation_emitted")
-        return
-    if "mentions" in probe.capabilities:
+    elif "mentions" in probe.capabilities:
         _, result, _ = _fixture_run(subject, fx.case(), fx.VARIABLES, fx.MENTION.quote)
         if not result.mentions:
             _fail("no_mention_emitted")

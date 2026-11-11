@@ -1025,3 +1025,43 @@ def test_a_fixture_that_yields_no_mention_still_fails() -> None:
 def test_a_non_synthetic_fixture_is_refused() -> None:
     report = _own_task_report(_fixture(sensitivity="deidentified"))
     assert report["IFC-03"] == ("failed", "fixture_not_synthetic")
+
+
+class _UndeclaredOwnTask(_OwnTaskExtractor):
+    capabilities = frozenset({"note_claims"})
+
+
+def _report_for(extractor: Any, fixture: Any) -> Any:
+    from amber.conformance import Subject
+
+    subject = Subject(name="s", version="1", targets={"Extractor": extractor},
+                      extractor_fixture=fixture)  # fmt: skip
+    return {case.id: (case.status, case.code) for case in run_checks(subject).cases}
+
+
+def test_a_fixture_is_refused_for_an_extractor_that_answers_the_kit_fixtures() -> None:
+    from amber.reference import DeterministicExtractor
+
+    class Generic(DeterministicExtractor):
+        """Answers the kit's fixtures and claims mentions it would rather not show there."""
+
+        capabilities = frozenset({"note_claims", "mentions"})
+
+    report = _report_for(lambda p: Generic(p, name="generic"), _fixture())
+    assert report["IFC-03"] == ("failed", "fixture_not_needed")
+    quiet = _report_for(lambda p: DeterministicExtractor(p, name="generic"), _fixture())
+    assert quiet["IFC-12"] == ("failed", "fixture_not_needed")
+
+
+def test_a_fixture_without_a_mention_variable_cannot_check_mentions() -> None:
+    from amber.conformance import ExtractorFixture
+
+    fixture = ExtractorFixture(case=fx.note_case(), source=fx.SOURCE,
+                               variables=fx.NOTE_VARIABLES, answers=[])  # fmt: skip
+    report = _report_for(_OwnTaskExtractor, fixture)
+    assert report["IFC-03"] == ("failed", "fixture_lacks_mention_variable")
+
+
+def test_undeclared_mentions_on_the_subject_fixture_are_caught() -> None:
+    report = _report_for(_UndeclaredOwnTask, _fixture())
+    assert report["IFC-12"] == ("failed", "undeclared_mentions_served")
