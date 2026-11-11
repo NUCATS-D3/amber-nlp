@@ -56,7 +56,8 @@ LOCAL_TRACKING = "local:mlflow"
 DECISIONS_ARTIFACT = "amber/decisions.json"
 _LOCAL_SCHEMES = frozenset({"file", "sqlite"})
 # Scheme-less tracking URIs that MLflow resolves to a remote service rather than a directory
-# (mlflow.utils.uri: Databricks and Unity Catalog), compared case-insensitively.
+# (mlflow.utils.uri: Databricks and Unity Catalog). MLflow matches them exactly; amber also
+# refuses them trimmed or in another case, which fails closed.
 _REMOTE_NAMES = frozenset({"databricks", "databricks-uc", "uc"})
 
 

@@ -252,14 +252,6 @@ def test_a_tracking_destination_that_refuses_labels_makes_no_call(local: Destina
 REMOTE_NAMES = ["databricks", "databricks://synthetic-profile", "databricks-uc", "uc", "Databricks"]
 
 
-def _trace(local: Destination) -> None:
-    traced_provider_call(
-        ScriptedProvider(MODEL, []), ProviderRequest(prompt=PROMPT), gate=GATE, data=DATA,
-        context=CONTEXT, now=NOW, meter=UsageMeter(), producer="model:synthetic-model@1",
-        version="1", tracking=local,
-    )  # fmt: skip
-
-
 @pytest.mark.parametrize("uri", REMOTE_NAMES)
 def test_a_local_destination_refuses_mlflow_s_remote_names(local: Destination, uri: str) -> None:
     store = mlflow.get_tracking_uri()
@@ -271,7 +263,7 @@ def test_a_local_destination_refuses_mlflow_s_remote_names(local: Destination, u
             with pytest.raises(TrackingError, match="tracking_uri_not_local"):
                 log_decisions([], gate=GATE, data=DATA, destination=local, now=NOW)
             with pytest.raises(TrackingError, match="tracking_uri_not_local"):
-                _trace(local)
+                _call(local, [])
         finally:
             mlflow.set_tracking_uri(store)  # end the run where it started
 
