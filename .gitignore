@@ -40,3 +40,6 @@ notebooks/**/__marimo__/
 
 # make diff-coverage (amber-7q0.8)
 /.coverage-report/
+
+# make quality-report (legacy findings inventory)
+/.quality-report.txt

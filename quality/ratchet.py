@@ -42,7 +42,8 @@ tool or git fails. ``--write-baseline`` rewrites the baseline only with ALLOW_OR
 only when nothing rose: rebaselining tightens. With ``--loosen`` it also records metrics the
 baseline lacks (new Ruff codes or a newly adopted tool, not a module's complexity), for a human
 adopting new rules, and lists their findings; a rise in a metric the baseline already has stays
-a hand edit.
+a hand edit. ``--list`` prints every finding the baseline allows, grouped by metric and
+uncapped, as an inventory of legacy problems (make quality-report).
 
 Standard library only; the tools run from this interpreter's environment (pinned by uv.lock).
 """
@@ -582,6 +583,23 @@ def run(root: Path, base: str, write: str | None, env: Mapping[str, str]) -> int
     return 0
 
 
+def inventory(root: Path) -> int:
+    """Print every finding by metric, worst-counted first, with its count and locations."""
+    measurement = measure(root)
+    values = recorded(measurement)
+    for metric, value in sorted(values.items(), key=lambda item: (-item[1], item[0])):
+        if metric.startswith("complexity:"):
+            path = metric.removeprefix("complexity:")
+            found = [f for f in measurement.over_limit if f.path == path]
+        else:
+            found = measurement.findings.get(metric, [])
+        if value:
+            print(f"## {metric} ({value})")
+            for finding in sorted(found):
+                print(f"  {finding}")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None, env: Mapping[str, str] = os.environ) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--base", default="origin/main", help="compare new code against this")
@@ -592,7 +610,16 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] = os.environ)
     parser.add_argument(
         "--loosen", action="store_true", help="human only: with --write-baseline, allow rises"
     )
+    parser.add_argument("--list", action="store_true", help="print every finding by metric")
     args = parser.parse_args(argv)
+    if args.list:
+        if args.write_baseline or args.loosen:
+            parser.error("--list does not combine with --write-baseline or --loosen")
+        try:
+            return inventory(args.root)
+        except ToolError as error:
+            print(f"ratchet: {error}")
+            return 1
     if args.loosen and not args.write_baseline:
         parser.error("--loosen only applies with --write-baseline")
     write = ("loosen" if args.loosen else "tighten") if args.write_baseline else None

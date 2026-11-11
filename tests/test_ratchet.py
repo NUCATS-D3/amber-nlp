@@ -863,3 +863,31 @@ def test_a_dead_function_named_like_a_pytest_hook_is_still_dead(
     (repo / "src" / "pkg" / "hooks.py").write_text("def pytest_whatever() -> int:\n    return 1\n")
     assert _run(repo) == ratchet.REGRESSION
     assert "unused function 'pytest_whatever'" in capsys.readouterr().out
+
+
+def test_list_prints_every_legacy_finding_by_metric(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    for n in range(25):
+        (repo / "src" / "pkg" / f"dead_{n}.py").write_text("import os\n")
+    _commit(repo, "more legacy")
+    capsys.readouterr()
+    assert _run(repo, "--list") == 0
+    out = capsys.readouterr().out
+    assert "## ruff:F401 (26)" in out
+    assert "src/pkg/legacy.py:1:F401" in out
+    assert "src/pkg/dead_24.py:1:F401" in out  # not capped like the failure report
+    assert "## complexity:src/pkg/legacy.py (12)" in out
+    assert "src/pkg/legacy.py:4:C901" in out
+    assert "## suppressions:unjustified (1)" in out
+    assert "## mypy-strict (1)" in out
+    assert "and more" not in out
+
+
+def test_list_does_not_combine_with_rewriting_the_baseline(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as stopped:
+        _run(repo, "--list", "--write-baseline")
+    assert stopped.value.code == 2
+    assert "--list" in capsys.readouterr().err

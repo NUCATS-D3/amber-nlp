@@ -191,6 +191,7 @@ uv run ruff check . && uv run ruff format --check .
 uv run mypy src                           # config in mypy.ini
 uv run lint-imports                       # dependency direction (.importlinter)
 make ratchet                              # violation counts may not rise (quality/baseline.json)
+make quality-report                       # every legacy finding by metric, in .quality-report.txt
 uv lock --check
 bash scripts/mlflow_local.sh              # local MLflow server in .mlflow/
 ```
