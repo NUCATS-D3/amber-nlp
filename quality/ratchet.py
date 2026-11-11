@@ -594,7 +594,9 @@ def _inventory_section(metric: str, measurement: Measurement, baseline: Mapping[
     else:
         found = measurement.findings.get(metric, [])
         summary = str(value)
-    if metric in baseline and baseline[metric] != value:
+    if metric not in baseline:
+        summary += ", new"
+    elif baseline[metric] != value:
         summary += f", baseline {baseline[metric]}"
     print(f"## {metric} ({summary})")
     for finding in sorted(found):
@@ -608,7 +610,8 @@ def inventory(root: Path) -> int:
     stored = _load(root / BASELINE)
     baseline = stored.metrics if stored else {}
     print("# Measured now, untracked files included; a header shows the baseline's value where")
-    print("# it differs. suppressions:unjustified repeats lines listed under the other kinds.")
+    print("# it differs, or 'new' where the baseline has no entry. suppressions:unjustified")
+    print("# repeats lines listed under the other kinds.")
     values = {metric: value for metric, value in recorded(measurement).items() if value}
     order = sorted(values, key=lambda metric: (metric.startswith("complexity:"), -values[metric]))
     for metric in order:

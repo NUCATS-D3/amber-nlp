@@ -905,3 +905,13 @@ def test_list_does_not_combine_with_rewriting_the_baseline(
         _run(repo, "--list", "--write-baseline")
     assert stopped.value.code == 2
     assert "--list" in capsys.readouterr().err
+
+
+def test_list_marks_metrics_the_baseline_lacks_as_new(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    small = repo / "src" / "pkg" / "small.py"
+    small.write_text(small.read_text() + "print(1)\n")
+    (repo / "quality" / "ruff-ratchet.toml").write_text(WIDER)
+    assert _run(repo, "--list") == 0
+    assert "## ruff:T201 (1, new)" in capsys.readouterr().out
