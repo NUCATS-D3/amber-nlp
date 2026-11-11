@@ -246,3 +246,40 @@ def test_a_tracking_destination_that_refuses_labels_makes_no_call(local: Destina
     with pytest.raises(PolicyViolation):
         _call(local, [], provider=provider, tracking=nothing)
     assert provider.requests == []
+
+
+# MLflow's reserved names are remote services, not directories (amber-fc8.5).
+REMOTE_NAMES = ["databricks", "databricks://synthetic-profile", "databricks-uc", "uc", "Databricks"]
+
+
+@pytest.mark.parametrize("uri", REMOTE_NAMES)
+def test_a_local_destination_refuses_mlflow_s_remote_names(local: Destination, uri: str) -> None:
+    store = mlflow.get_tracking_uri()
+    with mlflow.start_run():
+        mlflow.set_tracking_uri(uri)
+        try:
+            with pytest.raises(TrackingError, match="tracking_uri_not_local"):
+                log_run(CONTEXT, providers=[], gate=GATE, destination=local, now=NOW)
+            with pytest.raises(TrackingError, match="tracking_uri_not_local"):
+                log_decisions([], gate=GATE, data=DATA, destination=local, now=NOW)
+            with pytest.raises(TrackingError, match="tracking_uri_not_local"):
+                _call(local, [])
+        finally:
+            mlflow.set_tracking_uri(store)  # end the run where it started
+
+
+@pytest.mark.parametrize("form", ["relative", "absolute", "file", "sqlite"])
+def test_local_paths_and_stores_are_accepted(
+    local: Destination, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, form: str
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")  # MLflow 3 keeps it opt-in
+    uri = {
+        "relative": "store", "absolute": str(tmp_path / "store"),
+        "file": (tmp_path / "store").as_uri(), "sqlite": f"sqlite:///{tmp_path / 'other.db'}",
+    }[form]  # fmt: skip
+    mlflow.set_tracking_uri(uri)
+    mlflow.set_experiment("amber-local-forms")
+    with mlflow.start_run() as run:
+        log_run(CONTEXT, providers=[], gate=GATE, destination=local, now=NOW)
+    assert _logged(run).params["amber.run_id"] == CONTEXT.run_id
