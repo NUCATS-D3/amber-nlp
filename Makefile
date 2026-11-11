@@ -5,7 +5,7 @@ RUN := uv run --no-sync
 PYTEST := $(RUN) pytest --strict-markers -ra
 
 .DEFAULT_GOAL := help
-.PHONY: help sync hooks lint format typecheck imports lock phi-scan test-fast test check ratchet quality-fast deps quality diff-coverage quality-rebaseline mutation
+.PHONY: help sync hooks lint format typecheck imports lock phi-scan test-fast test check ratchet quality-fast deps budget quality diff-coverage quality-rebaseline mutation
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -59,7 +59,10 @@ deps: ## Declared dependencies match src imports (deptry); print dependency chan
 	$(RUN) deptry src --optional-dependencies-dev-groups dev --known-first-party amber --per-rule-ignores DEP002=amber
 	$(RUN) python quality/dep_gate.py --base $(RATCHET_BASE)
 
-quality: quality-fast deps ## Every cleanliness check; slower ones join here (amber-7q0.9)
+budget: ## Size of the change against origin/main; warns when large or sprawling
+	$(RUN) python quality/diff_budget.py --base $(RATCHET_BASE)
+
+quality: quality-fast deps budget ## Every cleanliness check
 
 # Coverage reads only the pinned, empty config, so pyproject settings cannot omit files; the
 # sys.monitoring tracer keeps the run near 60 s. Not in the stop hook. PYTHONPATH=src makes

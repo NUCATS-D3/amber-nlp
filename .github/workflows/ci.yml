@@ -37,6 +37,12 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
         run: python3 quality/dep_gate.py --base "$BASE_SHA" --labels "$LABELS" --enforce
+      - name: Require the large-change label for changes over the diff budget (amber-7q0.9)
+        if: ${{ !cancelled() }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: python3 quality/diff_budget.py --base "$BASE_SHA" --labels "$LABELS" --enforce
 
   core-install:
     name: Core install (Python ${{ matrix.python }})

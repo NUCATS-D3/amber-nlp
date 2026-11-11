@@ -136,3 +136,16 @@ def test_changed_lines_must_be_covered() -> None:
     assert "|" not in commands.replace("||", "")
     assert "diff-coverage" in _check_prerequisites()
     assert "diff-coverage" in _make_targets(_tests_job())
+
+
+def test_ci_refuses_very_large_changes_without_the_label() -> None:
+    """amber-7q0.9: the required pull-request job runs the diff budget with its labels."""
+    start = CI.index("\n  protected-artifacts:\n")
+    job = CI[start : CI.index("\n  core-install:\n")]
+    assert 'python3 quality/diff_budget.py --base "$BASE_SHA" --labels "$LABELS" --enforce' in job
+
+
+def test_make_quality_runs_the_diff_budget() -> None:
+    makefile = (ROOT / "Makefile").read_text()
+    assert re.search(r"^quality:[^#\n]*\bbudget\b", makefile, re.MULTILINE)
+    assert "\t$(RUN) python quality/diff_budget.py --base $(RATCHET_BASE)\n" in makefile
