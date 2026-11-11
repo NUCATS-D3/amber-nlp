@@ -182,6 +182,11 @@ def test_minted_records_refuse_unvalidated_updates(record: Any) -> None:
     assert record.model_copy(update={}) == record
     with pytest.warns(DeprecationWarning):
         assert record.copy() == record
+    for narrowing in ({"include": {name}}, {"exclude": {name}}):
+        with pytest.raises(TypeError, match="minting path"):
+            record.copy(**narrowing)
+    with pytest.raises(TypeError, match="minting path"):
+        record.__replace__(**{name: getattr(record, name)})  # copy.replace on Python 3.13
 
 
 def test_the_forge_helper_bypasses_validation_on_a_copy() -> None:

@@ -226,8 +226,9 @@ and wire bytes are unchanged, so `schema_version` stays `amber/0.1`.
 
 - **Affected:** code that update-copies one of the five records. In amber, the `Example` mint
   path (now re-mints) and the forgeries in the conformance kit and tests (now use `forge`).
-  lapidary's tests at its pinned commit do it three times, in `tests/test_validation.py`
-  (`tampered`) and `tests/test_scorers.py` (`result` with usage); loupe and copal do not.
+  lapidary's tests (at lapidary 77ab9e0, which pins an earlier amber) do it three times, in
+  `tests/test_validation.py` (`tampered`) and `tests/test_scorers.py` (`result` with usage);
+  loupe and copal do not.
 - **Upgrade:** produce a changed record through its minting path (graph validation for claims,
   `amber.cases` for results, `amber.examples.mint_example` for Examples, grounding for spans).
   To build a deliberately tampered record for an adversarial test, use

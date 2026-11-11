@@ -38,7 +38,8 @@ class MintedRecord(BaseModel):
         update: dict[str, Any] | None = None,
         deep: bool = False,
     ) -> Self:
-        """Pydantic's deprecated copy; refuses ``update`` like ``model_copy``."""
-        if update:
+        """Pydantic's deprecated copy; refuses ``update``, ``include``, and ``exclude``, which
+        would also build a variant without validation."""
+        if update or include or exclude:
             _refuse(self)
-        return super().copy(include=include, exclude=exclude, deep=deep)
+        return super().copy(deep=deep)
