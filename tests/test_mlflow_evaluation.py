@@ -134,3 +134,32 @@ def test_a_refused_transfer_logs_nothing(tracking: Any) -> None:
 def test_logging_needs_an_active_run(tracking: Any) -> None:
     with pytest.raises(ValueError, match="active MLflow run"):
         log_evaluation(_report(), gate=GATE, data=DATA, destination=TRACKING, now=NOW)
+
+
+@pytest.mark.parametrize("uri", ["databricks", "uc", "http://tracking.invalid:5000"])
+def test_a_local_destination_refuses_a_remote_store(
+    tracking: Any, monkeypatch: pytest.MonkeyPatch, uri: str
+) -> None:
+    from amber.mlflow_ext.tracking import TrackingError
+
+    local = TRACKING.model_copy(update={"name": "local-mlflow", "zone": Zone.local})
+    # Reaching the store must fail fast, not retry (MLflow's own settings).
+    monkeypatch.setenv("MLFLOW_HTTP_REQUEST_MAX_RETRIES", "0")
+    monkeypatch.setenv("MLFLOW_HTTP_REQUEST_TIMEOUT", "1")
+    store = mlflow.get_tracking_uri()
+    with mlflow.start_run() as run:
+        mlflow.set_tracking_uri(uri)
+        try:
+            with pytest.raises(TrackingError, match="tracking_uri_not_local"):
+                log_evaluation(_report(), gate=GATE, data=DATA, destination=local, now=NOW)
+        finally:
+            mlflow.set_tracking_uri(store)  # end the run where it started
+    logged = tracking.get_run(run.info.run_id).data
+    assert not logged.metrics and "amber.overall" not in logged.tags
+
+
+def test_a_local_destination_logs_to_a_local_store(tracking: Any) -> None:
+    local = TRACKING.model_copy(update={"name": "local-mlflow", "zone": Zone.local})
+    with mlflow.start_run() as run:
+        log_evaluation(_report(), gate=GATE, data=DATA, destination=local, now=NOW)
+    assert tracking.get_run(run.info.run_id).data.metrics["amber.precision"] == 1.0

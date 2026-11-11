@@ -28,6 +28,7 @@ from amber.cases import CaseValidationError, load_case_result
 from amber.evaluation import EvaluationReport
 from amber.graph_errors import GraphValidationError
 from amber.interfaces import PolicyGate, SourceResolver
+from amber.mlflow_ext.tracking import require_local_store
 from amber.policy import DataPolicy, Decision, Destination
 from amber.schemas import Case, VariableSet
 from amber.scoring import ScoreReport
@@ -130,11 +131,13 @@ def log_evaluation(
 ) -> tuple[Decision, Decision]:
     """Log a report's metrics and labels to the active MLflow run after both are permitted.
 
-    Raises ``PolicyViolation`` (writing nothing) when either transfer is refused, and
+    Raises ``PolicyViolation`` (writing nothing) when either transfer is refused,
+    ``TrackingError`` when a ``local`` destination meets a tracking URI that is not local, and
     ``ValueError`` when no run is active.
     """
     if mlflow.active_run() is None:
         raise ValueError("log_evaluation needs an active MLflow run")
+    require_local_store(destination)
     metrics_decision = gate.require(data, destination, "metrics", now=now)
     labels_decision = gate.require(data, destination, "labels_only", now=now)
     if isinstance(report, EvaluationReport):

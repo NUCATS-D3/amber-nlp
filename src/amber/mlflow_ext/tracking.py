@@ -84,11 +84,17 @@ def local_tracking(
     return Destination(name=LOCAL_TRACKING, kind="tracking", zone=Zone.local, accepts=accepts)
 
 
+def require_local_store(destination: Destination) -> None:
+    """Refuse a ``local`` destination while MLflow points at a store that is not on this
+    machine: every mlflow_ext transfer writes wherever the tracking URI says."""
+    if destination.zone is Zone.local and not _is_local(mlflow.get_tracking_uri()):
+        raise TrackingError("tracking_uri_not_local")
+
+
 def _check_target(destination: Destination) -> None:
     if destination.kind != "tracking":
         raise TrackingError("not_a_tracking_destination")
-    if destination.zone is Zone.local and not _is_local(mlflow.get_tracking_uri()):
-        raise TrackingError("tracking_uri_not_local")
+    require_local_store(destination)
 
 
 def _is_local(uri: str) -> bool:
@@ -268,5 +274,6 @@ __all__ = [
     "local_tracking",
     "log_decisions",
     "log_run",
+    "require_local_store",
     "traced_provider_call",
 ]
