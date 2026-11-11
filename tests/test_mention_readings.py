@@ -11,6 +11,7 @@ import pytest
 from pydantic import ValidationError
 
 from amber.cases import create_case_result, load_case_result
+from amber.conformance.forgery import forge
 from amber.graph import EvidenceGraph
 from amber.graph_errors import GraphValidationError
 from amber.ids import new_ulid
@@ -401,7 +402,7 @@ def test_reregistration_is_idempotent_and_conflicts_are_atomic() -> None:
     _assert_error("duplicate_reference", graph.register_mention, span, [reading, reading])
     fresh = _reading(span)
     _assert_error("duplicate_reference", graph.register_mention, span, [fresh, conflicting])
-    tampered = span.model_copy(update={"section_category": None})
+    tampered = forge(span, section_category=None)
     _assert_error("duplicate_reference", graph.register_mention, tampered, [reading])
     assert graph.to_payload() == before
 

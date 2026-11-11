@@ -17,6 +17,7 @@ from pydantic import (
 
 from amber.ids import validate_ulid
 from amber.schemas._immutable import FrozenMapping, _FrozenList, freeze_json
+from amber.schemas._minted import MintedRecord
 from amber.schemas._wire import SchemaVersion
 from amber.schemas.claims import Claim
 from amber.schemas.evidence import EvidenceEdge, Inclusion, InferenceEvidence
@@ -205,7 +206,7 @@ _SEVERITY: tuple[OutcomeStatus, ...] = (
 )
 
 
-class CaseResult(BaseModel):
+class CaseResult(MintedRecord):
     """Detached run result issued only after complete source and outcome validation."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)

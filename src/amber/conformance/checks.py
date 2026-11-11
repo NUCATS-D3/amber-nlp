@@ -21,6 +21,7 @@ from amber.annotations import example_from_projection, replay, verify_example
 from amber.cases import load_case_result
 from amber.conformance import fixtures as fx
 from amber.conformance.catalog import CASES, Target
+from amber.conformance.forgery import forge
 from amber.examples import load_label_record, mint_example
 from amber.graph_errors import GraphValidationError
 from amber.interfaces import (
@@ -326,7 +327,7 @@ def check_ann_17(subject: Subject) -> None:
     _append(store, log.events)
     resolver = subject.resolver()
     silver = _example(log.events)
-    forged = silver.model_copy(update={"example_id": "0" * 64})
+    forged = forge(silver, example_id="0" * 64)
     _must_reject(lambda: store.put_example(forged, resolver=resolver), "example_id_accepted")
     _must_accept(lambda: store.put_example(silver, resolver=resolver), "valid_example_rejected")
     if store.current_example("conformance-case-1", resolver=resolver) != silver:
@@ -1358,15 +1359,14 @@ def check_var_09(subject: Subject) -> None:
     if replay_derivations(result, registry=Registry(), variables=variables):
         _fail("unregistered_rule_replayed")
     derived = {edge.claim_id for edge in result.edges if edge.evidence_id in set(replayed)}
-    tampered = result.model_copy(
-        update={
-            "claims": tuple(
-                claim.model_copy(update={"value": {"amber_conformance_tampered": True}})
-                if claim.claim_id in derived
-                else claim
-                for claim in result.claims
-            )
-        }
+    tampered = forge(
+        result,
+        claims=tuple(
+            forge(claim, value={"amber_conformance_tampered": True})
+            if claim.claim_id in derived
+            else claim
+            for claim in result.claims
+        ),
     )
     try:
         replay_derivations(tampered, registry=registry, variables=variables)

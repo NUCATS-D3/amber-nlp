@@ -3,7 +3,7 @@
 - Status: accepted (Will Thompson, 2026-11-09)
 - Date: 2026-11-09
 - Related: [CLAUDE.md invariant 1](../../CLAUDE.md), amber-bpr.8 (Mention scope), amber-7q0.2,
-  amber-73l
+  amber-73l, amber-8gm
 
 ## Context
 
@@ -18,14 +18,18 @@ offset could enter the evidence graph looking verified.
   `exact_mention`, `cite_mention`), after the quote has been checked against the source.
 - Their validators require a private context object held by the minting function, so plain
   construction and `model_validate` are refused. Both also refuse `model_construct`, which
-  skips validators (`Inclusion` since amber-73l). `model_copy(update=...)` still writes fields
-  without validating (amber-8gm); the boundaries below re-ground any span they receive.
+  skips validators (`Inclusion` since amber-73l), and `model_copy(update=...)` or the deprecated
+  `copy(update=...)`, which write fields without validating (amber-8gm). Plain and deep copies
+  remain. The conformance kit and amber's tests forge tampered records with
+  `amber.conformance.forgery.forge`, which bypasses validation as an attacker could, to prove
+  the boundaries below still refuse them.
 - Every other path that receives spans (graph validation, bundle loading, the loupe adapter, and
   the human-review import) re-grounds them through those functions rather than trusting stored
   offsets. Human review therefore adds no second minting path: a reviewed span is grounded like
   any other. This narrows `CLAUDE.md` invariant 1, which also allows "an explicit human-review
   path": no such second path exists. `Claim`, `CaseResult`, and `Example` use the same
-  private-context pattern, refuse `model_construct`, and each have a single creation or load
+  private-context pattern, share the `MintedRecord` base that refuses update-copies, refuse
+  `model_construct`, and each have a single creation or load
   boundary (`_graph_validation`, `amber.cases`, `amber.examples`).
 
 ## Consequences

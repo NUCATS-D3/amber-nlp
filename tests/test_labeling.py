@@ -12,6 +12,7 @@ import pytest
 
 from amber.annotations import verify_example
 from amber.conformance import fixtures as fx
+from amber.conformance.forgery import forge
 from amber.interfaces import Labeler
 from amber.labeling import LabelerFailure, LabelerRejected, admit_labeler, import_events, spans_of
 from amber.policy import DEFAULT_MATRIX, StaticGate
@@ -129,19 +130,18 @@ def test_mention_level_results_import_in_dependency_order() -> None:
 
 def test_failed_results_never_become_references(tmp_path: Path) -> None:
     result = fx.result(fx.RUN_IDS[0])
-    failed = result.model_copy(
-        update={
-            "variable_outcomes": {
-                name: item.model_copy(
-                    update={
-                        "outcome": item.outcome.model_copy(
-                            update={"status": "failed", "failure_kind": "provider"}
-                        )
-                    }
-                )
-                for name, item in result.variable_outcomes.items()
-            }
-        }
+    failed = forge(
+        result,
+        variable_outcomes={
+            name: item.model_copy(
+                update={
+                    "outcome": item.outcome.model_copy(
+                        update={"status": "failed", "failure_kind": "provider"}
+                    )
+                }
+            )
+            for name, item in result.variable_outcomes.items()
+        },
     )
     with pytest.raises(ValueError, match="failed"):
         import_events(

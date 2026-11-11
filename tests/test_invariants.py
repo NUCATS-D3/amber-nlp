@@ -1,6 +1,7 @@
 """Adversarial tests for the implemented M1 domain invariants."""
 
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -157,3 +158,44 @@ def test_ulids_are_valid_and_distinct() -> None:
     second = new_ulid()
     assert len(first) == 26
     assert first != second
+
+
+def _minted_records() -> list[Any]:
+    from amber.conformance import fixtures as fx
+
+    result = fx.note_result(fx.RUN_IDS[0], present=True, producer=fx.TEACHER)
+    example = fx.note_example("silver", present=True, producer=fx.TEACHER)
+    return [fx.SENTENCE, fx.MENTION, result.claims[0], result, example]
+
+
+@pytest.mark.parametrize("record", _minted_records(), ids=lambda r: type(r).__name__)
+def test_minted_records_refuse_unvalidated_updates(record: Any) -> None:
+    """amber-8gm: model_copy(update=...) skips validators, so a minted record could change its
+    offsets, quote, or values unchecked; only plain and deep copies remain."""
+    name = next(iter(type(record).model_fields))
+    with pytest.raises(TypeError, match="minting path"):
+        record.model_copy(update={name: getattr(record, name)})
+    with pytest.raises(TypeError, match="minting path"):
+        record.copy(update={name: getattr(record, name)})
+    assert record.model_copy() == record
+    assert record.model_copy(deep=True) == record
+    assert record.model_copy(update={}) == record
+    with pytest.warns(DeprecationWarning):
+        assert record.copy() == record
+    for narrowing in ({"include": {name}}, {"exclude": {name}}):
+        with pytest.raises(TypeError, match="minting path"):
+            record.copy(**narrowing)
+    with pytest.raises(TypeError, match="minting path"):
+        record.__replace__(**{name: getattr(record, name)})  # copy.replace on Python 3.13
+
+
+def test_the_forge_helper_bypasses_validation_on_a_copy() -> None:
+    from amber.conformance.forgery import forge
+
+    original = _minted_records()[0]
+    forged = forge(original, quote="forged")
+    assert forged.quote == "forged"
+    assert original.quote != "forged"
+    assert type(forged) is type(original)
+    with pytest.raises(AttributeError, match="no_such_field"):
+        forge(original, no_such_field=1)

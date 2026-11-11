@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from amber import _graph_validation
+from amber.conformance.forgery import forge
 from amber.graph import EvidenceGraph
 from amber.graph_errors import GraphValidationError
 from amber.grounding import exact_mention, exact_quote
@@ -140,7 +141,7 @@ def test_registration_revalidates_existing_ids_before_idempotency() -> None:
     graph.register_evidence(leaf)
     before = graph.to_payload()
     secret = "private clinical text"
-    forged = leaf.model_copy(update={"start": secret})
+    forged = forge(leaf, start=secret)
 
     with warnings.catch_warnings(record=True) as captured:
         warnings.simplefilter("always")

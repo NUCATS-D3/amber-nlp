@@ -12,6 +12,7 @@ import pytest
 
 from amber.cases import CaseValidationError, create_case_result, load_case_result
 from amber.conformance import fixtures as fx
+from amber.conformance.forgery import forge
 from amber.graph import EvidenceGraph
 from amber.graph_errors import GraphValidationError
 from amber.reference import AjccStub
@@ -266,9 +267,7 @@ def test_rejected_claims_are_never_candidates() -> None:
         source_leaves = graph.source_leaves
         commit_claim = graph.commit_claim
         claims = {
-            claim_id: claim.model_copy(update={"status": "rejected"})
-            if claim_id == rejected
-            else claim
+            claim_id: forge(claim, status="rejected") if claim_id == rejected else claim
             for claim_id, claim in graph.claims.items()
         }
 

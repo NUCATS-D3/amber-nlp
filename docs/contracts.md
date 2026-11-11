@@ -72,7 +72,8 @@ refuse scoring a configuration against its own silver references; rule hashes ar
   effective time, confidence, status, and provenance. Claims are admitted only through graph validation.
 - **Evidence**:
   - `Inclusion`: a verified source span. Only the grounding path can mint one; direct
-    construction, `model_validate`, and `model_construct` are refused. Inclusions are
+    construction, `model_validate`, `model_construct`, and `model_copy(update=...)` are refused
+    (also for `Mention`, `Claim`, `CaseResult`, and `Example`). Inclusions are
     positions only, so one position has one `evidence_id` whatever cites it.
   - `InferenceEvidence`: a rationale with non-empty inputs, which are evidence IDs or
     non-rejected claim IDs, and an optional `derivation` (experimental), omitted from JSON
@@ -608,6 +609,10 @@ sensitivity. They ship with the core; `amber[reference]` installs what all of th
   check plus the report. With `--amber-conformance-bundle=DIR` and a
   `pytest_amber_conformance_bundle(config)` hook returning a `BundleUnderTest` (variable set,
   optional resolver), it instead runs one test per bundle case and writes the bundle report.
+- **Forgery** (`amber.conformance.forgery.forge(record, **changes)`, experimental): a deep copy
+  of a record with fields set past validation, for adversarial tests that must show a boundary
+  refuses a tampered record (minted records refuse `model_copy(update=...)`; ADR 0003). It never
+  produces a valid record and is not for code that produces results.
 
 ## Evaluation harness (`amber.evaluation`)
 

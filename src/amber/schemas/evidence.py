@@ -23,6 +23,7 @@ from pydantic import (
 from amber.ids import inclusion_id as make_inclusion_id
 from amber.ids import validate_ulid
 from amber.schemas._immutable import FrozenMapping, freeze_json
+from amber.schemas._minted import MintedRecord
 from amber.schemas.provenance import Provenance
 
 _INCLUSION_MINT_CONTEXT = object()
@@ -30,7 +31,12 @@ _StrictString = Annotated[str, Field(strict=True)]
 _FiniteFloat = Annotated[float, Field(allow_inf_nan=False)]
 
 
-class Inclusion(BaseModel):
+class Inclusion(MintedRecord):
+    """A verified source span: ``quote`` equals the source text at ``start:end`` (code points).
+
+    Minted only by grounding (ADR 0003); its ``evidence_id`` hashes the position alone.
+    """
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     kind: Literal["inclusion"] = "inclusion"

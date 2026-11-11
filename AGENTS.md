@@ -218,7 +218,9 @@ Accepted by Will Thompson on 2026-11-10. Invariants and the framework boundary l
   failed outcomes) or a module's `ValueError` subclass (`GraphValidationError`). Messages never
   include source text; never catch broadly or swallow an error to make something pass.
 - Records asserting verified content (`Inclusion`, `Mention`, `Claim`, `CaseResult`, `Example`,
-  and any new one) have one creation or load path and refuse `model_construct` (ADR 0003).
+  and any new one) have one creation or load path, refuse `model_construct`, and subclass
+  `MintedRecord`, which refuses `model_copy(update=...)` (ADR 0003). Tests forge tampered
+  records with `amber.conformance.forgery.forge`.
 - Delete replaced code in the same change: no `_old` or `_v2` copies, shims, or commented-out
   code. Breaking contract changes ship a migration note (contract-change skill) instead.
 - Comments explain why, citing the contract section or ADR. New dependencies, including

@@ -25,6 +25,7 @@ from pydantic import (
 from amber.ids import mention_id as make_mention_id
 from amber.ids import parse_producer, validate_ulid
 from amber.schemas._immutable import FrozenMapping
+from amber.schemas._minted import MintedRecord
 from amber.schemas.provenance import Provenance
 
 _MENTION_MINT_CONTEXT = object()
@@ -63,7 +64,7 @@ def fragments_error(start: int, end: int, fragments: tuple[tuple[int, int], ...]
     return None
 
 
-class Mention(BaseModel):
+class Mention(MintedRecord):
     """A content-addressed typed span; readings of it are separate records."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)

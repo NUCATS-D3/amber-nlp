@@ -332,27 +332,26 @@ def _load_example(
     }
     _require_statuses_by_tier(state, references)
 
+    minted = {
+        **copied,
+        "references": references,
+        **ordered_records(
+            claims=state.claims,
+            evidence=state.evidence,
+            edges=state.edges,
+            mentions=state.mentions,
+            readings=state.readings,
+        ),
+    }
     try:
-        example = _mint_example(
-            {
-                **copied,
-                "references": references,
-                **ordered_records(
-                    claims=state.claims,
-                    evidence=state.evidence,
-                    edges=state.edges,
-                    mentions=state.mentions,
-                    readings=state.readings,
-                ),
-            }
-        )
+        example = _mint_example(minted)
     except (AttributeError, TypeError, ValueError, ValidationError):
         _raise("invalid_schema")
     if example.created_at.utcoffset() is None:
         _raise("invalid_schema")
     content_id = example_id(example.model_dump(mode="json"))
     if assign_id:
-        return example.model_copy(update={"example_id": content_id})
+        return _mint_example({**minted, "example_id": content_id})
     if example.example_id != content_id:
         _raise("example_id_mismatch")
     return example

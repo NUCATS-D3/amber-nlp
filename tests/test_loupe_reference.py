@@ -13,6 +13,7 @@ import pytest
 
 from amber.annotations import verify_example
 from amber.conformance import fixtures as fx
+from amber.conformance.forgery import forge
 from amber.loupe import AdapterError, AmberClaimsAdapter
 from amber.loupe.reference import (
     ADAPTER_PATH,
@@ -498,19 +499,18 @@ def test_failed_results_are_never_proposals() -> None:
     from amber.loupe.reference import proposal_request
 
     result = fx.result(fx.RUN_IDS[0])
-    failed = result.model_copy(
-        update={
-            "variable_outcomes": {
-                name: item.model_copy(
-                    update={
-                        "outcome": item.outcome.model_copy(
-                            update={"status": "failed", "failure_kind": "provider"}
-                        )
-                    }
-                )
-                for name, item in result.variable_outcomes.items()
-            }
-        }
+    failed = forge(
+        result,
+        variable_outcomes={
+            name: item.model_copy(
+                update={
+                    "outcome": item.outcome.model_copy(
+                        update={"status": "failed", "failure_kind": "provider"}
+                    )
+                }
+            )
+            for name, item in result.variable_outcomes.items()
+        },
     )
     assert proposal_request(failed, reviewer="model:x@1") is None
 

@@ -22,6 +22,7 @@ from pydantic import (
 
 from amber.ids import parse_producer, validate_ulid
 from amber.schemas._immutable import FrozenMapping, freeze_json
+from amber.schemas._minted import MintedRecord
 from amber.schemas._wire import SchemaVersion, Timestamp
 from amber.schemas.cases import CaseOutcome, OutcomeStatus, Split, _FrozenRecords
 from amber.schemas.claims import Claim
@@ -122,7 +123,7 @@ class VariableReference(BaseModel):
         return self
 
 
-class Example(BaseModel):
+class Example(MintedRecord):
     """A validated snapshot of a case's annotations as of one event."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
