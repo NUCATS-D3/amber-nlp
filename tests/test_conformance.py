@@ -948,3 +948,120 @@ def test_an_extractor_calling_a_model_without_its_decision_fails_pol_15() -> Non
 
     report = run_checks(_subject(extractor=lambda provider: Unchecked(provider)))
     assert _statuses(report)["POL-15"] == ("failed", "model_call_without_its_own_decision")
+
+
+# Task-specific extractors (amber-jae) -------------------------------------------------------
+
+
+class _OwnTaskExtractor:
+    """Declares mentions but emits one only on its own case, like an extractor built for one
+    task: on the kit's fixtures it gives valid failed(parse) results."""
+
+    name = "own-task"
+    version = "1"
+    capabilities = frozenset({"mentions", "note_claims"})
+
+    def __init__(self, provider: Any) -> None:
+        self.provider = provider
+        self.destinations = frozenset({provider.destination})
+
+    def run(self, case: Any, source: Any, variables: Any, *, gate: Any, budget: Any,
+            context: Any) -> Any:  # fmt: skip
+        from datetime import UTC, datetime
+
+        from amber.extraction import failed_result, local_provenance
+        from amber.graph import EvidenceGraph
+        from amber.schemas import CaseOutcome, MentionReading, VariableOutcome
+
+        made = datetime(2026, 1, 1, tzinfo=UTC)
+        stamp = local_provenance(context, producer="tool:own-task@1", tool="own-task",
+                                 version="1", created_at=made)  # fmt: skip
+        if case.case_id != "own-case":
+            return failed_result(case, source, variables, context=context, failure_kind="parse",
+                                 reason="not this extractor's task", provenance=stamp,
+                                 budget=budget)  # fmt: skip
+        graph = EvidenceGraph(source=source, variables=variables, sensitivity=case.sensitivity)
+        reading = MentionReading(reading_id=fx.fixed_ulid(1), mention_id=fx.MENTION.mention_id,
+                                 provenance=stamp, attributes={})  # fmt: skip
+        graph.register_mention(fx.MENTION, [reading])
+        failed = CaseOutcome(status="failed", reason="mentions only", failure_kind="parse",
+                             provenance=stamp)  # fmt: skip
+        return create_case_result(
+            case, graph=graph, run_id=context.run_id, budget=budget,
+            variable_outcomes={name: VariableOutcome(variable=name, outcome=failed)
+                               for name, variable in variables.variables.items() if variable.final},
+        )  # fmt: skip
+
+
+def _own_task_report(fixture: Any) -> Any:
+    from amber.conformance import Subject
+
+    subject = Subject(name="own-task", version="1", targets={"Extractor": _OwnTaskExtractor},
+                      extractor_fixture=fixture)  # fmt: skip
+    return {case.id: (case.status, case.code) for case in run_checks(subject).cases}
+
+
+def _fixture(case_id: str = "own-case", **changes: Any) -> Any:
+    from amber.conformance import ExtractorFixture
+
+    return ExtractorFixture(case=fx.case(case_id, **changes), source=fx.SOURCE,
+                            variables=fx.VARIABLES, answers=[])  # fmt: skip
+
+
+def test_a_task_specific_extractor_fails_mentions_on_the_kit_fixture_alone() -> None:
+    assert _own_task_report(None)["IFC-03"] == ("failed", "no_mention_emitted")
+
+
+def test_its_own_synthetic_fixture_lets_declared_mentions_be_checked() -> None:
+    report = _own_task_report(_fixture())
+    assert report["IFC-03"] == ("passed", None)
+    assert report["IFC-12"] == ("passed", None)
+
+
+def test_a_fixture_that_yields_no_mention_still_fails() -> None:
+    assert _own_task_report(_fixture("other-case"))["IFC-03"] == ("failed", "no_mention_emitted")
+
+
+def test_a_non_synthetic_fixture_is_refused() -> None:
+    report = _own_task_report(_fixture(sensitivity="deidentified"))
+    assert report["IFC-03"] == ("failed", "fixture_not_synthetic")
+
+
+class _UndeclaredOwnTask(_OwnTaskExtractor):
+    capabilities = frozenset({"note_claims"})
+
+
+def _report_for(extractor: Any, fixture: Any) -> Any:
+    from amber.conformance import Subject
+
+    subject = Subject(name="s", version="1", targets={"Extractor": extractor},
+                      extractor_fixture=fixture)  # fmt: skip
+    return {case.id: (case.status, case.code) for case in run_checks(subject).cases}
+
+
+def test_a_fixture_is_refused_for_an_extractor_that_answers_the_kit_fixtures() -> None:
+    from amber.reference import DeterministicExtractor
+
+    class Generic(DeterministicExtractor):
+        """Answers the kit's fixtures and claims mentions it would rather not show there."""
+
+        capabilities = frozenset({"note_claims", "mentions"})
+
+    report = _report_for(lambda p: Generic(p, name="generic"), _fixture())
+    assert report["IFC-03"] == ("failed", "fixture_not_needed")
+    quiet = _report_for(lambda p: DeterministicExtractor(p, name="generic"), _fixture())
+    assert quiet["IFC-12"] == ("failed", "fixture_not_needed")
+
+
+def test_a_fixture_without_a_mention_variable_cannot_check_mentions() -> None:
+    from amber.conformance import ExtractorFixture
+
+    fixture = ExtractorFixture(case=fx.note_case(), source=fx.SOURCE,
+                               variables=fx.NOTE_VARIABLES, answers=[])  # fmt: skip
+    report = _report_for(_OwnTaskExtractor, fixture)
+    assert report["IFC-03"] == ("failed", "fixture_lacks_mention_variable")
+
+
+def test_undeclared_mentions_on_the_subject_fixture_are_caught() -> None:
+    report = _report_for(_UndeclaredOwnTask, _fixture())
+    assert report["IFC-12"] == ("failed", "undeclared_mentions_served")

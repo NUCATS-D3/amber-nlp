@@ -609,6 +609,16 @@ sensitivity. They ship with the core; `amber[reference]` installs what all of th
   check plus the report. With `--amber-conformance-bundle=DIR` and a
   `pytest_amber_conformance_bundle(config)` hook returning a `BundleUnderTest` (variable set,
   optional resolver), it instead runs one test per bundle case and writes the bundle report.
+- **Task-specific extractors** (experimental): an `Extractor` built for one task gives only
+  failed results on the kit's own variable sets, so its `Subject` may carry an
+  `ExtractorFixture` (a case, source, and variable set of its task, with the scripted provider
+  answers). IFC-03 then checks a declared `mentions` capability on that fixture, and IFC-12
+  looks there for undeclared mentions; derivations, failures (IFC-02, POL-08), and grounding
+  (MEN-11) stay on the kit's fixtures. The kit refuses a fixture for an extractor that answers
+  its own fixtures (`fixture_not_needed`), one without a mention-level variable when mentions
+  are declared (`fixture_lacks_mention_variable`), and a case not labeled synthetic
+  (`fixture_not_synthetic`). The consumer attests that the fixture's text and answers are
+  invented. The report does not yet record that a subject fixture was used (amber-23g).
 - **Forgery** (`amber.conformance.forgery.forge(record, **changes)`, experimental): a deep copy
   of a record with fields set past validation, for adversarial tests that must show a boundary
   refuses a tampered record (minted records refuse `model_copy(update=...)`; ADR 0003). It never

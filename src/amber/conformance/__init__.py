@@ -19,6 +19,9 @@ kit supplies; ``ReviewBackend`` takes no arguments and returns ``(backend, revie
 ``review(receipt)`` completes the reviews of an exported batch (accepting every proposal).
 ``Rule`` takes no arguments and returns ``(rule, result, variables)``: a result holding at
 least one derivation by the rule, and its variable set.
+An ``Extractor`` built for one task (whose results on the kit's own variable sets can only be
+failures) passes ``Subject(..., extractor_fixture=ExtractorFixture(case, source, variables,
+answers))``: an invented case of its task on which its mentions are checked (IFC-03, IFC-12).
 
 then runs ``pytest --amber-conformance --amber-conformance-report=report.json``.
 
@@ -28,6 +31,12 @@ optional resolver) from ``pytest_amber_conformance_bundle(config)`` and runs
 bundle (``amber.conformance.bundle``, which needs the ``bundles`` extra).
 """
 
-from amber.conformance.checks import CHECKS, BundleUnderTest, ConformanceFailure, Subject
+from amber.conformance.checks import (
+    CHECKS,
+    BundleUnderTest,
+    ConformanceFailure,
+    ExtractorFixture,
+    Subject,
+)
 
-__all__ = ["CHECKS", "BundleUnderTest", "ConformanceFailure", "Subject"]
+__all__ = ["CHECKS", "BundleUnderTest", "ConformanceFailure", "ExtractorFixture", "Subject"]
