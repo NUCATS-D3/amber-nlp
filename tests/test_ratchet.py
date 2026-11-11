@@ -874,14 +874,28 @@ def test_list_prints_every_legacy_finding_by_metric(
     capsys.readouterr()
     assert _run(repo, "--list") == 0
     out = capsys.readouterr().out
-    assert "## ruff:F401 (26)" in out
+    assert "## ruff:F401 (26, baseline 1)" in out
     assert "src/pkg/legacy.py:1:F401" in out
     assert "src/pkg/dead_24.py:1:F401" in out  # not capped like the failure report
-    assert "## complexity:src/pkg/legacy.py (12)" in out
+    assert "## complexity:src/pkg/legacy.py (max 12; 1 function over 10)" in out
     assert "src/pkg/legacy.py:4:C901" in out
     assert "## suppressions:unjustified (1)" in out
+    assert "src/pkg/legacy.py:34:unjustified" in out
     assert "## mypy-strict (1)" in out
+    assert "src/pkg/legacy.py:" in out.split("## mypy-strict (1)")[1].split("##")[0]
     assert "and more" not in out
+    assert "repeats" in out.split("##")[0]  # the note on overlapping suppression metrics
+    # Counted metrics first, worst first; module complexity after them.
+    headers = [line for line in out.splitlines() if line.startswith("## ")]
+    assert headers.index("## ruff:F401 (26, baseline 1)") < headers.index("## mypy-strict (1)")
+    assert headers[-1].startswith("## complexity:")
+
+
+def test_list_reports_tool_errors_on_stderr(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (repo / "quality" / "ruff-ratchet.toml").unlink()
+    assert _run(repo, "--list") == 1
+    captured = capsys.readouterr()
+    assert "ratchet:" in captured.err and captured.out == ""
 
 
 def test_list_does_not_combine_with_rewriting_the_baseline(

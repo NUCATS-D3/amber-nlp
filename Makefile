@@ -51,7 +51,7 @@ RATCHET_BASE ?= origin/main
 ratchet: ## Violation counts against quality/baseline.json; new code must be clean
 	$(RUN) python quality/ratchet.py --base $(RATCHET_BASE)
 
-quality-report: ## Every legacy finding the baseline allows, by metric, in .quality-report.txt
+quality-report: ## Every finding measured now, by metric (baseline where it differs), in .quality-report.txt
 	$(RUN) python quality/ratchet.py --list > .quality-report.txt
 	@grep '^## ' .quality-report.txt | head -20
 	@echo "full list: .quality-report.txt"
