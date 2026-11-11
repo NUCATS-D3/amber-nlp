@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import pytest
 
+from amber.conformance.forgery import forge
 from amber.grounding import cite_mention, exact_mention, exact_quote
 from amber.ids import mention_id
 from amber.schemas import GroundingFailure, Inclusion, Mention, Section, Source, SourceKind
@@ -132,17 +133,16 @@ def _mention() -> Mention:
 
 def _rekeyed(mention: Mention, **changes: object) -> Mention:
     """A tampered copy whose ID still matches its (tampered) span."""
-    changed = mention.model_copy(update=changes)
-    return changed.model_copy(
-        update={
-            "mention_id": mention_id(
-                source_id=changed.source_id,
-                start=changed.start,
-                end=changed.end,
-                mention_type=changed.mention_type,
-                fragments=changed.fragments,
-            )
-        }
+    changed = forge(mention, **changes)
+    return forge(
+        changed,
+        mention_id=mention_id(
+            source_id=changed.source_id,
+            start=changed.start,
+            end=changed.end,
+            mention_type=changed.mention_type,
+            fragments=changed.fragments,
+        ),
     )
 
 
@@ -158,7 +158,7 @@ def test_a_mention_of_another_source_is_refused() -> None:
 def test_a_mention_whose_identity_or_fragments_do_not_match_is_refused() -> None:
     mention = _mention()
     with pytest.raises(ValueError, match="^mention identity does not match its span$"):
-        cite_mention(NOTE, mention.model_copy(update={"start": mention.start + 1}))
+        cite_mention(NOTE, forge(mention, start=mention.start + 1))
     bad_fragments = _rekeyed(mention, fragments=((mention.start, mention.end),))
     with pytest.raises(ValueError, match="^mention identity does not match its span$"):
         cite_mention(NOTE, bad_fragments)

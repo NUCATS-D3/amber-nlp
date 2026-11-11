@@ -7,6 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from amber import ids
+from amber.conformance.forgery import forge
 from amber.schemas import GroundingFailure, Inclusion, Mention, Section, Source, SourceKind
 from amber.tools.mention import cite, mention
 from amber.tools.quote import quote
@@ -296,8 +297,8 @@ def test_cite_rejects_foreign_or_tampered_mentions() -> None:
     with pytest.raises(ValueError, match="supplied source"):
         cite(result, sources={result.source_id: other})
     with pytest.raises(ValueError, match="identity"):
-        cite(result.model_copy(update={"start": result.start + 1}), sources=SOURCES)
+        cite(forge(result, start=result.start + 1), sources=SOURCES)
     with pytest.raises(ValueError, match="identity"):
-        cite(result.model_copy(update={"mention_type": "stage"}), sources=SOURCES)
+        cite(forge(result, mention_type="stage"), sources=SOURCES)
     with pytest.raises(TypeError, match="requires a Mention"):
         cite(cite(result, sources=SOURCES)[0], sources=SOURCES)  # type: ignore[arg-type]

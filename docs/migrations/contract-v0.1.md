@@ -214,6 +214,25 @@ unchanged, so `schema_version` stays `amber/0.1`.
 - **Upgrade:** mint inclusions with `amber.grounding.exact_quote` (or `cite_mention` for a
   mention's positions) and handle `GroundingFailure`.
 
+### Minted records refuse `model_copy(update=...)`
+
+Commit: the one closing `amber-8gm` ([ADR 0003](../decisions/0003-grounding-mints-spans.md)).
+
+`model_copy(update=...)` and Pydantic's deprecated `copy(update=...)` write fields without
+running validators, so a minted `Inclusion` could be copied with other offsets or another quote,
+and a `Claim`, `CaseResult`, or `Example` with other values, unchecked. On these five records
+both now raise `TypeError`; `model_copy()` and `model_copy(deep=True)` still work. Records, IDs,
+and wire bytes are unchanged, so `schema_version` stays `amber/0.1`.
+
+- **Affected:** code that update-copies one of the five records. In amber, the `Example` mint
+  path (now re-mints) and the forgeries in the conformance kit and tests (now use `forge`).
+  lapidary's tests at its pinned commit do it three times, in `tests/test_validation.py`
+  (`tampered`) and `tests/test_scorers.py` (`result` with usage); loupe and copal do not.
+- **Upgrade:** produce a changed record through its minting path (graph validation for claims,
+  `amber.cases` for results, `amber.examples.mint_example` for Examples, grounding for spans).
+  To build a deliberately tampered record for an adversarial test, use
+  `amber.conformance.forgery.forge(record, field=value)`.
+
 ## Still to implement
 
 Nothing: every breaking change listed by the contract v0.1 design is implemented above.

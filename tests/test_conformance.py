@@ -18,6 +18,7 @@ from amber.conformance import Subject
 from amber.conformance import fixtures as fx
 from amber.conformance.catalog import CASES, CATALOG, CATALOG_VERSION, catalog_revision
 from amber.conformance.checks import CHECKS
+from amber.conformance.forgery import forge
 from amber.conformance.report import build_report, run_checks
 from amber.labeling import LabelerFailure
 from amber.policy import DEFAULT_MATRIX, Destination, ProviderDestination, StaticGate
@@ -525,13 +526,13 @@ class _RefusalAsProviderFailure(DeterministicExtractor):
             else item
             for name, item in result.variable_outcomes.items()
         }
-        return result.model_copy(update={"variable_outcomes": outcomes})
+        return forge(result, variable_outcomes=outcomes)
 
 
 class _UncountedGrounding(DeterministicExtractor):
     def run(self, case: Any, source: Any, variables: Any, **kwargs: Any) -> Any:
         result = super().run(case, source, variables, **kwargs)
-        return result.model_copy(update={"grounding_failures": 0})
+        return forge(result, grounding_failures=0)
 
 
 @pytest.mark.parametrize(
@@ -633,8 +634,8 @@ class _AlwaysFails(ImportLabeler):
 class _EditsExample(ImportLabeler):
     def label(self, *args: Any, **kwargs: Any) -> Any:
         events, example = super().label(*args, **kwargs)
-        claims = tuple(claim.model_copy(update={"status": "accepted"}) for claim in example.claims)
-        return events, example.model_copy(update={"claims": claims})
+        claims = tuple(forge(claim, status="accepted") for claim in example.claims)
+        return events, forge(example, claims=claims)
 
 
 def _broken(cls: type[ImportLabeler]) -> Any:
@@ -678,13 +679,12 @@ class _SilverToo(FileReviewBackend):
     def import_references(self, receipt: Any, *, resolver: Any) -> Any:
         examples, events = super().import_references(receipt, resolver=resolver)
         silver = [
-            example.model_copy(
-                update={
-                    "references": {
-                        name: reference.model_copy(update={"tier": ReferenceTier.silver})
-                        for name, reference in example.references.items()
-                    }
-                }
+            forge(
+                example,
+                references={
+                    name: reference.model_copy(update={"tier": ReferenceTier.silver})
+                    for name, reference in example.references.items()
+                },
             )
             for example in examples
         ]

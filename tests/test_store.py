@@ -10,6 +10,7 @@ import pytest
 
 from amber.annotations import AnnotationValidationError, example_from_projection, replay
 from amber.cases import create_case_result
+from amber.conformance.forgery import forge
 from amber.examples import load_label_record, mint_example
 from amber.graph import EvidenceGraph
 from amber.ids import new_ulid
@@ -337,7 +338,7 @@ def test_examples_match_their_case_split_and_identity() -> None:
 
     store = _store()
     store.append_events(log.events, spans=SPANS)
-    forged = example.model_copy(update={"example_id": "0" * 64})
+    forged = forge(example, example_id="0" * 64)
     _assert_code("example_id_mismatch", store.put_example, forged, resolver=RESOLVER)
 
 

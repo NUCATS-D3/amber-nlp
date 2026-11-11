@@ -16,6 +16,7 @@ from pydantic import (
 
 from amber.ids import validate_ulid
 from amber.schemas._immutable import freeze_json
+from amber.schemas._minted import MintedRecord
 from amber.schemas._wire import Timestamp
 from amber.schemas.provenance import Provenance
 
@@ -77,7 +78,7 @@ class _ClaimRecord(BaseModel):
         return _validated_provenance(value)
 
 
-class Claim(_ClaimRecord):
+class Claim(_ClaimRecord, MintedRecord):
     """A claim admitted only after complete graph validation."""
 
     @model_validator(mode="before")

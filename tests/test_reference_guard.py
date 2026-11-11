@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from amber.conformance import fixtures as fx
+from amber.conformance.forgery import forge
 from amber.policy import DEFAULT_MATRIX, DataPolicy, Destination, StaticGate
 from amber.reference import (
     DeterministicExtractor,
@@ -114,7 +115,7 @@ def test_the_reference_scorers_score_only_synthetic_results(
         )
         for name, item in result.variable_outcomes.items()
     }
-    real = result.model_copy(update={"variable_outcomes": outcomes})
+    real = forge(result, variable_outcomes=outcomes)
     examples = [fx.note_example("adjudicated", present=True, producer=fx.TEACHER)]
     _refused(lambda: scorer().score([real], examples, variables=fx.NOTE_VARIABLES))
     scorer().score([result], examples, variables=fx.NOTE_VARIABLES)

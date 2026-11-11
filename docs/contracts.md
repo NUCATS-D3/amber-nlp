@@ -72,7 +72,8 @@ refuse scoring a configuration against its own silver references; rule hashes ar
   effective time, confidence, status, and provenance. Claims are admitted only through graph validation.
 - **Evidence**:
   - `Inclusion`: a verified source span. Only the grounding path can mint one; direct
-    construction, `model_validate`, and `model_construct` are refused. Inclusions are
+    construction, `model_validate`, `model_construct`, and `model_copy(update=...)` are refused
+    (also for `Mention`, `Claim`, `CaseResult`, and `Example`). Inclusions are
     positions only, so one position has one `evidence_id` whatever cites it.
   - `InferenceEvidence`: a rationale with non-empty inputs, which are evidence IDs or
     non-rejected claim IDs, and an optional `derivation` (experimental), omitted from JSON
