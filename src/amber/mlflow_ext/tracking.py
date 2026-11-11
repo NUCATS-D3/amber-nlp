@@ -54,7 +54,10 @@ from amber.schemas import Zone
 
 LOCAL_TRACKING = "local:mlflow"
 DECISIONS_ARTIFACT = "amber/decisions.json"
-_LOCAL_SCHEMES = frozenset({"", "file", "sqlite"})
+_LOCAL_SCHEMES = frozenset({"file", "sqlite"})
+# Scheme-less tracking URIs that MLflow resolves to a remote service rather than a directory
+# (mlflow.utils.uri: Databricks and Unity Catalog), compared case-insensitively.
+_REMOTE_NAMES = frozenset({"databricks", "databricks-uc", "uc"})
 
 
 class TrackingError(ValueError):
@@ -83,10 +86,16 @@ def local_tracking(
 def _check_target(destination: Destination) -> None:
     if destination.kind != "tracking":
         raise TrackingError("not_a_tracking_destination")
-    if destination.zone is Zone.local:
-        scheme = urlparse(mlflow.get_tracking_uri()).scheme
-        if scheme not in _LOCAL_SCHEMES:
-            raise TrackingError("tracking_uri_not_local")
+    if destination.zone is Zone.local and not _is_local(mlflow.get_tracking_uri()):
+        raise TrackingError("tracking_uri_not_local")
+
+
+def _is_local(uri: str) -> bool:
+    """A file or SQLite store, or a directory path; never a name MLflow reserves for a service."""
+    scheme = urlparse(uri).scheme
+    if scheme:
+        return scheme in _LOCAL_SCHEMES
+    return uri.strip().lower() not in _REMOTE_NAMES
 
 
 def _require_run() -> None:
