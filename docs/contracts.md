@@ -655,13 +655,16 @@ accepted.
 - `amber.mlflow_ext.evaluation.log_evaluation`: logs an `EvaluationReport` or `ScoreReport`
   (values, numerators, denominators, intervals as metrics; gate statuses, provisional flag,
   and tier mix as tags) to the active run, after the gate permits both `metrics` and
-  `labels_only` to the destination.
+  `labels_only` to the destination; a `local` destination needs a local tracking URI, as below.
 - `amber.mlflow_ext.tracking`: gated run and trace logging. `local_tracking(directory)`
   points MLflow at a SQLite store on this machine and returns the `local:mlflow` tracking
   destination (accepting `metrics` and `labels_only` unless told otherwise), the default for
   development. Every function checks the destination is `tracking` and, for a `local` one,
-  that MLflow's tracking URI is a local file or SQLite store (`TrackingError`:
+  that MLflow's tracking URI is a local file or SQLite store or a directory path, never a
+  name MLflow reserves for a service (`databricks`, `databricks-uc`, `uc`) (`TrackingError`:
   `not_a_tracking_destination`, `tracking_uri_not_local`, `no_active_run`).
+  `require_local_store(destination)` is that URI check alone, which `log_evaluation` and
+  `create_examples_dataset` also run first.
   `log_run(context, *, providers, gate, destination, now, prompt_versions, adapter_policy,
   producer)` logs the run ID, dataset and manifest hash, policy version, sensitivity,
   restrictions, prompt versions, adapter policy, and each provider's kind, zone, model, and
@@ -674,7 +677,8 @@ accepted.
 - `amber.mlflow_ext.datasets`: Examples as MLflow GenAI evaluation datasets. Each record has
   `inputs` (`case_id`, `example_id`, and the note `text` only when a resolver is passed as
   `texts`) and `expectations` (`amber_example`, the full Example JSON, plus per final variable
-  `{tier, status, values}`). `create_examples_dataset` requires one variable set and gates
+  `{tier, status, values}`). `create_examples_dataset` requires one variable set, refuses a
+  `local` destination while the tracking URI is not local (`tracking_uri_not_local`), and gates
   `derived_text` (and `source_text` with text) before creating anything; tags record the
   variable set and tier counts. `load_examples_dataset` / `records_to_examples` reload every
   record through `load_example` against the authoritative case, source, and variable set

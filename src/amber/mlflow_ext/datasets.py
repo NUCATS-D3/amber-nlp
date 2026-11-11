@@ -34,6 +34,7 @@ from amber.annotations import verify_example
 from amber.examples import load_example
 from amber.interfaces import PolicyGate, SourceResolver
 from amber.labeling import spans_of
+from amber.mlflow_ext.tracking import require_local_store
 from amber.policy import DataPolicy, Decision, Destination, PayloadKind
 from amber.schemas import AnnotationEvent, Case, Example, VariableSet
 
@@ -139,7 +140,8 @@ def create_examples_dataset(
     """Create an MLflow evaluation dataset of ``examples`` after the gate permits it.
 
     Raises ``PolicyViolation`` before writing anything when ``derived_text`` (or, with
-    ``texts``, ``source_text``) may not go to ``destination``.
+    ``texts``, ``source_text``) may not go to ``destination``, and ``TrackingError`` when a
+    ``local`` destination meets a tracking URI that is not local.
     """
     if not examples:
         raise DatasetError("no_examples")
@@ -148,6 +150,7 @@ def create_examples_dataset(
     payloads: tuple[PayloadKind, ...] = (
         ("derived_text", "source_text") if texts is not None else ("derived_text",)
     )
+    require_local_store(destination)
     decisions = tuple(gate.require(data, destination, kind, now=now) for kind in payloads)
     records = examples_to_records(examples, texts=texts)
     tiers: dict[str, int] = {}

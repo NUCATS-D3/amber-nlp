@@ -236,3 +236,44 @@ def test_datasets_hold_one_variable_set(tracking: Any) -> None:
             destination=STORE,
             now=NOW,
         )
+
+
+# A local destination while MLflow points at a remote store (amber-fc8.10).
+REMOTE = ["databricks", "uc", "http://tracking.invalid:5000"]
+LOCAL_STORE = STORE.model_copy(update={"name": "local-mlflow", "zone": Zone.local})
+
+
+@pytest.mark.parametrize("uri", REMOTE)
+@pytest.mark.parametrize("texts", [None, RESOLVER], ids=["derived", "with-text"])
+def test_a_local_destination_refuses_a_remote_store(
+    tracking: Any, monkeypatch: pytest.MonkeyPatch, uri: str, texts: Any
+) -> None:
+    from mlflow.genai.datasets import search_datasets
+
+    from amber.mlflow_ext.tracking import TrackingError
+
+    _, example = _gold()
+    # Reaching the store must fail fast, not retry (MLflow's own settings).
+    monkeypatch.setenv("MLFLOW_HTTP_REQUEST_MAX_RETRIES", "0")
+    monkeypatch.setenv("MLFLOW_HTTP_REQUEST_TIMEOUT", "1")
+    store = mlflow.get_tracking_uri()
+    mlflow.set_tracking_uri(uri)
+    try:
+        with pytest.raises(TrackingError, match="tracking_uri_not_local"):
+            create_examples_dataset(
+                [example], name="remote", variables=fx.VARIABLES, gate=GATE, data=DATA,
+                destination=LOCAL_STORE, now=NOW, experiment_id=tracking.experiment_id,
+                texts=texts,
+            )  # fmt: skip
+    finally:
+        mlflow.set_tracking_uri(store)
+    assert list(search_datasets(experiment_ids=[tracking.experiment_id])) == []
+
+
+def test_a_local_destination_accepts_a_local_store(tracking: Any) -> None:
+    _, example = _gold()
+    dataset, _ = create_examples_dataset(
+        [example], name="local", variables=fx.VARIABLES, gate=GATE, data=DATA,
+        destination=LOCAL_STORE, now=NOW, experiment_id=tracking.experiment_id,
+    )  # fmt: skip
+    assert dataset.tags["amber.examples"] == "1"
