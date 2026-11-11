@@ -5,7 +5,7 @@ RUN := uv run --no-sync
 PYTEST := $(RUN) pytest --strict-markers -ra
 
 .DEFAULT_GOAL := help
-.PHONY: help sync hooks lint format typecheck imports lock phi-scan test-fast test check ratchet quality-fast deps budget quality diff-coverage quality-rebaseline mutation
+.PHONY: help sync hooks lint format typecheck imports lock phi-scan test-fast test check ratchet quality-report quality-fast deps budget quality diff-coverage quality-rebaseline mutation
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -50,6 +50,11 @@ RATCHET_BASE ?= origin/main
 
 ratchet: ## Violation counts against quality/baseline.json; new code must be clean
 	$(RUN) python quality/ratchet.py --base $(RATCHET_BASE)
+
+quality-report: ## Every finding measured now, by metric (baseline where it differs), in .quality-report.txt
+	$(RUN) python quality/ratchet.py --list > .quality-report.txt
+	@grep '^## ' .quality-report.txt | head -20
+	@echo "full list: .quality-report.txt"
 
 quality-fast: lint imports ratchet ## Ruff, import contracts, and the ratchet (seconds)
 

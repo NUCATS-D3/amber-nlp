@@ -42,7 +42,9 @@ tool or git fails. ``--write-baseline`` rewrites the baseline only with ALLOW_OR
 only when nothing rose: rebaselining tightens. With ``--loosen`` it also records metrics the
 baseline lacks (new Ruff codes or a newly adopted tool, not a module's complexity), for a human
 adopting new rules, and lists their findings; a rise in a metric the baseline already has stays
-a hand edit.
+a hand edit. ``--list`` prints every finding measured now (untracked files included), grouped
+by metric and uncapped, with the baseline's value where it differs: an inventory of legacy
+problems (make quality-report).
 
 Standard library only; the tools run from this interpreter's environment (pinned by uv.lock).
 """
@@ -582,6 +584,41 @@ def run(root: Path, base: str, write: str | None, env: Mapping[str, str]) -> int
     return 0
 
 
+def _inventory_section(metric: str, measurement: Measurement, baseline: Mapping[str, int]) -> None:
+    value = measurement.values()[metric]
+    if metric.startswith("complexity:"):
+        path = metric.removeprefix("complexity:")
+        found = [f for f in measurement.over_limit if f.path == path]
+        noun = "function" if len(found) == 1 else "functions"
+        summary = f"max {value}; {len(found)} {noun} over {COMPLEXITY_LIMIT}"
+    else:
+        found = measurement.findings.get(metric, [])
+        summary = str(value)
+    if metric not in baseline:
+        summary += ", new"
+    elif baseline[metric] != value:
+        summary += f", baseline {baseline[metric]}"
+    print(f"## {metric} ({summary})")
+    for finding in sorted(found):
+        print(f"  {finding}")
+
+
+def inventory(root: Path) -> int:
+    """Print every nonzero metric with its findings: counted metrics worst first, then each
+    module over the complexity limit, most complex first."""
+    measurement = measure(root)
+    stored = _load(root / BASELINE)
+    baseline = stored.metrics if stored else {}
+    print("# Measured now, untracked files included; a header shows the baseline's value where")
+    print("# it differs, or 'new' where the baseline has no entry. suppressions:unjustified")
+    print("# repeats lines listed under the other kinds.")
+    values = {metric: value for metric, value in recorded(measurement).items() if value}
+    order = sorted(values, key=lambda metric: (metric.startswith("complexity:"), -values[metric]))
+    for metric in order:
+        _inventory_section(metric, measurement, baseline)
+    return 0
+
+
 def main(argv: Sequence[str] | None = None, env: Mapping[str, str] = os.environ) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--base", default="origin/main", help="compare new code against this")
@@ -592,7 +629,16 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] = os.environ)
     parser.add_argument(
         "--loosen", action="store_true", help="human only: with --write-baseline, allow rises"
     )
+    parser.add_argument("--list", action="store_true", help="print every finding by metric")
     args = parser.parse_args(argv)
+    if args.list:
+        if args.write_baseline or args.loosen:
+            parser.error("--list does not combine with --write-baseline or --loosen")
+        try:
+            return inventory(args.root)
+        except ToolError as error:
+            print(f"ratchet: {error}", file=sys.stderr)
+            return 1
     if args.loosen and not args.write_baseline:
         parser.error("--loosen only applies with --write-baseline")
     write = ("loosen" if args.loosen else "tighten") if args.write_baseline else None
