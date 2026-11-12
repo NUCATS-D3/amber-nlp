@@ -549,12 +549,16 @@ def _plain(row: Row, table: str) -> Row:
 # Building ----------------------------------------------------------------------------------
 
 
+def _row_key(table: str, row: Row) -> tuple[Any, ...]:
+    return tuple(row[column] for column in TABLES[table].key)
+
+
 class _Tables:
     def __init__(self) -> None:
         self.rows: dict[str, dict[tuple[Any, ...], Row]] = {}
 
     def add(self, table: str, row: Row) -> None:
-        key = tuple(row[column] for column in TABLES[table].key)
+        key = _row_key(table, row)
         rows = self.rows.setdefault(table, {})
         if key in rows and rows[key] != row:
             _raise("duplicate_key", table, ",".join(TABLES[table].key))
@@ -1130,9 +1134,9 @@ def load_bundle(
     _check_claim_rows(bundle, variables)
     sources = {row["source_id"]: _resolve(row, resolver) for row in bundle.tables["sources"]}
     cases = {row["case_id"]: _case(row) for row in bundle.tables["cases"]}
-    manifest = bundle.manifest
     index = _Index(bundle)
     finals = sorted(name for name, variable in variables.variables.items() if variable.final)
+    manifest = bundle.manifest
 
     results: list[CaseResult] = []
     for row in bundle.tables.get("results", ()):
@@ -1295,7 +1299,7 @@ def _require_consumed(
 
 
 def _keys(table: str, rows: Iterable[Row]) -> set[tuple[Any, ...]]:
-    return {tuple(row[column] for column in TABLES[table].key) for row in rows}
+    return {_row_key(table, row) for row in rows}
 
 
 def _spans(bundle: Bundle, sources: Mapping[str, Source]) -> tuple[Inclusion | Mention, ...]:

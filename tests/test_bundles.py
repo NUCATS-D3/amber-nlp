@@ -623,7 +623,8 @@ _LOAD_ERRORS = (BundleError, CaseValidationError, GraphValidationError, ExampleV
                 AnnotationValidationError)  # fmt: skip
 
 # Tables whose rows only exist as parts of a result or an Example. Decisions, events, and
-# spans are records in their own right, each revalidated alone.
+# spans are records in their own right: decisions and spans revalidate alone, and events are
+# parsed (replayed only in some bundle kinds, amber-fc8.12).
 _PART_TABLES = ("claims", "mention_readings", "evidence", "evidence_edges", "variable_outcomes",
                 "results", "examples")  # fmt: skip
 
