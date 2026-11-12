@@ -166,9 +166,10 @@ refuse scoring a configuration against its own silver references; rule hashes ar
   blind `stream` (reviewers only), action, target, `before`/`after` without quotes or
   offsets, reason, time, provenance, and external reference. Event logs are `derived_text`.
 - **`replay`** rebuilds a `Projection` of a case's events up to `as_of_event` as one `Viewer`
-  may see it (`viewer=None` is the complete view). It is deterministic, and replaying a prefix gives that prefix's projection. Events
-  name mentions and inclusions by ID, resolved against caller-supplied spans and re-minted
-  against the `Source`. A projection validates under the graph rules with any status.
+  may see it (`viewer=None` is the complete view). It is deterministic, and replaying a prefix
+  gives that prefix's projection. Events name mentions and inclusions by ID, resolved against
+  caller-supplied spans and re-minted against the `Source`. A projection validates under the
+  graph rules with any status.
   - **Blind review** (`visible_events`): a `Viewer(actor, role, streams)` says who is looking.
     The caller that authenticates the actor (a store's caller, a review system such as loupe)
     supplies the role and, for a reviewer, the assigned streams; nothing is inferred from
@@ -176,8 +177,12 @@ refuse scoring a configuration against its own silver references; rule hashes ar
     `invalid_context`, `invalid_schema` for a malformed viewer). Before an untargeted
     `adjudication.resolve` for its round, a reviewer sees their assigned streams and
     stream-less events other than the adjudicator's; adjudicators, importers, and system
-    viewers see everything, before writing anything; afterwards everyone does. Which roles
-    may write which events is the writer's authorization, outside replay.
+    viewers see everything, before writing anything; afterwards everyone does. A viewer
+    obeys the event rules for actors (reviewers and adjudicators are `human:`, importers and
+    system are not, and only reviewers have streams). Streams are names, not scoped by
+    round: bind only the reviewer's current streams, or keep stream names unique across
+    rounds. Which roles may write which events is the writer's authorization, outside
+    replay, and `Store.events` is not filtered for blind review.
   - **Transitions**: claims and readings are created `proposed` (by the human actor when the
     role is human); reviewers move `proposed` to `verified` or `rejected`; the adjudicator
     resolves to `gold` or `rejected` (`gold` to `rejected` needs a reason). A correction

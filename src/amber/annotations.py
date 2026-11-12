@@ -37,7 +37,12 @@ from typing import Any, Literal, NoReturn, TypeAlias, get_args
 from amber._graph_validation import build_context, validate_state
 from amber.examples import mint_example
 from amber.ids import parse_producer
-from amber.schemas.annotations import HUMAN_ROLES, AnnotationEvent, EventRole
+from amber.schemas.annotations import (
+    HUMAN_ROLES,
+    AnnotationEvent,
+    EventRole,
+    role_binding_error,
+)
 from amber.schemas.cases import Case, CaseOutcome, VariableOutcome
 from amber.schemas.claims import Claim
 from amber.schemas.evidence import EvidenceEdge, Inclusion, InferenceEvidence
@@ -108,7 +113,7 @@ class Viewer:
     def __post_init__(self) -> None:
         try:
             parse_producer(self.actor)
-        except (TypeError, ValueError):
+        except ValueError:
             _raise("invalid_context")
         if self.role not in get_args(EventRole):
             _raise("invalid_role")
@@ -116,6 +121,8 @@ class Viewer:
             type(stream) is not str or not stream.strip() for stream in self.streams
         ):
             _raise("invalid_schema")
+        if role_binding_error(self.actor, self.role, in_stream=bool(self.streams)) is not None:
+            _raise("invalid_role")
 
 
 @dataclass(frozen=True)
@@ -186,6 +193,8 @@ def visible_events(
     viewers see everything; after resolve every viewer sees every round's events.
     ``viewer=None`` is the complete view. The role and streams come from ``viewer`` only.
     """
+    if viewer is not None and not isinstance(viewer, Viewer):
+        _raise("invalid_context")
     if viewer is None or viewer.role != "reviewer":
         return tuple(events)
     resolved = _resolved_rounds(events)
@@ -530,8 +539,6 @@ def replay(
         if as_of_event not in {event.event_id for event in ordered}:
             _raise("unknown_reference")
         ordered = [event for event in ordered if event.event_id <= as_of_event]
-    if viewer is not None and not isinstance(viewer, Viewer):
-        _raise("invalid_context")
     shown = visible_events(ordered, viewer)
     pool: dict[str, Inclusion | Mention] = {}
     for span in spans:

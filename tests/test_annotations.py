@@ -19,6 +19,7 @@ from amber.annotations import (
     example_from_projection,
     replay,
     verify_example,
+    visible_events,
 )
 from amber.examples import ExampleValidationError, load_example, mint_example
 from amber.graph_errors import GraphValidationError
@@ -783,8 +784,19 @@ _MUTABLE_STREAMS: Any = {"a"}
         (lambda: Viewer(A, _INVENTED_ROLE), "invalid_role"),
         (lambda: Viewer(A, "reviewer", _MUTABLE_STREAMS), "invalid_schema"),
         (lambda: Viewer(A, "reviewer", frozenset({" "})), "invalid_schema"),
+        (lambda: Viewer(IMPORTER, "adjudicator"), "invalid_role"),
+        (lambda: Viewer(A, "system"), "invalid_role"),
+        (lambda: Viewer(ADJ, "adjudicator", frozenset({"a"})), "invalid_role"),
     ],
-    ids=["actor", "role", "mutable-streams", "blank-stream"],
+    ids=[
+        "actor",
+        "role",
+        "mutable-streams",
+        "blank-stream",
+        "tool-adjudicator",
+        "human-system",
+        "adjudicator-stream",
+    ],
 )
 def test_a_viewer_is_checked(make: Any, code: str) -> None:
     _assert_code(code, make)
@@ -793,3 +805,4 @@ def test_a_viewer_is_checked(make: Any, code: str) -> None:
 def test_replay_takes_only_a_viewer() -> None:
     log, _ = _blind()
     _assert_code("invalid_context", _replay, log.events, viewer=A)
+    _assert_code("invalid_context", visible_events, log.events, A)

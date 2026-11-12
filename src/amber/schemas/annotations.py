@@ -43,6 +43,23 @@ EventAction: TypeAlias = Literal[
 HUMAN_ROLES = frozenset({"reviewer", "adjudicator"})
 
 
+def role_binding_error(actor: str, role: str, *, in_stream: bool) -> str | None:
+    """Why ``actor`` cannot act as ``role`` (in a blind stream when ``in_stream``), or None.
+
+    One rule for events and for blind-review viewers (``amber.annotations.Viewer``): reviewers
+    and adjudicators are people, importers and system actors are not, and only reviewers work
+    in blind streams. ``actor`` must already parse as a producer.
+    """
+    kind = parse_producer(actor).kind
+    if role in HUMAN_ROLES and kind != "human":
+        return "reviewers and adjudicators are human: producers"
+    if role not in HUMAN_ROLES and kind == "human":
+        return "importer and system events are not made by people"
+    if in_stream and role != "reviewer":
+        return "only reviewer events belong to a blind stream"
+    return None
+
+
 def _nonblank(value: str | None) -> str | None:
     if value is not None and not value.strip():
         raise ValueError("value must not be blank")
@@ -95,13 +112,9 @@ class AnnotationEvent(BaseModel):
 
     @model_validator(mode="after")
     def require_consistent_event(self) -> AnnotationEvent:
-        actor = parse_producer(self.actor)
-        if self.role in HUMAN_ROLES and actor.kind != "human":
-            raise ValueError("reviewers and adjudicators are human: producers")
-        if self.role not in HUMAN_ROLES and actor.kind == "human":
-            raise ValueError("importer and system events are not made by people")
+        problem = role_binding_error(self.actor, self.role, in_stream=self.stream is not None)
+        if problem is not None:
+            raise ValueError(problem)
         if self.at.utcoffset() is None:
             raise ValueError("event time must be timezone-aware")
-        if self.stream is not None and self.role != "reviewer":
-            raise ValueError("only reviewer events belong to a blind stream")
         return self

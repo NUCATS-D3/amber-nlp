@@ -213,7 +213,8 @@ class Store(Protocol):
     events first and rejects a split, tier, or ``example_id`` the case and events do not
     support; it takes a resolver because checking the tier means replaying the events.
     ``current_example`` is the snapshot at the case's latest event. ``project`` shows events
-    as ``viewer`` may see them; the caller binds the viewer's role and streams.
+    as ``viewer`` may see them; the caller binds the viewer's role and streams. ``events`` is
+    unfiltered, so it is never what a blind reviewer is shown.
     """
 
     capabilities: frozenset[StoreCapability]
