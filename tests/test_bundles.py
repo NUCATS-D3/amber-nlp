@@ -11,7 +11,7 @@ from types import MappingProxyType
 from typing import Any
 
 import pytest
-from hypothesis import HealthCheck, assume, given, settings
+from hypothesis import assume, given
 from hypothesis import strategies as st
 from pydantic import Field
 
@@ -629,7 +629,6 @@ _PART_TABLES = ("claims", "mention_readings", "evidence", "evidence_edges", "var
                 "results", "examples")  # fmt: skip
 
 
-@settings(max_examples=60, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(
     kind=st.sampled_from(["run", "gold"]),
     table=st.sampled_from(_PART_TABLES),
