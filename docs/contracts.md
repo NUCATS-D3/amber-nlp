@@ -400,9 +400,12 @@ correctness. Those are measured separately.
   rows outside the manifest's scope. It runs before any validation.
 - `load_bundle` with a resolver checks every source against its `text_hash`
   (`source_unavailable`, `source_hash_mismatch`), re-mints spans, and revalidates results,
-  Examples (against their events when present), events, and decisions through amber's
-  boundaries. Without a resolver it returns an `UnvalidatedBundle` whose rows those
-  boundaries refuse.
+  Examples (against their events when present), and decisions through amber's boundaries;
+  events are parsed, and replayed in review bundles and for gold cases with an Example.
+  Every row must belong to one of those records: `build_bundle` over them (which also applies
+  its case scope) must write exactly each table's stored keys, or loading fails with
+  `unconsumed_rows` naming the table. Without a resolver it returns an `UnvalidatedBundle`
+  whose rows those boundaries refuse.
 - `amber.bundles.parquet.write_bundle` / `read_bundle`: JSON columns as canonical JSON
   strings (non-canonical JSON is rejected), timestamps as `timestamp[us, UTC]`, rows sorted
   by key, optional per-file `file_sha256`, and `x_` columns preserved.

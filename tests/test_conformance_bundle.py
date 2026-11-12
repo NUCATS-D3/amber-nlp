@@ -229,3 +229,14 @@ def test_bundle_mode_needs_its_hook(pytester: pytest.Pytester, tmp_path: Path) -
     path = _write(tmp_path)
     result = pytester.runpytest("--amber-conformance", f"--amber-conformance-bundle={path}")
     result.stdout.fnmatch_lines(["*pytest_amber_conformance_bundle*"])
+
+
+def test_a_row_no_record_consumes_fails_wir_04(tmp_path: Path) -> None:
+    from amber.ids import new_ulid
+
+    edge = {"claim_id": new_ulid(), "evidence_id": new_ulid(), "role": None, "weight": None}
+    bundle = _tamper(_run(), "evidence_edges", lambda rows: rows.append(edge))
+    report = run_bundle_checks(_write(tmp_path, bundle), variables=fx.VARIABLES, resolver=RESOLVER)
+    failures = _failures(report)
+    assert failures.pop("WIR-04") == "unconsumed_rows"
+    assert failures == {"WIR-13": "blocked"}

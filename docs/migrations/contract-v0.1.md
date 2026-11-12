@@ -234,6 +234,26 @@ and wire bytes are unchanged, so `schema_version` stays `amber/0.1`.
   To build a deliberately tampered record for an adversarial test, use
   `amber.conformance.forgery.forge(record, field=value)`.
 
+### `load_bundle` refuses rows no validated record consumed
+
+Commit: the one closing `amber-fc8.4`.
+
+`load_bundle` with a resolver revalidated the rows its results and Examples reached and
+silently dropped the rest, although the bundle contract says every record revalidates; since
+content hashes are unkeyed, a row could be added without any check. It now requires
+`build_bundle` over the loaded results, Examples, events, spans, and decisions to write
+exactly each table's stored keys, and otherwise fails with the new `BundleError` code
+`unconsumed_rows` naming the table. That rebuild also applies `build_bundle`'s scope, so a
+gold bundle without Examples, an event for a case outside the bundle, or a case whose patient
+is not its source's is refused on load as on write. Only keys are compared. The bundle format
+is unchanged, so `amber-bundle/0.1` stays; conformance reports the refusal under WIR-04.
+
+- **Affected:** bundles not written by `build_bundle`, or edited after writing. Every bundle
+  `build_bundle` writes still loads (lapidary's suite passes against the change); code that
+  matches on `BundleErrorCode` values sees one more.
+- **Upgrade:** write bundles with `build_bundle` (or an amber `Exporter`), and drop rows that
+  belong to no result, Example, event, span, or decision.
+
 ## Still to implement
 
 Nothing: every breaking change listed by the contract v0.1 design is implemented above.
