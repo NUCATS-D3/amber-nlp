@@ -183,8 +183,11 @@ refuse scoring a configuration against its own silver references; rule hashes ar
     `adjudicated` by the adjudicator; a human tier promotes the variable's final claims to
     gold. A case-level `tier.set` is the protocol's move-on decision and needs
     `role="system"` and a `decision_ref`.
-  - An `excluded` adjudication decision yields no Example; `unresolved` and `excluded` need a
-    reason.
+  - An `excluded` adjudication decision yields no Example (`excluded_case`). An `unresolved`
+    one, in any round, blocks the `adjudicated` tier for the whole case (`invalid_transition`)
+    and yields no Example (`unresolved_case`, `Projection.unresolved`) until a later
+    `accepted` resolve.
+    `unresolved` and `excluded` need a reason.
 - **`example_from_projection`** is the one path from events to an `Example`: it drops
   rejected records and the inferences built only on them, attributes each reference from
   the events (reviewers who submitted, the resolving adjudicator, or the silver producer),

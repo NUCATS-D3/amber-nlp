@@ -254,6 +254,24 @@ is unchanged, so `amber-bundle/0.1` stays; conformance reports the refusal under
 - **Upgrade:** write bundles with `build_bundle` (or an amber `Exporter`), and drop rows that
   belong to no result, Example, event, span, or decision.
 
+### An unresolved adjudication yields no Example
+
+Commit: the one closing `amber-fc8.3`.
+
+Replay recorded only `excluded` adjudication decisions, so a case resolved `unresolved` could
+still be set `adjudicated` and minted as an adjudicated Example, although the contract says
+unresolved cases give none. Now, after an untargeted `adjudication.resolve` with decision
+`unresolved`, setting the `adjudicated` tier is `invalid_transition` until a later `accepted`
+resolve; a case whose latest decision is `unresolved` gives no Example (`unresolved_case`), and
+`amber.review.reviewed_example` returns `None` for it. `Projection` gains `unresolved`. Events
+and Examples are unchanged, so `schema_version` stays `amber/0.1`.
+
+- **Affected:** event histories that adjudicate a case after leaving it unresolved without
+  re-accepting it, and code that constructs a `Projection` by hand (none in amber, lapidary,
+  or loupe).
+- **Upgrade:** record an `accepted` resolve before setting the adjudicated tier; treat
+  `unresolved_case` as "not yet a reference", as `reviewed_example` does.
+
 ## Still to implement
 
 Nothing: every breaking change listed by the contract v0.1 design is implemented above.

@@ -39,7 +39,7 @@ ReviewImportCode: TypeAlias = Literal[
     "foreign_provenance",
     "invalid_events",
 ]
-_NOT_YET = frozenset({"incomplete_projection", "excluded_case"})
+_NOT_YET = frozenset({"incomplete_projection", "excluded_case", "unresolved_case"})
 _HUMAN = frozenset({ReferenceTier.single_review, ReferenceTier.adjudicated})
 
 
@@ -125,7 +125,8 @@ def reviewed_example(
     """The Example a reviewed case's events replay to, or None while it is not a reviewed
     reference (unsubmitted, unresolved, excluded, or still silver).
 
-    Raises ``ReviewImportError("invalid_events")`` for events that do not replay.
+    Raises ``ReviewImportError("invalid_events")`` for events that do not replay, such as an
+    adjudicated tier set while the case is unresolved.
     """
     if not events:
         return None

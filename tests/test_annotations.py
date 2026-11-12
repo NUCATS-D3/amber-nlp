@@ -22,10 +22,12 @@ from amber.annotations import (
 from amber.examples import ExampleValidationError, load_example, mint_example
 from amber.graph_errors import GraphValidationError
 from amber.ids import new_ulid
+from amber.review import ReviewImportError, reviewed_example
 from amber.schemas import (
     AnnotationEvent,
     Example,
     Mention,
+    ReferenceTier,
 )
 from amber.tools.mention import mention
 
@@ -624,3 +626,29 @@ def test_events_are_frozen() -> None:
         event.actor = A  # type: ignore[misc]
     with pytest.raises(TypeError):
         log.events[-1].after["tier"] = "gold"  # type: ignore[index]
+
+
+def test_an_unresolved_case_cannot_be_raised_to_adjudicated() -> None:
+    """amber-fc8.3: an unresolved adjudication blocks the adjudicated tier."""
+    log, _ = _adjudicated(decisions=("unresolved",))
+    _assert_code("invalid_transition", _replay, log.events)
+    with pytest.raises(ReviewImportError) as failure:
+        reviewed_example(log.events, case=CASE, source=SOURCE, variables=VARIABLES, spans=SPANS)
+    assert failure.value.code == "invalid_events"
+
+
+def test_a_later_accepted_resolve_restores_the_path() -> None:
+    log, _ = _adjudicated(decisions=("unresolved", "accepted"))
+    example = _example(log.events)
+    assert {ref.tier for ref in example.references.values()} == {ReferenceTier.adjudicated}
+
+
+def test_an_unresolved_decision_after_the_tiers_withdraws_the_example() -> None:
+    log, _ = _adjudicated()
+    log.add("adjudication.resolve", ADJ, "adjudicator", round=1,
+            after={"decision": "unresolved"}, reason="Synthetic: reopened.")  # fmt: skip
+    assert _replay(log.events).unresolved
+    _assert_code("unresolved_case", _example, log.events)
+    reviewed = reviewed_example(log.events, case=CASE, source=SOURCE, variables=VARIABLES,
+                                spans=SPANS)  # fmt: skip
+    assert reviewed is None
