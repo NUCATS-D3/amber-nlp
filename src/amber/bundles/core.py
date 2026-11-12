@@ -67,6 +67,7 @@ BundleErrorCode: TypeAlias = Literal[
     "source_hash_mismatch",
     "orphan_evidence",
     "derived_text_in_labels",
+    "unconsumed_rows",
 ]
 
 
@@ -1107,11 +1108,14 @@ def load_bundle(
 ) -> BundleContents | UnvalidatedBundle:
     """Check a bundle and, with a resolver, revalidate every record (contract v0.1 5.6).
 
+    Every row must belong to a record that revalidated: a row no result, Example, event,
+    span, or decision accounts for is ``unconsumed_rows`` naming its table (amber-fc8.4).
     Without a resolver the result is an ``UnvalidatedBundle`` whose rows amber's graph,
     case, and example boundaries refuse.
     """
     check_bundle(bundle, variables=variables)
-    if bundle.manifest.bundle_kind == "labels":
+    kind = bundle.manifest.bundle_kind
+    if kind == "labels":
         _raise("invalid_bundle")
     if resolver is None:
         return UnvalidatedBundle(
@@ -1126,9 +1130,18 @@ def load_bundle(
     _check_claim_rows(bundle, variables)
     sources = {row["source_id"]: _resolve(row, resolver) for row in bundle.tables["sources"]}
     cases = {row["case_id"]: _case(row) for row in bundle.tables["cases"]}
+    manifest = bundle.manifest
+    # The scope build_bundle enforces, before any record is loaded.
+    _add_cases(
+        _Tables(),
+        cases.values(),
+        variables=variables,
+        dataset=manifest.dataset,
+        created_at=manifest.created_at,
+        sources=sources,
+    )
     index = _Index(bundle)
     finals = sorted(name for name, variable in variables.variables.items() if variable.final)
-    manifest = bundle.manifest
 
     results: list[CaseResult] = []
     for row in bundle.tables.get("results", ()):
@@ -1245,7 +1258,7 @@ def load_bundle(
         )
     except ValidationError:
         _raise("invalid_bundle", "decisions")
-    return BundleContents(
+    contents = BundleContents(
         manifest=manifest,
         sources=tuple(sources.values()),
         cases=tuple(cases.values()),
@@ -1255,6 +1268,38 @@ def load_bundle(
         spans=spans,
         decisions=decisions,
     )
+    _require_consumed(bundle, contents, kind, variables)
+    return contents
+
+
+def _require_consumed(
+    bundle: Bundle,
+    contents: BundleContents,
+    kind: Literal["run", "review", "gold"],
+    variables: VariableSet,
+) -> None:
+    """Content hashes are unkeyed, so revalidation is the only integrity check: rebuilding
+    from the validated records must give back every table (``x_`` columns aside)."""
+    manifest = bundle.manifest
+    rebuilt = build_bundle(
+        kind=kind,
+        variables=variables,
+        dataset=manifest.dataset,
+        producer=manifest.producer,
+        policy_version=manifest.policy_version,
+        created_at=manifest.created_at,
+        sources=contents.sources,
+        cases=contents.cases,
+        results=contents.results,
+        examples=contents.examples,
+        events=contents.events,
+        spans=contents.spans,
+        decisions=contents.decisions,
+    )
+    for name, rows in bundle.tables.items():
+        stored = [_plain(row, name) for row in rows]
+        if content_sha256(name, stored) != content_sha256(name, rebuilt.tables.get(name, ())):
+            _raise("unconsumed_rows", name)
 
 
 def _spans(bundle: Bundle, sources: Mapping[str, Source]) -> tuple[Inclusion | Mention, ...]:

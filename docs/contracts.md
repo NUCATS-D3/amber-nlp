@@ -399,10 +399,13 @@ correctness. Those are measured separately.
   rows, payload kinds other than those derived from the schemas and answer models, and case
   rows outside the manifest's scope. It runs before any validation.
 - `load_bundle` with a resolver checks every source against its `text_hash`
-  (`source_unavailable`, `source_hash_mismatch`), re-mints spans, and revalidates results,
-  Examples (against their events when present), events, and decisions through amber's
-  boundaries. Without a resolver it returns an `UnvalidatedBundle` whose rows those
-  boundaries refuse.
+  (`source_unavailable`, `source_hash_mismatch`), applies `build_bundle`'s case scope (a
+  case's patient is its source's), re-mints spans, and revalidates results, Examples
+  (against their events when present), events, and decisions through amber's boundaries.
+  Every row must belong to one of those records: rebuilding the bundle from them must give
+  back each table (`x_` columns aside), or loading fails with `unconsumed_rows` naming the
+  table. Without a resolver it returns an `UnvalidatedBundle` whose rows those boundaries
+  refuse.
 - `amber.bundles.parquet.write_bundle` / `read_bundle`: JSON columns as canonical JSON
   strings (non-canonical JSON is rejected), timestamps as `timestamp[us, UTC]`, rows sorted
   by key, optional per-file `file_sha256`, and `x_` columns preserved.

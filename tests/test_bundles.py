@@ -11,9 +11,11 @@ from types import MappingProxyType
 from typing import Any
 
 import pytest
+from hypothesis import HealthCheck, assume, given, settings
+from hypothesis import strategies as st
 from pydantic import Field
 
-from amber.annotations import example_from_projection, replay
+from amber.annotations import AnnotationValidationError, example_from_projection, replay
 from amber.bundles import (
     TABLES,
     Bundle,
@@ -29,6 +31,7 @@ from amber.bundles import (
 )
 from amber.cases import CaseValidationError, create_case_result, load_case_result
 from amber.conformance import fixtures as fx
+from amber.examples import ExampleValidationError
 from amber.graph import EvidenceGraph
 from amber.graph_errors import GraphValidationError
 from amber.ids import new_ulid
@@ -566,3 +569,79 @@ def test_x_columns_survive_and_other_unknown_columns_do_not(tmp_path: Path) -> N
     assert isinstance(_load(read), BundleContents)
     unknown = _tamper(_run(), "claims", lambda rows: [row.update(reviewer_note=7) for row in rows])
     _assert_bundle_error("unknown_column", _load, unknown, table="claims", column="reviewer_note")
+
+
+# Every row is consumed by a validated record (amber-fc8.4) -------------------------------
+
+
+def _extra(bundle: Bundle, table: str, row: Any, **changes: Any) -> Bundle:
+    """``bundle`` with one more ``table`` row, rehashed so only revalidation can refuse it."""
+    return _tamper(bundle, table, lambda rows: rows.append({**row, **changes}))
+
+
+def test_a_reading_row_no_result_reaches_is_refused() -> None:
+    bundle = _run()
+    (reading,) = bundle.tables["mention_readings"]
+    ghost = _extra(bundle, "mention_readings", reading, reading_id=new_ulid(),
+                   case_id="ghost-case", status="invented-status")  # fmt: skip
+    _assert_bundle_error("unconsumed_rows", _load, ghost, table="mention_readings")
+
+
+def test_an_edge_between_unknown_records_is_refused() -> None:
+    bundle = _run()
+    edge = {"claim_id": new_ulid(), "evidence_id": new_ulid(), "role": None, "weight": None}
+    _assert_bundle_error("unconsumed_rows", _load, _extra(bundle, "evidence_edges", edge),
+                         table="evidence_edges")  # fmt: skip
+
+
+def test_a_claim_row_in_a_review_bundle_is_refused() -> None:
+    claim = _run().tables["claims"][0]
+    forged = _extra(_review(), "claims", claim, value={"invented": True}, status="invented")
+    _assert_bundle_error("unconsumed_rows", _load, forged, table="claims")
+
+
+def test_a_gold_bundle_without_examples_is_refused() -> None:
+    bundle, _ = _gold()
+    emptied = _tamper(_tamper(bundle, "examples", list.clear), "annotation_events", list.clear)
+    _assert_bundle_error("invalid_bundle", _load, emptied)
+
+
+def test_a_case_whose_patient_is_not_its_source_s_is_refused() -> None:
+    bundle = _run()
+    moved = _tamper(bundle, "cases", lambda rows: rows[0].update(patient_id="other-patient"))
+    _assert_bundle_error("case_mismatch", _load, moved, table="cases")
+
+
+def test_an_event_for_a_case_outside_the_bundle_is_refused() -> None:
+    bundle, _ = _gold()
+    event = bundle.tables["annotation_events"][0]
+    stray = _extra(bundle, "annotation_events", event, event_id=new_ulid(), case_id="ghost-case")
+    _assert_bundle_error("case_mismatch", _load, stray, table="annotation_events")
+
+
+_LOAD_ERRORS = (BundleError, CaseValidationError, GraphValidationError, ExampleValidationError,
+                AnnotationValidationError)  # fmt: skip
+
+# Tables whose rows only exist as parts of a result or an Example. Decisions, events, and
+# spans are records in their own right, each revalidated alone.
+_PART_TABLES = ("claims", "mention_readings", "evidence", "evidence_edges", "variable_outcomes",
+                "results", "examples")  # fmt: skip
+
+
+@settings(max_examples=60, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+@given(
+    kind=st.sampled_from(["run", "gold"]),
+    table=st.sampled_from(_PART_TABLES),
+    index=st.integers(min_value=0, max_value=4),
+    key=st.text(alphabet="abcdefghjkmnpqrstvwxyz0123456789", min_size=1, max_size=12),
+)
+def test_an_extra_part_row_never_loads(kind: str, table: str, index: int, key: str) -> None:
+    bundle = _run() if kind == "run" else _gold()[0]
+    assume(table in bundle.tables)
+    rows = bundle.tables[table] or _run().tables[table]
+    row = rows[index % len(rows)]
+    fresh = {column: f"x{key}{column}" for column in TABLES[table].key
+             if isinstance(row[column], str)}  # fmt: skip
+    assume(fresh)
+    with pytest.raises(_LOAD_ERRORS):
+        _load(_extra(bundle, table, row, **fresh))
