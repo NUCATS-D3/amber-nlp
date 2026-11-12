@@ -8,7 +8,12 @@ from typing import Any
 
 import pytest
 
-from amber.annotations import AnnotationValidationError, example_from_projection, replay
+from amber.annotations import (
+    AnnotationValidationError,
+    Viewer,
+    example_from_projection,
+    replay,
+)
 from amber.cases import create_case_result
 from amber.conformance.forgery import forge
 from amber.examples import load_label_record, mint_example
@@ -47,6 +52,16 @@ from ._annotation_helpers import (
 from ._claim_helpers import make_provenance
 
 RESOLVER = InMemoryResolver([SOURCE])
+
+
+# The binding a store's caller supplies (amber-fc8.1).
+VIEWERS = (
+    Viewer(A, "reviewer", frozenset({"a"})),
+    Viewer(B, "reviewer", frozenset({"b"})),
+    Viewer(ADJ, "adjudicator"),
+    Viewer(IMPORTER, "importer"),
+    Viewer("human:someone-else", "reviewer"),
+)
 
 
 def _assert_code(code: str, function: Callable[..., Any], /, *args: Any, **kwargs: Any) -> None:
@@ -249,17 +264,17 @@ def test_store_projections_equal_amber_replay_for_every_actor_and_prefix() -> No
     log, _ = _adjudicated()
     store = _store()
     store.append_events(log.events, spans=SPANS)
-    for actor in (None, A, B, ADJ, IMPORTER, "human:someone-else"):
+    for viewer in (None, *VIEWERS):
         for event in log.events:
             assert store.project(
-                CASE.case_id, actor=actor, as_of_event=event.event_id, resolver=RESOLVER
+                CASE.case_id, viewer=viewer, as_of_event=event.event_id, resolver=RESOLVER
             ) == replay(
                 log.events,
                 case=CASE,
                 source=SOURCE,
                 variables=VARIABLES,
                 spans=SPANS,
-                actor=actor,
+                viewer=viewer,
                 as_of_event=event.event_id,
             )
 
@@ -271,7 +286,9 @@ def test_a_stream_actor_projection_excludes_other_streams() -> None:
     _stream(log, B, "b", ids["reading"])
     store = _store()
     store.append_events(log.events, spans=SPANS)
-    assert set(store.project(CASE.case_id, actor=A, resolver=RESOLVER).claims) == set(mine.values())
+    assert set(store.project(CASE.case_id, viewer=VIEWERS[0], resolver=RESOLVER).claims) == set(
+        mine.values()
+    )
 
 
 def test_unsubmitted_work_projects_but_is_not_an_example() -> None:
@@ -280,7 +297,7 @@ def test_unsubmitted_work_projects_but_is_not_an_example() -> None:
     _stream(log, A, "a", ids["reading"])
     store = _store()
     store.append_events(log.events, spans=SPANS)
-    projection = store.project(CASE.case_id, actor=None, resolver=RESOLVER)
+    projection = store.project(CASE.case_id, viewer=None, resolver=RESOLVER)
     with pytest.raises(AnnotationValidationError, match="incomplete_projection"):
         example_from_projection(projection, case=CASE, source=SOURCE, variables=VARIABLES)
     assert store.current_example(CASE.case_id, resolver=RESOLVER) is None
@@ -297,7 +314,7 @@ def test_a_finished_case_stores_the_example_its_projection_gives() -> None:
     store.put_example(example, resolver=RESOLVER)
 
     stored = store.get_example(example.example_id, resolver=RESOLVER)
-    projected = store.project(CASE.case_id, actor=None, resolver=RESOLVER)
+    projected = store.project(CASE.case_id, viewer=None, resolver=RESOLVER)
     assert stored == example
     assert (
         example_from_projection(projected, case=CASE, source=SOURCE, variables=VARIABLES) == stored

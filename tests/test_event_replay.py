@@ -247,7 +247,7 @@ def test_replay_checks_its_arguments_and_accepts_an_empty_log() -> None:
 
 
 def test_system_actors_see_every_stream() -> None:
-    from amber.annotations import visible_events
+    from amber.annotations import Viewer, visible_events
 
     from ._annotation_helpers import SYSTEM, _stream
 
@@ -255,8 +255,9 @@ def test_system_actors_see_every_stream() -> None:
     ids = _import(log)
     _stream(log, A, "a", ids["reading"])
     log.add("tier.set", SYSTEM, "system", after={"decision_ref": "invented-move-on"})
-    assert len(visible_events(log.events, SYSTEM)) == len(log.events)
-    assert len(visible_events(log.events, "human:outsider")) < len(log.events)
+    assert len(visible_events(log.events, Viewer(SYSTEM, "system"))) == len(log.events)
+    outsider = Viewer("human:outsider", "reviewer")
+    assert len(visible_events(log.events, outsider)) < len(log.events)
 
 
 def _bad_outcome(log: Log, finding: str) -> None:

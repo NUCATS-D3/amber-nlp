@@ -17,7 +17,7 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn, get_args
 
-from amber.annotations import example_from_projection, replay, verify_example
+from amber.annotations import Viewer, example_from_projection, replay, verify_example
 from amber.cases import load_case_result
 from amber.conformance import fixtures as fx
 from amber.conformance.catalog import CASES, Target
@@ -306,16 +306,23 @@ def check_ann_05(subject: Subject) -> None:
     _must_reject(lambda: store.put_label_record(label), "label_split_accepted")
 
 
-_ACTORS = (None, fx.REVIEWER_A, fx.REVIEWER_B, fx.ADJUDICATOR, fx.IMPORTER, "human:outsider")
+_VIEWERS = (
+    None,
+    Viewer(fx.REVIEWER_A, "reviewer", frozenset({"a"})),
+    Viewer(fx.REVIEWER_B, "reviewer", frozenset({"b"})),
+    Viewer(fx.ADJUDICATOR, "adjudicator"),
+    Viewer(fx.IMPORTER, "importer"),
+    Viewer("human:outsider", "reviewer"),
+)
 
 
 def check_ann_16(subject: Subject) -> None:
-    """A store's projection equals amber's replay for every actor and every as_of_event."""
+    """A store's projection equals amber's replay for every viewer and every as_of_event."""
     store = _store_with_case(subject)
     log, _ = fx.adjudicated()
     _append(store, log.events)
     resolver = subject.resolver()
-    for actor in _ACTORS:
+    for viewer in _VIEWERS:
         for event in log.events:
             expected = replay(
                 log.events,
@@ -323,14 +330,14 @@ def check_ann_16(subject: Subject) -> None:
                 source=fx.SOURCE,
                 variables=fx.VARIABLES,
                 spans=fx.SPANS,
-                actor=actor,
+                viewer=viewer,
                 as_of_event=event.event_id,
             )
             actual = _must_accept(
                 partial(
                     store.project,
                     "conformance-case-1",
-                    actor=actor,
+                    viewer=viewer,
                     as_of_event=event.event_id,
                     resolver=resolver,
                 ),
@@ -373,13 +380,17 @@ def check_ifc_07(subject: Subject) -> None:
     _append(store, log.events[-1:])
 
     stream_view = _must_accept(
-        lambda: store.project("conformance-case-1", actor=fx.REVIEWER_A, resolver=resolver),
+        lambda: store.project(
+            "conformance-case-1",
+            viewer=Viewer(fx.REVIEWER_A, "reviewer", frozenset({"a"})),
+            resolver=resolver,
+        ),
         "projection_failed",
     )
     if set(stream_view.claims) != set(ids["a"].values()):
         _fail("stream_leak")
     in_progress = _must_accept(
-        lambda: store.project("conformance-case-1", actor=None, resolver=resolver),
+        lambda: store.project("conformance-case-1", viewer=None, resolver=resolver),
         "projection_failed",
     )
     if not _rejects(
@@ -397,7 +408,7 @@ def check_ifc_07(subject: Subject) -> None:
     )
     _append(store, log.events[start:])
     _must_accept(lambda: store.put_example(finished, resolver=resolver), "valid_example_rejected")
-    projected = store.project("conformance-case-1", actor=None, resolver=resolver)
+    projected = store.project("conformance-case-1", viewer=None, resolver=resolver)
     stored = store.get_example(finished.example_id, resolver=resolver)
     rebuilt = example_from_projection(
         projected, case=fx.case(), source=fx.SOURCE, variables=fx.VARIABLES

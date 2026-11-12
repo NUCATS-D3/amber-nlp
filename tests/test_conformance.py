@@ -297,8 +297,8 @@ class _NoSplitChecks(InMemoryStore):
 
 
 class _LeaksStreams(InMemoryStore):
-    def project(self, case_id: str, *, actor: Any, **kwargs: Any) -> Any:
-        return super().project(case_id, actor=None, **kwargs)
+    def project(self, case_id: str, *, viewer: Any, **kwargs: Any) -> Any:
+        return super().project(case_id, viewer=None, **kwargs)
 
 
 class _OverwritesRuns(InMemoryStore):
@@ -382,8 +382,8 @@ def pytest_amber_conformance_subject(config):
 
 _BROKEN = """
 class BrokenStore(InMemoryStore):
-    def project(self, case_id, *, actor, **kwargs):
-        return super().project(case_id, actor=None, **kwargs)
+    def project(self, case_id, *, viewer, **kwargs):
+        return super().project(case_id, viewer=None, **kwargs)
 """
 
 

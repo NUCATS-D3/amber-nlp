@@ -15,9 +15,11 @@ from pydantic import ValidationError
 from amber.annotations import (
     AnnotationValidationError,
     Projection,
+    Viewer,
     example_from_projection,
     replay,
     verify_example,
+    visible_events,
 )
 from amber.examples import ExampleValidationError, load_example, mint_example
 from amber.graph_errors import GraphValidationError
@@ -59,6 +61,15 @@ from ._annotation_helpers import (
     _stream,
 )
 from ._claim_helpers import make_provenance
+
+# The binding the store or review system supplies (amber-fc8.1).
+_VIEW = {
+    A: Viewer(A, "reviewer", frozenset({"a"})),
+    B: Viewer(B, "reviewer", frozenset({"b"})),
+    ADJ: Viewer(ADJ, "adjudicator"),
+    IMPORTER: Viewer(IMPORTER, "importer"),
+    "human:someone-else": Viewer("human:someone-else", "reviewer"),
+}
 
 
 def _replay(events: list[AnnotationEvent], **kwargs: Any) -> Projection:
@@ -127,7 +138,7 @@ def test_projections_name_the_missing_tier_or_outcome() -> None:
 
 def test_examples_come_only_from_complete_views() -> None:
     log, _ = _adjudicated()
-    projection = _replay(log.events, actor=A)
+    projection = _replay(log.events, viewer=_VIEW[A])
     _assert_code(
         "invalid_context",
         example_from_projection,
@@ -214,13 +225,13 @@ def test_reviewers_see_only_their_stream_until_resolve() -> None:
     ids["a"] = _stream(log, A, "a", ids["reading"])
     ids["b"] = _stream(log, B, "b", ids["reading"])
 
-    as_a = _replay(log.events, actor=A)
+    as_a = _replay(log.events, viewer=_VIEW[A])
     assert set(as_a.claims) == set(ids["a"].values())
     assert ids["reading"] in as_a.readings
-    assert set(_replay(log.events, actor=B).claims) == set(ids["b"].values())
-    assert set(_replay(log.events, actor="human:someone-else").claims) == set()
+    assert set(_replay(log.events, viewer=_VIEW[B]).claims) == set(ids["b"].values())
+    assert set(_replay(log.events, viewer=_VIEW["human:someone-else"]).claims) == set()
     everything = set(ids["a"].values()) | set(ids["b"].values())
-    assert set(_replay(log.events, actor=IMPORTER).claims) == everything
+    assert set(_replay(log.events, viewer=_VIEW[IMPORTER]).claims) == everything
 
     log.add(
         "reading.set_status",
@@ -229,14 +240,14 @@ def test_reviewers_see_only_their_stream_until_resolve() -> None:
         target_id=ids["reading"],
         after={"status": "verified"},
     )
-    assert set(_replay(log.events, actor=ADJ).claims) == everything
-    assert set(_replay(log.events, actor=A).claims) == set(ids["a"].values())
-    assert _replay(log.events, actor=A).readings[ids["reading"]].status == "proposed"
-    assert _replay(log.events, actor=ADJ).readings[ids["reading"]].status == "verified"
+    assert set(_replay(log.events, viewer=_VIEW[ADJ]).claims) == everything
+    assert set(_replay(log.events, viewer=_VIEW[A]).claims) == set(ids["a"].values())
+    assert _replay(log.events, viewer=_VIEW[A]).readings[ids["reading"]].status == "proposed"
+    assert _replay(log.events, viewer=_VIEW[ADJ]).readings[ids["reading"]].status == "verified"
 
     log.add("adjudication.resolve", ADJ, "adjudicator")
-    assert set(_replay(log.events, actor=A).claims) == everything
-    assert set(_replay(log.events, actor=B).claims) == everything
+    assert set(_replay(log.events, viewer=_VIEW[A]).claims) == everything
+    assert set(_replay(log.events, viewer=_VIEW[B]).claims) == everything
 
 
 def test_resolve_opens_only_its_own_round() -> None:
@@ -246,7 +257,7 @@ def test_resolve_opens_only_its_own_round() -> None:
     log.add("adjudication.resolve", ADJ, "adjudicator", round=1)
     later = log.finding(B, B, "reviewer", ids["reading"], stream="b", round=1)
     early_b = log.finding(B, B, "reviewer", ids["reading"], stream="b2")
-    visible = set(_replay(log.events, actor=A).claims)
+    visible = set(_replay(log.events, viewer=_VIEW[A]).claims)
     assert later in visible
     assert early_b not in visible
 
@@ -731,3 +742,67 @@ def test_a_reading_under_a_gold_claim_is_never_superseded() -> None:
     log.add("reading.update", IMPORTER, "importer", target_id=ids["reading"],
             after={"reading": corrected})  # fmt: skip
     _assert_code("invalid_transition", _replay, log.events)
+
+
+# Blind review binds viewers, not events (amber-fc8.1) ----------------------------------------
+
+
+def _blind() -> tuple[Log, dict[str, Any]]:
+    log = Log()
+    ids: dict[str, Any] = _import(log)
+    ids["a"] = _stream(log, A, "a", ids["reading"])
+    ids["b"] = _stream(log, B, "b", ids["reading"])
+    return log, ids
+
+
+def test_writing_to_another_stream_does_not_widen_a_reviewer_s_view() -> None:
+    log, ids = _blind()
+    log.add("review.open", A, "reviewer", stream="b")
+    assert set(_replay(log.events, viewer=_VIEW[A]).claims) == set(ids["a"].values())
+
+
+def test_declaring_another_role_does_not_widen_a_reviewer_s_view() -> None:
+    log, ids = _blind()
+    log.add("review.open", A, "adjudicator")
+    assert set(_replay(log.events, viewer=_VIEW[A]).claims) == set(ids["a"].values())
+
+
+def test_an_adjudicator_sees_every_stream_before_writing() -> None:
+    log, ids = _blind()
+    everything = set(ids["a"].values()) | set(ids["b"].values())
+    assert set(_replay(log.events, viewer=_VIEW[ADJ]).claims) == everything
+
+
+_INVENTED_ROLE: Any = "owner"
+_MUTABLE_STREAMS: Any = {"a"}
+
+
+@pytest.mark.parametrize(
+    ("make", "code"),
+    [
+        (lambda: Viewer("not an actor", "reviewer"), "invalid_context"),
+        (lambda: Viewer(A, _INVENTED_ROLE), "invalid_role"),
+        (lambda: Viewer(A, "reviewer", _MUTABLE_STREAMS), "invalid_schema"),
+        (lambda: Viewer(A, "reviewer", frozenset({" "})), "invalid_schema"),
+        (lambda: Viewer(IMPORTER, "adjudicator"), "invalid_role"),
+        (lambda: Viewer(A, "system"), "invalid_role"),
+        (lambda: Viewer(ADJ, "adjudicator", frozenset({"a"})), "invalid_role"),
+    ],
+    ids=[
+        "actor",
+        "role",
+        "mutable-streams",
+        "blank-stream",
+        "tool-adjudicator",
+        "human-system",
+        "adjudicator-stream",
+    ],
+)
+def test_a_viewer_is_checked(make: Any, code: str) -> None:
+    _assert_code(code, make)
+
+
+def test_replay_takes_only_a_viewer() -> None:
+    log, _ = _blind()
+    _assert_code("invalid_context", _replay, log.events, viewer=A)
+    _assert_code("invalid_context", visible_events, log.events, A)
