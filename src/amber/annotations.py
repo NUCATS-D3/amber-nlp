@@ -65,11 +65,14 @@ _TIER_ROLES = {
     ReferenceTier.single_review: frozenset({"reviewer"}),
     ReferenceTier.adjudicated: frozenset({"adjudicator"}),
 }
-# Who may set the outcome of a variable that already has a human tier (amber-fc8.2): that
-# tier's role or higher, so a model or importer never rewrites a human reference.
+# Who may set the outcome of a variable that already has a human tier (amber-fc8.2): the
+# roles of that tier and every higher one, so a model or importer never rewrites a human
+# reference.
 _OUTCOME_ROLES = {
-    ReferenceTier.single_review: frozenset({"reviewer", "adjudicator"}),
-    ReferenceTier.adjudicated: frozenset({"adjudicator"}),
+    tier: frozenset().union(
+        *(roles for other, roles in _TIER_ROLES.items() if _TIER_RANK[other] >= _TIER_RANK[tier])
+    )
+    for tier in HUMAN_TIERS
 }
 _ATTRIBUTION_ACTIONS = frozenset(
     {"review.submit", "adjudication.resolve", "tier.set", "outcome.set", "import.result"}
@@ -382,7 +385,7 @@ class _State:
             _raise("invalid_context")
         return name
 
-    def _support_editable(self, claim_id: str) -> None:
+    def _require_editable_support(self, claim_id: str) -> None:
         """Gold is never edited in place (contract v0.1 section 4.5): its support is fixed;
         adjudication rejects it and a corrected claim replaces it."""
         claim = self.claims.get(claim_id)
@@ -400,7 +403,7 @@ class _State:
 
     def _add_edge(self, event: AnnotationEvent) -> None:
         key, edge = self._edge(_after(event, "edge")["edge"])
-        self._support_editable(key[0])
+        self._require_editable_support(key[0])
         if key in self.edges:
             _raise("invalid_transition")
         self.edges[key] = edge
@@ -410,7 +413,7 @@ class _State:
         if set(before) != {"edge"}:
             _raise("invalid_schema")
         key, _ = self._edge(before["edge"])
-        self._support_editable(key[0])
+        self._require_editable_support(key[0])
         if self.edges.pop(key, None) is None:
             _raise("unknown_reference")
 
