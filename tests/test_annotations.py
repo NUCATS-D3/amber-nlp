@@ -26,6 +26,7 @@ from amber.review import ReviewImportError, reviewed_example
 from amber.schemas import (
     AnnotationEvent,
     Example,
+    Inclusion,
     Mention,
     ReferenceTier,
 )
@@ -652,3 +653,81 @@ def test_an_unresolved_decision_after_the_tiers_withdraws_the_example() -> None:
     reviewed = reviewed_example(log.events, case=CASE, source=SOURCE, variables=VARIABLES,
                                 spans=SPANS)  # fmt: skip
     assert reviewed is None
+
+
+# A human tier guards its variable (amber-fc8.2) ----------------------------------------------
+
+
+def _set_not_answered(log: Log, actor: str, role: str, variable: str = "finding") -> None:
+    producer = actor if actor.startswith("human:") else TEACHER
+    outcome = {"status": "insufficient_evidence", "reason": "Synthetic.",
+               "provenance": _provenance(producer)}  # fmt: skip
+    log.add("outcome.set", actor, role, variable=variable,
+            after={"outcome": outcome, "final_claim_ids": []})  # fmt: skip
+
+
+@pytest.mark.parametrize(("actor", "role"), [(IMPORTER, "importer"), (A, "reviewer")])
+def test_a_lower_role_cannot_change_an_adjudicated_outcome(actor: str, role: str) -> None:
+    log, _ = _adjudicated()
+    _set_not_answered(log, actor, role)
+    _assert_code("invalid_role", _replay, log.events)
+
+
+def test_the_adjudicator_may_still_change_an_adjudicated_outcome() -> None:
+    log, _ = _adjudicated()
+    _set_not_answered(log, ADJ, "adjudicator")
+    assert _replay(log.events).outcomes["finding"].outcome.status == "insufficient_evidence"
+
+
+def test_an_importer_cannot_change_a_single_review_outcome() -> None:
+    log, ids = _silver()
+    _raise_to_single_review(log, ids)
+    _set_not_answered(log, IMPORTER, "importer")
+    _assert_code("invalid_role", _replay, log.events)
+    log, ids = _silver()
+    _raise_to_single_review(log, ids)
+    _set_not_answered(log, A, "reviewer")
+    assert _replay(log.events).outcomes["finding"].outcome.status == "insufficient_evidence"
+
+
+def test_verify_example_rejects_an_outcome_a_lower_role_set_after_the_tier() -> None:
+    from amber.conformance.forgery import forge
+
+    log, _ = _adjudicated()
+    honest = _example(log.events)
+    _set_not_answered(log, IMPORTER, "importer")
+    # An Example claiming to be the replay through the importer's edit.
+    claimed = forge(honest, as_of_event=log.events[-1].event_id)
+    _assert_code("invalid_role", verify_example, claimed, log.events, case=CASE, source=SOURCE,
+                 variables=VARIABLES, spans=SPANS)  # fmt: skip
+
+
+@pytest.mark.parametrize(("actor", "role"), [(IMPORTER, "importer"), (ADJ, "adjudicator")])
+def test_the_support_of_a_gold_claim_is_never_edited(actor: str, role: str) -> None:
+    def gold_edge() -> tuple[Log, dict[str, Any]]:
+        log, ids = _adjudicated()
+        gold = ids["a"]["finding"]
+        assert _replay(log.events).claims[gold].status == "gold"
+        (edge,) = [e for e in _replay(log.events).edges if e.claim_id == gold]
+        return log, edge.model_dump(mode="json")
+
+    log, edge = gold_edge()
+    log.add("edge.remove", actor, role, before={"edge": edge})
+    _assert_code("invalid_transition", _replay, log.events)
+    log, edge = gold_edge()
+    projection = _replay(log.events)
+    cited = {e.evidence_id for e in projection.edges if e.claim_id == edge["claim_id"]}
+    other = next(key for key, record in projection.evidence.items()
+                 if key not in cited and isinstance(record, Inclusion))  # fmt: skip
+    log.add("edge.add", actor, role, after={"edge": {**edge, "evidence_id": other}})
+    _assert_code("invalid_transition", _replay, log.events)
+
+
+def test_a_reading_under_a_gold_claim_is_never_superseded() -> None:
+    log, ids = _adjudicated()
+    reading = _replay(log.events).readings[ids["reading"]].model_dump(mode="json")
+    corrected = {**reading, "reading_id": new_ulid(), "status": "proposed",
+                 "provenance": _provenance(TEACHER)}  # fmt: skip
+    log.add("reading.update", IMPORTER, "importer", target_id=ids["reading"],
+            after={"reading": corrected})  # fmt: skip
+    _assert_code("invalid_transition", _replay, log.events)

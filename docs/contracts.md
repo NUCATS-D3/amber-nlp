@@ -177,11 +177,14 @@ refuse scoring a configuration against its own silver references; rule hashes ar
     role is human); reviewers move `proposed` to `verified` or `rejected`; the adjudicator
     resolves to `gold` or `rejected` (`gold` to `rejected` needs a reason). A correction
     (`claim.update`, `reading.update`) is a new record linked by its event; the old one is
-    rejected unless it is gold, which is never edited. A claim becomes gold only over
-    `gold`/`verified` readings.
+    rejected unless it is gold, which is never edited: a gold claim's edges are fixed and a
+    reading a gold claim rests on is never superseded (`invalid_transition`). A claim becomes
+    gold only over `gold`/`verified` readings.
   - **Tiers** only rise: `silver` by importers or system, `single_review` by the reviewer,
     `adjudicated` by the adjudicator; a human tier promotes the variable's final claims to
-    gold. A case-level `tier.set` is the protocol's move-on decision and needs
+    gold. Once a variable has a human tier, only that tier's role or higher sets its outcome
+    (`reviewer` or `adjudicator` after `single_review`, `adjudicator` after `adjudicated`;
+    otherwise `invalid_role`). A case-level `tier.set` is the protocol's move-on decision and needs
     `role="system"` and a `decision_ref`.
   - An `excluded` adjudication decision yields no Example (`excluded_case`). An `unresolved`
     one, in any round, blocks the `adjudicated` tier for the whole case (`invalid_transition`)

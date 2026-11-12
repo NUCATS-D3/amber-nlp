@@ -65,6 +65,12 @@ _TIER_ROLES = {
     ReferenceTier.single_review: frozenset({"reviewer"}),
     ReferenceTier.adjudicated: frozenset({"adjudicator"}),
 }
+# Who may set the outcome of a variable that already has a human tier (amber-fc8.2): that
+# tier's role or higher, so a model or importer never rewrites a human reference.
+_OUTCOME_ROLES = {
+    ReferenceTier.single_review: frozenset({"reviewer", "adjudicator"}),
+    ReferenceTier.adjudicated: frozenset({"adjudicator"}),
+}
 _ATTRIBUTION_ACTIONS = frozenset(
     {"review.submit", "adjudication.resolve", "tier.set", "outcome.set", "import.result"}
 )
@@ -324,7 +330,7 @@ class _State:
                     _raise("unknown_reference")
                 if old["mention_id"] != reading["mention_id"]:
                     _raise("invalid_transition")
-                self._supersede(self.readings, event.target_id)
+                self._supersede_reading(str(event.target_id))
             self._new_record(event, reading, "reading_id", self.readings)
         elif action == "reading.set_status":
             self._require_role(event, HUMAN_ROLES)
@@ -345,17 +351,9 @@ class _State:
             else:
                 self._cite_inference(_after(event, "inference")["inference"])
         elif action == "edge.add":
-            key, edge = self._edge(_after(event, "edge")["edge"])
-            if key in self.edges:
-                _raise("invalid_transition")
-            self.edges[key] = edge
+            self._add_edge(event)
         elif action == "edge.remove":
-            before = _mapping(event.before)
-            if set(before) != {"edge"}:
-                _raise("invalid_schema")
-            key, _ = self._edge(before["edge"])
-            if self.edges.pop(key, None) is None:
-                _raise("unknown_reference")
+            self._remove_edge(event)
         elif action == "outcome.set":
             self._set_outcome(event)
         elif action == "tier.set":
@@ -384,8 +382,43 @@ class _State:
             _raise("invalid_context")
         return name
 
+    def _support_editable(self, claim_id: str) -> None:
+        """Gold is never edited in place (contract v0.1 section 4.5): its support is fixed;
+        adjudication rejects it and a corrected claim replaces it."""
+        claim = self.claims.get(claim_id)
+        if claim is not None and claim["status"] == "gold":
+            _raise("invalid_transition")
+
+    def _supersede_reading(self, reading_id: str) -> None:
+        """A reading a gold claim rests on is part of that gold, so it is never superseded."""
+        if any(
+            claim["status"] == "gold" and claim.get("reading_id") == reading_id
+            for claim in self.claims.values()
+        ):
+            _raise("invalid_transition")
+        self._supersede(self.readings, reading_id)
+
+    def _add_edge(self, event: AnnotationEvent) -> None:
+        key, edge = self._edge(_after(event, "edge")["edge"])
+        self._support_editable(key[0])
+        if key in self.edges:
+            _raise("invalid_transition")
+        self.edges[key] = edge
+
+    def _remove_edge(self, event: AnnotationEvent) -> None:
+        before = _mapping(event.before)
+        if set(before) != {"edge"}:
+            _raise("invalid_schema")
+        key, _ = self._edge(before["edge"])
+        self._support_editable(key[0])
+        if self.edges.pop(key, None) is None:
+            _raise("unknown_reference")
+
     def _set_outcome(self, event: AnnotationEvent) -> None:
         name = self._final_variable(event)
+        tier = self.tiers.get(name)
+        if tier in _OUTCOME_ROLES and event.role not in _OUTCOME_ROLES[tier]:
+            _raise("invalid_role")
         after = _after(event, "outcome", "final_claim_ids")
         try:
             outcome = VariableOutcome(
