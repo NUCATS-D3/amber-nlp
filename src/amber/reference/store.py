@@ -277,7 +277,7 @@ class InMemoryStore:
 
     def current_example(self, case_id: str, *, resolver: SourceResolver) -> Example | None:
         """The snapshot at the case's latest event, or None when that snapshot is not a valid
-        Example (work in progress, an excluded case, or no events)."""
+        Example (work in progress, an excluded or unresolved case, or no events)."""
         case, variables = self._case(case_id)
         if not self._events.get(case_id):
             return None

@@ -22,6 +22,7 @@ from amber.annotations import (
 from amber.examples import ExampleValidationError, load_example, mint_example
 from amber.graph_errors import GraphValidationError
 from amber.ids import new_ulid
+from amber.review import ReviewImportError, reviewed_example
 from amber.schemas import (
     AnnotationEvent,
     Example,
@@ -627,31 +628,22 @@ def test_events_are_frozen() -> None:
         log.events[-1].after["tier"] = "gold"  # type: ignore[index]
 
 
-def _two_streams() -> tuple[Log, dict[str, Any]]:
-    log = Log()
-    ids: dict[str, Any] = _import(log)
-    for actor, stream in [(A, "a"), (B, "b")]:
-        ids[stream] = _stream(log, actor, stream, ids["reading"])
-    return log, ids
-
-
 def test_an_unresolved_case_cannot_be_raised_to_adjudicated() -> None:
     """amber-fc8.3: an unresolved adjudication blocks the adjudicated tier."""
-    log, ids = _two_streams()
-    _adjudicate(log, ids, decisions=("unresolved",))
+    log, _ = _adjudicated(decisions=("unresolved",))
     _assert_code("invalid_transition", _replay, log.events)
+    with pytest.raises(ReviewImportError) as failure:
+        reviewed_example(log.events, case=CASE, source=SOURCE, variables=VARIABLES, spans=SPANS)
+    assert failure.value.code == "invalid_events"
 
 
 def test_a_later_accepted_resolve_restores_the_path() -> None:
-    log, ids = _two_streams()
-    _adjudicate(log, ids, decisions=("unresolved", "accepted"))
+    log, _ = _adjudicated(decisions=("unresolved", "accepted"))
     example = _example(log.events)
     assert {ref.tier for ref in example.references.values()} == {ReferenceTier.adjudicated}
 
 
 def test_an_unresolved_decision_after_the_tiers_withdraws_the_example() -> None:
-    from amber.review import reviewed_example
-
     log, _ = _adjudicated()
     log.add("adjudication.resolve", ADJ, "adjudicator", round=1,
             after={"decision": "unresolved"}, reason="Synthetic: reopened.")  # fmt: skip

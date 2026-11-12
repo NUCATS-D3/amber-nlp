@@ -415,7 +415,7 @@ class _State:
         if event.role not in _TIER_ROLES[tier]:
             _raise("invalid_role")
         # An unresolved adjudication is no adjudicated reference until a later accepted resolve
-        # (contract 4.5: unresolved cases give no Example).
+        # (contract v0.1 section 4.7: unresolved cases give no Example).
         if tier is ReferenceTier.adjudicated and self.unresolved:
             _raise("invalid_transition")
         current = self.tiers.get(name)
@@ -444,7 +444,10 @@ class _State:
             _raise("invalid_schema")
         if decision == "excluded":
             self.excluded = True
-        self.unresolved = decision == "unresolved"
+        if decision == "unresolved":
+            self.unresolved = True
+        elif decision == "accepted":
+            self.unresolved = False
 
 
 def replay(

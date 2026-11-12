@@ -233,13 +233,13 @@ def _stream(log: Log, actor: str, stream: str, reading: str) -> dict[str, str]:
     return {"finding": finding, "summary": summary}
 
 
-def _adjudicated() -> tuple[Log, dict[str, Any]]:
-    """Two blind streams and an adjudicator who keeps stream a."""
+def _adjudicated(decisions: tuple[str, ...] = ("accepted",)) -> tuple[Log, dict[str, Any]]:
+    """Two blind streams and an adjudicator who keeps stream a (see ``_adjudicate``)."""
     log = Log()
     ids: dict[str, Any] = _import(log)
     for actor, stream in [(A, "a"), (B, "b")]:
         ids[stream] = _stream(log, actor, stream, ids["reading"])
-    _adjudicate(log, ids)
+    _adjudicate(log, ids, decisions)
     return log, ids
 
 
