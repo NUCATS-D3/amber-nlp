@@ -272,6 +272,25 @@ and Examples are unchanged, so `schema_version` stays `amber/0.1`.
 - **Upgrade:** record an `accepted` resolve before setting the adjudicated tier; treat
   `unresolved_case` as "not yet a reference", as `reviewed_example` does.
 
+### Human tiers guard their outcomes and gold support
+
+Commit: the one closing `amber-fc8.2`.
+
+Replay let any role set the outcome of a variable that already had a human tier: an importer
+could turn an adjudicated answer into `insufficient_evidence` and the Example still minted as
+adjudicated, attributed to the humans, and verified. It also let any role add an edge to a gold
+claim, and a correction of a reading under a gold claim broke every later replay with a graph
+error. Now, once a variable has a human tier, `outcome.set` needs that tier's role or higher
+(`invalid_role`); `edge.add` and `edge.remove` on a gold claim, and `reading.update` of a
+reading a gold claim rests on, are `invalid_transition`. Events and Examples are unchanged, so
+`schema_version` stays `amber/0.1`.
+
+- **Affected:** event histories in which a lower role changes a human-tier outcome, or anyone
+  edits a gold claim's support. amber's reference workflows, the loupe bridge, and lapidary
+  write none.
+- **Upgrade:** have the reviewer or adjudicator set the outcome; to change gold, the adjudicator
+  rejects the gold claim (with a reason) and a corrected claim replaces it.
+
 ## Still to implement
 
 Nothing: every breaking change listed by the contract v0.1 design is implemented above.
