@@ -26,6 +26,7 @@ from amber.schemas import (
     AnnotationEvent,
     Example,
     Mention,
+    ReferenceTier,
 )
 from amber.tools.mention import mention
 
@@ -624,3 +625,38 @@ def test_events_are_frozen() -> None:
         event.actor = A  # type: ignore[misc]
     with pytest.raises(TypeError):
         log.events[-1].after["tier"] = "gold"  # type: ignore[index]
+
+
+def _two_streams() -> tuple[Log, dict[str, Any]]:
+    log = Log()
+    ids: dict[str, Any] = _import(log)
+    for actor, stream in [(A, "a"), (B, "b")]:
+        ids[stream] = _stream(log, actor, stream, ids["reading"])
+    return log, ids
+
+
+def test_an_unresolved_case_cannot_be_raised_to_adjudicated() -> None:
+    """amber-fc8.3: an unresolved adjudication blocks the adjudicated tier."""
+    log, ids = _two_streams()
+    _adjudicate(log, ids, decisions=("unresolved",))
+    _assert_code("invalid_transition", _replay, log.events)
+
+
+def test_a_later_accepted_resolve_restores_the_path() -> None:
+    log, ids = _two_streams()
+    _adjudicate(log, ids, decisions=("unresolved", "accepted"))
+    example = _example(log.events)
+    assert {ref.tier for ref in example.references.values()} == {ReferenceTier.adjudicated}
+
+
+def test_an_unresolved_decision_after_the_tiers_withdraws_the_example() -> None:
+    from amber.review import reviewed_example
+
+    log, _ = _adjudicated()
+    log.add("adjudication.resolve", ADJ, "adjudicator", round=1,
+            after={"decision": "unresolved"}, reason="Synthetic: reopened.")  # fmt: skip
+    assert _replay(log.events).unresolved
+    _assert_code("unresolved_case", _example, log.events)
+    reviewed = reviewed_example(log.events, case=CASE, source=SOURCE, variables=VARIABLES,
+                                spans=SPANS)  # fmt: skip
+    assert reviewed is None

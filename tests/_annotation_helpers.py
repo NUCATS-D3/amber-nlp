@@ -243,7 +243,9 @@ def _adjudicated() -> tuple[Log, dict[str, Any]]:
     return log, ids
 
 
-def _adjudicate(log: Log, ids: dict[str, Any]) -> None:
+def _adjudicate(log: Log, ids: dict[str, Any], decisions: tuple[str, ...] = ("accepted",)) -> None:
+    """The adjudicator keeps stream a; ``decisions`` are the untargeted resolves, in order,
+    before the tiers are set."""
     log.add(
         "reading.set_status",
         ADJ,
@@ -262,9 +264,11 @@ def _adjudicate(log: Log, ids: dict[str, Any]) -> None:
         )
     log.outcome("finding", [ids["a"]["finding"]], ADJ, "adjudicator")
     log.outcome("summary", [ids["a"]["summary"]], ADJ, "adjudicator")
-    ids["resolve"] = log.add(
-        "adjudication.resolve", ADJ, "adjudicator", after={"decision": "accepted"}
-    )
+    for decision in decisions:
+        ids["resolve"] = log.add(
+            "adjudication.resolve", ADJ, "adjudicator", after={"decision": decision},
+            reason=None if decision == "accepted" else "Synthetic: reviewers disagree.",
+        )  # fmt: skip
     for variable in ("finding", "summary"):
         log.add("tier.set", ADJ, "adjudicator", variable=variable, after={"tier": "adjudicated"})
 

@@ -55,6 +55,7 @@ AnnotationValidationCode: TypeAlias = Literal[
     "invalid_role",
     "incomplete_projection",
     "excluded_case",
+    "unresolved_case",
     "events_mismatch",
 ]
 ALL_STATUSES = frozenset({"proposed", "verified", "gold", "rejected"})
@@ -104,6 +105,7 @@ class Projection:
     outcomes: Mapping[str, VariableOutcome]
     tiers: Mapping[str, ReferenceTier]
     excluded: bool
+    unresolved: bool
     move_on_events: tuple[str, ...]
     events: tuple[AnnotationEvent, ...]
 
@@ -204,6 +206,7 @@ class _State:
         self.outcomes: dict[str, VariableOutcome] = {}
         self.tiers: dict[str, ReferenceTier] = {}
         self.excluded = False
+        self.unresolved = False
         self.move_on: list[str] = []
 
     # records
@@ -411,19 +414,27 @@ class _State:
             _raise("invalid_schema")
         if event.role not in _TIER_ROLES[tier]:
             _raise("invalid_role")
+        # An unresolved adjudication is no adjudicated reference until a later accepted resolve
+        # (contract 4.5: unresolved cases give no Example).
+        if tier is ReferenceTier.adjudicated and self.unresolved:
+            _raise("invalid_transition")
         current = self.tiers.get(name)
         if current is not None and _TIER_RANK[tier] <= _TIER_RANK[current]:
             _raise("invalid_transition")
         if tier in HUMAN_TIERS:
-            outcome = self.outcomes.get(name)
-            if outcome is None:
-                _raise("invalid_transition")
-            for claim_id in outcome.final_claim_ids:
-                claim = self.claims[claim_id]
-                if claim["status"] == "rejected" or not self._readings_reviewed(claim):
-                    _raise("invalid_transition")
-                claim["status"] = "gold"
+            self._promote_finals(name)
         self.tiers[name] = tier
+
+    def _promote_finals(self, name: str) -> None:
+        """A human tier makes the variable's final claims gold; each must be reviewable."""
+        outcome = self.outcomes.get(name)
+        if outcome is None:
+            _raise("invalid_transition")
+        for claim_id in outcome.final_claim_ids:
+            claim = self.claims[claim_id]
+            if claim["status"] == "rejected" or not self._readings_reviewed(claim):
+                _raise("invalid_transition")
+            claim["status"] = "gold"
 
     def _resolve(self, event: AnnotationEvent) -> None:
         decision = _mapping(event.after or {}).get("decision", "accepted")
@@ -433,6 +444,7 @@ class _State:
             _raise("invalid_schema")
         if decision == "excluded":
             self.excluded = True
+        self.unresolved = decision == "unresolved"
 
 
 def replay(
@@ -512,6 +524,7 @@ def replay(
         outcomes=MappingProxyType(dict(state.outcomes)),
         tiers=MappingProxyType(dict(state.tiers)),
         excluded=state.excluded,
+        unresolved=state.unresolved,
         move_on_events=tuple(state.move_on),
         events=tuple(shown),
     )
@@ -578,6 +591,8 @@ def example_from_projection(
         _raise("invalid_context")
     if projection.excluded:
         _raise("excluded_case")
+    if projection.unresolved:
+        _raise("unresolved_case")
     if projection.as_of_event is None:
         _raise("incomplete_projection")
     finals = sorted(name for name, variable in variables.variables.items() if variable.final)

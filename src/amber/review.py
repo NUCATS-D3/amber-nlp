@@ -39,7 +39,7 @@ ReviewImportCode: TypeAlias = Literal[
     "foreign_provenance",
     "invalid_events",
 ]
-_NOT_YET = frozenset({"incomplete_projection", "excluded_case"})
+_NOT_YET = frozenset({"incomplete_projection", "excluded_case", "unresolved_case"})
 _HUMAN = frozenset({ReferenceTier.single_review, ReferenceTier.adjudicated})
 
 
