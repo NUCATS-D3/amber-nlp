@@ -13,6 +13,7 @@ from typing import Any, Literal, NoReturn, TypeAlias
 from amber.annotations import (
     AnnotationValidationError,
     Projection,
+    Viewer,
     example_from_projection,
     replay,
     verify_example,
@@ -223,7 +224,7 @@ class InMemoryStore:
         self,
         case_id: str,
         *,
-        actor: str | None,
+        viewer: Viewer | None,
         as_of_event: str | None = None,
         resolver: SourceResolver,
     ) -> Projection:
@@ -234,7 +235,7 @@ class InMemoryStore:
             source=self._source(case, resolver),
             variables=variables,
             spans=self._spans.values(),
-            actor=actor,
+            viewer=viewer,
             as_of_event=as_of_event,
         )
 

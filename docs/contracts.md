@@ -165,14 +165,19 @@ refuse scoring a configuration against its own silver references; rule hashes ar
   actor (producer reference; `human:` exactly for `reviewer` and `adjudicator`), role, round,
   blind `stream` (reviewers only), action, target, `before`/`after` without quotes or
   offsets, reason, time, provenance, and external reference. Event logs are `derived_text`.
-- **`replay`** rebuilds a `Projection` of a case's events up to `as_of_event` as one actor may
-  see it. It is deterministic, and replaying a prefix gives that prefix's projection. Events
+- **`replay`** rebuilds a `Projection` of a case's events up to `as_of_event` as one `Viewer`
+  may see it (`viewer=None` is the complete view). It is deterministic, and replaying a prefix gives that prefix's projection. Events
   name mentions and inclusions by ID, resolved against caller-supplied spans and re-minted
   against the `Source`. A projection validates under the graph rules with any status.
-  - **Blind review** (`visible_events`): before an untargeted `adjudication.resolve` for its
-    round, a reviewer sees their own streams and stream-less events other than the
-    adjudicator's; adjudicators, importers, and system actors see everything; afterwards
-    everyone does.
+  - **Blind review** (`visible_events`): a `Viewer(actor, role, streams)` says who is looking.
+    The caller that authenticates the actor (a store's caller, a review system such as loupe)
+    supplies the role and, for a reviewer, the assigned streams; nothing is inferred from
+    events, which any writer can tag with any role or stream (`invalid_role`,
+    `invalid_context`, `invalid_schema` for a malformed viewer). Before an untargeted
+    `adjudication.resolve` for its round, a reviewer sees their assigned streams and
+    stream-less events other than the adjudicator's; adjudicators, importers, and system
+    viewers see everything, before writing anything; afterwards everyone does. Which roles
+    may write which events is the writer's authorization, outside replay.
   - **Transitions**: claims and readings are created `proposed` (by the human actor when the
     role is human); reviewers move `proposed` to `verified` or `rejected`; the adjudicator
     resolves to `gold` or `rejected` (`gold` to `rejected` needs a reason). A correction
@@ -549,7 +554,8 @@ sensitivity. They ship with the core; `amber[reference]` installs what all of th
     `schema_ref` for one variable-set `name@version`;
   - refuses a duplicate `(case_id, run_id)`, a duplicate or out-of-order event, and partial
     batches;
-  - projects exactly as `replay` does, for every actor and `as_of_event`;
+  - projects exactly as `replay` does, for every viewer and `as_of_event`
+    (`project(case_id, *, viewer, as_of_event, resolver)`);
   - accepts an Example only after its events, with its case's split and a matching
     `example_id`, and only if it equals the replay of its events (`unsupported_tier`
     otherwise); `put_example` takes a resolver for that replay;

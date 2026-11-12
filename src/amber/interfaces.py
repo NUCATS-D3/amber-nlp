@@ -13,7 +13,7 @@ from typing import Literal, Protocol, TypeAlias, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
-from amber.annotations import Projection
+from amber.annotations import Projection, Viewer
 from amber.extraction import ExtractorCapability
 from amber.labeling import LabelerOutput
 from amber.policy import (
@@ -212,7 +212,8 @@ class Store(Protocol):
     ``(case_id, run_id)``. Events are append-only. ``put_example`` requires the Example's
     events first and rejects a split, tier, or ``example_id`` the case and events do not
     support; it takes a resolver because checking the tier means replaying the events.
-    ``current_example`` is the snapshot at the case's latest event.
+    ``current_example`` is the snapshot at the case's latest event. ``project`` shows events
+    as ``viewer`` may see them; the caller binds the viewer's role and streams.
     """
 
     capabilities: frozenset[StoreCapability]
@@ -230,7 +231,7 @@ class Store(Protocol):
         self,
         case_id: str,
         *,
-        actor: str | None,
+        viewer: Viewer | None,
         as_of_event: str | None = None,
         resolver: SourceResolver,
     ) -> Projection: ...

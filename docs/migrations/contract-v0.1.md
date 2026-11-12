@@ -291,6 +291,26 @@ reading a gold claim rests on, are `invalid_transition`. Events and Examples are
 - **Upgrade:** have the reviewer or adjudicator set the outcome; to change gold, the adjudicator
   rejects the gold claim (with a reason) and a corrected claim replaces it.
 
+### Blind review takes a caller-supplied `Viewer`
+
+Commit: the one closing `amber-fc8.1`.
+
+`visible_events` worked out what an actor may see from that actor's own earlier events: the
+role their events declared and the streams they had written to. A reviewer widened their view
+by writing one event in another stream or declaring the adjudicator role, and an adjudicator
+who had not yet written anything saw no stream. Visibility now comes from a
+`Viewer(actor, role, streams)` that the caller binds (the design chosen by Will Thompson): the
+store's caller or the review system, which authenticates the actor, supplies the role and a
+reviewer's assigned streams. Events, Projections' content, and Examples are unchanged, so
+`schema_version` stays `amber/0.1`.
+
+- **Affected:** Python callers of `visible_events(events, actor)`, `replay(..., actor=...)`,
+  and the `Store` protocol's `project(..., actor=...)`, and code reading `Projection.actor`.
+  In amber, the reference store and the conformance kit; lapidary and loupe call none.
+- **Upgrade:** pass `viewer=Viewer(actor, role, streams)` (or `None` for the complete view)
+  where `actor=` was, and read `Projection.viewer`. A store implementing `Store.project`
+  takes `viewer` and passes it to `replay`.
+
 ## Still to implement
 
 Nothing: every breaking change listed by the contract v0.1 design is implemented above.

@@ -37,7 +37,7 @@ from typing import Any, Literal, NoReturn, TypeAlias, get_args
 from amber._graph_validation import build_context, validate_state
 from amber.examples import mint_example
 from amber.ids import parse_producer
-from amber.schemas.annotations import HUMAN_ROLES, AnnotationEvent
+from amber.schemas.annotations import HUMAN_ROLES, AnnotationEvent, EventRole
 from amber.schemas.cases import Case, CaseOutcome, VariableOutcome
 from amber.schemas.claims import Claim
 from amber.schemas.evidence import EvidenceEdge, Inclusion, InferenceEvidence
@@ -95,17 +95,41 @@ def _raise(code: AnnotationValidationCode) -> NoReturn:
 
 
 @dataclass(frozen=True)
+class Viewer:
+    """Who is looking: an actor, the role they hold, and, for a reviewer, the streams assigned
+    to them. The caller that authenticates the actor (a store, a review system) supplies it;
+    it is never inferred from events, which any writer can tag with any role or stream
+    (amber-fc8.1)."""
+
+    actor: str
+    role: EventRole
+    streams: frozenset[str] = frozenset()
+
+    def __post_init__(self) -> None:
+        try:
+            parse_producer(self.actor)
+        except (TypeError, ValueError):
+            _raise("invalid_context")
+        if self.role not in get_args(EventRole):
+            _raise("invalid_role")
+        if not isinstance(self.streams, frozenset) or any(
+            type(stream) is not str or not stream.strip() for stream in self.streams
+        ):
+            _raise("invalid_schema")
+
+
+@dataclass(frozen=True)
 class Projection:
-    """Replayed state of a case as of one event, as one actor may see it.
+    """Replayed state of a case as of one event, as one viewer may see it.
 
     It validates under the graph rules but not the Example invariants: work in progress need
-    not satisfy them. ``actor=None`` is the complete view.
+    not satisfy them. ``viewer=None`` is the complete view.
     """
 
     case_id: str
     variable_set_ref: str
     as_of_event: str | None
-    actor: str | None
+    viewer: Viewer | None
     claims: Mapping[str, Claim]
     mentions: Mapping[str, Mention]
     readings: Mapping[str, MentionReading]
@@ -152,29 +176,24 @@ def _resolved_rounds(events: Sequence[AnnotationEvent]) -> frozenset[int]:
 
 
 def visible_events(
-    events: Sequence[AnnotationEvent], actor: str | None
+    events: Sequence[AnnotationEvent], viewer: Viewer | None
 ) -> tuple[AnnotationEvent, ...]:
     """Apply blind-review visibility (contract v0.1 section 4.4) to an ordered event prefix.
 
-    Before ``adjudication.resolve`` for a round, a reviewer sees their own streams and
+    Before ``adjudication.resolve`` for a round, a reviewer sees their assigned streams and
     stream-less events and never another stream, nor the adjudicator's work in progress,
     which may concern other streams; an adjudicator sees every stream; system and importer
-    actors see everything; after resolve every actor sees every round's events.
-    ``actor=None`` is the complete view.
+    viewers see everything; after resolve every viewer sees every round's events.
+    ``viewer=None`` is the complete view. The role and streams come from ``viewer`` only.
     """
-    if actor is None:
+    if viewer is None or viewer.role != "reviewer":
         return tuple(events)
-    own = [event for event in events if event.actor == actor]
-    roles = {event.role for event in own}
-    if roles & {"adjudicator", "system", "importer"}:
-        return tuple(events)
-    streams = {event.stream for event in own if event.stream is not None}
     resolved = _resolved_rounds(events)
     return tuple(
         event
         for event in events
         if event.round in resolved
-        or event.stream in streams
+        or event.stream in viewer.streams
         or (event.stream is None and event.role != "adjudicator")
     )
 
@@ -493,7 +512,7 @@ def replay(
     source: Source,
     variables: VariableSet,
     spans: Iterable[Inclusion | Mention] = (),
-    actor: str | None = None,
+    viewer: Viewer | None = None,
     as_of_event: str | None = None,
     excluded_spans: Sequence[tuple[int, int]] = (),
 ) -> Projection:
@@ -511,12 +530,9 @@ def replay(
         if as_of_event not in {event.event_id for event in ordered}:
             _raise("unknown_reference")
         ordered = [event for event in ordered if event.event_id <= as_of_event]
-    if actor is not None:
-        try:
-            parse_producer(actor)
-        except ValueError:
-            _raise("invalid_context")
-    shown = visible_events(ordered, actor)
+    if viewer is not None and not isinstance(viewer, Viewer):
+        _raise("invalid_context")
+    shown = visible_events(ordered, viewer)
     pool: dict[str, Inclusion | Mention] = {}
     for span in spans:
         if isinstance(span, Inclusion):
@@ -550,7 +566,7 @@ def replay(
         case_id=case.case_id,
         variable_set_ref=variables.schema_ref,
         as_of_event=ordered[-1].event_id if ordered else None,
-        actor=actor,
+        viewer=viewer,
         claims=validated.claims,
         mentions=validated.mentions,
         readings=validated.readings,
@@ -624,7 +640,7 @@ def example_from_projection(
     ``created_at`` is the time of ``as_of_event``, so the same events always give the same
     Example.
     """
-    if not isinstance(projection, Projection) or projection.actor is not None:
+    if not isinstance(projection, Projection) or projection.viewer is not None:
         _raise("invalid_context")
     if projection.case_id != case.case_id or projection.variable_set_ref != variables.schema_ref:
         _raise("invalid_context")
@@ -723,6 +739,7 @@ __all__ = [
     "AnnotationValidationCode",
     "AnnotationValidationError",
     "Projection",
+    "Viewer",
     "example_from_projection",
     "replay",
     "verify_example",

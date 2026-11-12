@@ -20,7 +20,7 @@ from hypothesis import strategies as st
 from pydantic import ValidationError
 
 from amber import _graph_validation
-from amber.annotations import replay
+from amber.annotations import Viewer, replay
 from amber.bundles import (
     BundleContents,
     ManifestDataset,
@@ -233,17 +233,25 @@ def test_run_bundles_round_trip(span: tuple[str, int, int], present: bool) -> No
 
 _LOG, _ = fx.adjudicated()
 _EVENTS = list(_LOG.events)
-_ACTORS = st.sampled_from([None, fx.REVIEWER_A, fx.REVIEWER_B, fx.ADJUDICATOR, fx.IMPORTER])
+_VIEWERS = st.sampled_from(
+    [
+        None,
+        Viewer(fx.REVIEWER_A, "reviewer", frozenset({"a"})),
+        Viewer(fx.REVIEWER_B, "reviewer", frozenset({"b"})),
+        Viewer(fx.ADJUDICATOR, "adjudicator"),
+        Viewer(fx.IMPORTER, "importer"),
+    ]
+)
 
 
-@given(st.integers(min_value=0, max_value=len(_EVENTS) - 1), _ACTORS)
-def test_replaying_up_to_an_event_equals_replaying_that_prefix(index: int, actor: Any) -> None:
+@given(st.integers(min_value=0, max_value=len(_EVENTS) - 1), _VIEWERS)
+def test_replaying_up_to_an_event_equals_replaying_that_prefix(index: int, viewer: Any) -> None:
     common = {"case": fx.case(), "source": fx.SOURCE, "variables": fx.VARIABLES, "spans": fx.SPANS}
     as_of = _EVENTS[index].event_id
-    full = replay(_EVENTS, actor=actor, as_of_event=as_of, **common)
-    prefix = replay(_EVENTS[: index + 1], actor=actor, **common)
+    full = replay(_EVENTS, viewer=viewer, as_of_event=as_of, **common)
+    prefix = replay(_EVENTS[: index + 1], viewer=viewer, **common)
     assert full == prefix
-    assert replay(_EVENTS[: index + 1], actor=actor, **common) == prefix
+    assert replay(_EVENTS[: index + 1], viewer=viewer, **common) == prefix
 
 
 # Random support graphs ---------------------------------------------------------------------
