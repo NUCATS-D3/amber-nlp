@@ -607,7 +607,7 @@ def test_a_gold_bundle_without_examples_is_refused() -> None:
 
 
 def test_a_case_whose_patient_is_not_its_source_s_is_refused() -> None:
-    bundle = _run()
+    bundle = _review()
     moved = _tamper(bundle, "cases", lambda rows: rows[0].update(patient_id="other-patient"))
     _assert_bundle_error("case_mismatch", _load, moved, table="cases")
 

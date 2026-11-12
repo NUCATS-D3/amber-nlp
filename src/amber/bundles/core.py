@@ -1131,15 +1131,6 @@ def load_bundle(
     sources = {row["source_id"]: _resolve(row, resolver) for row in bundle.tables["sources"]}
     cases = {row["case_id"]: _case(row) for row in bundle.tables["cases"]}
     manifest = bundle.manifest
-    # The scope build_bundle enforces, before any record is loaded.
-    _add_cases(
-        _Tables(),
-        cases.values(),
-        variables=variables,
-        dataset=manifest.dataset,
-        created_at=manifest.created_at,
-        sources=sources,
-    )
     index = _Index(bundle)
     finals = sorted(name for name, variable in variables.variables.items() if variable.final)
 
@@ -1275,11 +1266,13 @@ def load_bundle(
 def _require_consumed(
     bundle: Bundle,
     contents: BundleContents,
-    kind: Literal["run", "review", "gold"],
+    kind: Literal["run", "review", "gold"],  # the manifest's kind, known not to be labels
     variables: VariableSet,
 ) -> None:
-    """Content hashes are unkeyed, so revalidation is the only integrity check: rebuilding
-    from the validated records must give back every table (``x_`` columns aside)."""
+    """Content hashes are unkeyed, so revalidation is the only integrity check: every row must
+    belong to a record that revalidated. ``build_bundle`` over the loaded records (which also
+    applies its case scope) must write exactly the stored keys of each table. Only keys are
+    compared: columns no record carries (a case row's ``created_at``) are not re-derived."""
     manifest = bundle.manifest
     rebuilt = build_bundle(
         kind=kind,
@@ -1297,9 +1290,12 @@ def _require_consumed(
         decisions=contents.decisions,
     )
     for name, rows in bundle.tables.items():
-        stored = [_plain(row, name) for row in rows]
-        if content_sha256(name, stored) != content_sha256(name, rebuilt.tables.get(name, ())):
+        if _keys(name, rows) != _keys(name, rebuilt.tables.get(name, ())):
             _raise("unconsumed_rows", name)
+
+
+def _keys(table: str, rows: Iterable[Row]) -> set[tuple[Any, ...]]:
+    return {tuple(row[column] for column in TABLES[table].key) for row in rows}
 
 
 def _spans(bundle: Bundle, sources: Mapping[str, Source]) -> tuple[Inclusion | Mention, ...]:
